@@ -49,6 +49,72 @@ describe('buildMatrix', () => {
   });
 });
 
+describe('신뢰도 축 (설계문서 개정)', () => {
+  const errCall = (tool: string, isError: boolean, tokens = 100) => ({
+    sessionId: 's1', serverName: 'github', toolName: tool,
+    calledAt: '2026-07-10T00:00:00Z', durationMs: 10, isError,
+    responseTokens: tokens, responseText: null });
+
+  it('실패율 50% 이상 + 3회 이상 호출 → inspect (불량 툴)', () => {
+    const input: EngineInput = {
+      definitions: [def('flaky', 500)],
+      calls: [errCall('flaky', true), errCall('flaky', true), errCall('flaky', false)],
+      loads: [], sessions: [session('UPFRONT')],
+    };
+    const [row] = buildMatrix(input);
+    expect(row.recommendation.action).toBe('inspect');
+    expect(row.reliability.errorCount).toBe(2);
+    expect(row.reliability.errorRate).toBeCloseTo(2 / 3);
+    expect(row.reliability.failedResponseTokens).toBe(200);
+  });
+
+  it('호출 0회 툴의 errorRate는 null, 판정은 기존 remove 유지', () => {
+    const input: EngineInput = {
+      definitions: [def('unused', 800)], calls: [], loads: [],
+      sessions: [session('UPFRONT')],
+    };
+    const [row] = buildMatrix(input);
+    expect(row.reliability.errorRate).toBeNull();
+    expect(row.recommendation.action).toBe('remove');
+  });
+
+  it('2회 실패는 표본 부족 → inspect 아님 (keep 유지)', () => {
+    const input: EngineInput = {
+      definitions: [def('rare', 300)],
+      calls: [errCall('rare', true), errCall('rare', true)],
+      loads: [], sessions: [session('UPFRONT')],
+    };
+    expect(buildMatrix(input)[0].recommendation.action).toBe('keep');
+  });
+});
+
+describe('로드 패턴 (v1 계승)', () => {
+  it('과반 세션에서 로드 + 호출 있음 → always-load-candidate', () => {
+    const input: EngineInput = {
+      definitions: [def('hot', 400)],
+      calls: [call('hot')],
+      loads: [
+        { sessionId: 's1', serverName: 'github', toolName: 'hot', loadedTokens: null },
+        { sessionId: 's2', serverName: 'github', toolName: 'hot', loadedTokens: null },
+      ],
+      sessions: [session('DEFERRED_MEASURABLE'),
+        { ...session('DEFERRED_MEASURABLE'), sessionId: 's2' }],
+    };
+    expect(buildMatrix(input)[0].loadPattern).toBe('always-load-candidate');
+  });
+
+  it('로드되나 호출 0회 → search-pollution + reason에 오염 표기', () => {
+    const input: EngineInput = {
+      definitions: [def('noise', 600)], calls: [],
+      loads: [{ sessionId: 's1', serverName: 'github', toolName: 'noise', loadedTokens: null }],
+      sessions: [session('DEFERRED_MEASURABLE')],
+    };
+    const [row] = buildMatrix(input);
+    expect(row.loadPattern).toBe('search-pollution');
+    expect(row.recommendation.reason).toContain('검색 공간 오염');
+  });
+});
+
 describe('sessionSavings', () => {
   it('잠재 = 정의 전량, 실비용 = 로드분, 절감 = 차이', () => {
     const input: EngineInput = {

@@ -1,5 +1,5 @@
 // packages/core/src/engine/engine.ts
-import type { MatrixRow, Recommendation, SessionMeta, ToolCallEvent,
+import type { LoadPattern, MatrixRow, Recommendation, SessionMeta, ToolCallEvent,
   ToolDefinition, ToolLoadEvent } from '../types.js';
 
 export interface EngineInput {
@@ -9,15 +9,21 @@ export interface EngineInput {
   sessions: SessionMeta[];
 }
 
+// 판정 임계값 (설계문서 7장 기능 1 개정)
+const INSPECT_MIN_CALLS = 3;
+const INSPECT_ERROR_RATE = 0.5;
+const ALWAYS_LOAD_SESSION_RATIO = 0.5;
+
 export function buildMatrix(input: EngineInput): MatrixRow[] {
   const { definitions, calls, loads, sessions } = input;
   const key = (s: string, t: string) => `${s} ${t}`;
 
-  const callAgg = new Map<string, { n: number; tokens: number }>();
+  const callAgg = new Map<string, { n: number; tokens: number; errN: number; errTokens: number }>();
   for (const c of calls) {
     const k = key(c.serverName, c.toolName);
-    const a = callAgg.get(k) ?? { n: 0, tokens: 0 };
+    const a = callAgg.get(k) ?? { n: 0, tokens: 0, errN: 0, errTokens: 0 };
     a.n++; a.tokens += c.responseTokens ?? 0;
+    if (c.isError) { a.errN++; a.errTokens += c.responseTokens ?? 0; }
     callAgg.set(k, a);
   }
   const loadSessions = new Map<string, Set<string>>();
@@ -51,6 +57,12 @@ export function buildMatrix(input: EngineInput): MatrixRow[] {
     row.responseTokens = a?.tokens ?? 0;
     row.loadedSessionCount = loadSessions.get(k)?.size ?? 0;
     row.sessionCount = sessions.length;
+    row.reliability = {
+      errorCount: a?.errN ?? 0,
+      errorRate: a && a.n > 0 ? a.errN / a.n : null,
+      failedResponseTokens: a?.errTokens ?? 0,
+    };
+    row.loadPattern = pickLoadPattern(row);
     row.recommendation = recommend(row, byServer.get(row.serverName), dominantMode);
   }
   return [...rows.values()].sort(
@@ -73,7 +85,17 @@ export function sessionSavings(input: EngineInput) {
 function baseRow(serverName: string, toolName: string, definitionTokens: number | null): MatrixRow {
   return { serverName, toolName, definitionTokens, callCount: 0, responseTokens: 0,
     loadedSessionCount: 0, sessionCount: 0,
-    recommendation: { action: 'unknown', reason: '', evidenceLabel: '측정 불가' } };
+    recommendation: { action: 'unknown', reason: '', evidenceLabel: '측정 불가' },
+    reliability: { errorCount: 0, errorRate: null, failedResponseTokens: 0 },
+    loadPattern: null };
+}
+
+function pickLoadPattern(row: MatrixRow): LoadPattern {
+  if (row.loadedSessionCount === 0) return null;
+  if (row.callCount === 0) return 'search-pollution';
+  if (row.sessionCount > 0 && row.loadedSessionCount / row.sessionCount >= ALWAYS_LOAD_SESSION_RATIO)
+    return 'always-load-candidate';
+  return null;
 }
 
 function pickDominantMode(sessions: SessionMeta[]): SessionMeta['mode'] {
@@ -98,13 +120,25 @@ function recommend(
       ? `제거 시 매 세션 약 ${t}토큰 절약`
       : `절약은 작지만 검색 공간 정리 효과`;
 
+  const pollutionSuffix = row.loadPattern === 'search-pollution' ? ' — 로드는 되나 호출 0회 — 검색 공간 오염' : '';
+
   if (row.callCount === 0 && row.definitionTokens != null) {
     if (server && server.total >= 10 && server.used > 0 && server.used / server.total < 0.2)
       return { action: 'filter-server',
-        reason: `서버 ${row.serverName}의 ${server.total}툴 중 ${server.used}개만 사용 — 툴 필터링 권장. ${sizePhrase(row.definitionTokens)}`,
+        reason: `서버 ${row.serverName}의 ${server.total}툴 중 ${server.used}개만 사용 — 툴 필터링 권장. ${sizePhrase(row.definitionTokens)}${pollutionSuffix}`,
         evidenceLabel };
     return { action: 'remove',
-      reason: `정의 ${row.definitionTokens}토큰, 호출 0회 — ${sizePhrase(row.definitionTokens)}`,
+      reason: `정의 ${row.definitionTokens}토큰, 호출 0회 — ${sizePhrase(row.definitionTokens)}${pollutionSuffix}`,
+      evidenceLabel };
+  }
+  if (
+    row.callCount >= INSPECT_MIN_CALLS &&
+    row.reliability.errorRate != null &&
+    row.reliability.errorRate >= INSPECT_ERROR_RATE
+  ) {
+    const rate = Math.round(row.reliability.errorRate * 100);
+    return { action: 'inspect',
+      reason: `${row.callCount}회 중 ${row.reliability.errorCount}회 실패(${rate}%), 실패 응답 ${row.reliability.failedResponseTokens}토큰 낭비 — 점검·대체 권장`,
       evidenceLabel };
   }
   if (row.callCount > 0) return { action: 'keep', reason: `${row.callCount}회 호출됨`, evidenceLabel };

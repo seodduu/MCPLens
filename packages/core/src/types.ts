@@ -74,6 +74,21 @@ export interface ToolDefinition {
   scannedAt: string;
 }
 
+/** 신뢰도 축 (설계문서 7장 기능 1 개정) — 수집 비용 0: 기존 is_error/response_tokens 재활용 */
+export interface ReliabilityStats {
+  errorCount: number;
+  /** callCount 0이면 null (미호출 툴은 신뢰도 판정 불가) */
+  errorRate: number | null;
+  /** 실패 호출의 응답 토큰 합 — "실패 체인 낭비" 크기 */
+  failedResponseTokens: number;
+}
+
+/** 로드 패턴 (v1 계승) — DEFERRED 세션의 tool_loads 기반 */
+export type LoadPattern =
+  | 'always-load-candidate'   // 세션 대부분에서 로드됨 → alwaysLoad 후보
+  | 'search-pollution'        // 로드되지만 호출 0회 → 검색 공간 오염 후보
+  | null;                     // 로드 기록 없음 or 판정 불가
+
 /** 분석 엔진 산출물 — 매트릭스 1행 = 툴 1개 */
 export interface MatrixRow {
   serverName: string;
@@ -84,10 +99,12 @@ export interface MatrixRow {
   loadedSessionCount: number; // DEFERRED에서 정의가 로드된 세션 수
   sessionCount: number;       // 이 서버가 연결돼 있던 세션 수(근사: 전체 세션 수)
   recommendation: Recommendation;
+  reliability: ReliabilityStats;
+  loadPattern: LoadPattern;
 }
 
 export interface Recommendation {
-  action: 'remove' | 'filter-server' | 'keep' | 'unknown';
+  action: 'remove' | 'filter-server' | 'keep' | 'unknown' | 'inspect';
   /** 모드 인지 표기: 업프론트면 "매 세션 N토큰 절약", 지연이면 "검색 공간 정리" */
   reason: string;
   evidenceLabel: '실측' | '하한 추정' | '전량 가정' | '측정 불가';

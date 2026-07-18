@@ -24,7 +24,7 @@ function formatJson(rows: MatrixRow[], savings: Savings): string {
   return JSON.stringify({ rows, savings }, null, 2);
 }
 
-const COLUMNS = ['server', 'tool', 'defTokens', 'calls', 'respTokens', 'loaded/sessions', 'action', 'reason'] as const;
+const COLUMNS = ['server', 'tool', 'defTokens', 'calls', 'respTokens', 'loaded/sessions', '실패율', '실패토큰', 'action', 'reason'] as const;
 
 function rowCells(row: MatrixRow): string[] {
   return [
@@ -34,6 +34,8 @@ function rowCells(row: MatrixRow): string[] {
     String(row.callCount),
     String(row.responseTokens),
     `${row.loadedSessionCount}/${row.sessionCount}`,
+    row.reliability.errorRate == null ? '-' : `${Math.round(row.reliability.errorRate * 100)}%`,
+    String(row.reliability.failedResponseTokens),
     row.recommendation.action,
     row.recommendation.reason,
   ];
@@ -59,8 +61,8 @@ function formatAi(rows: MatrixRow[], savings: Savings): string {
     `잠재 토큰 ${savings.potentialTokens} / 실제 사용 토큰 ${savings.actualTokens} / 절약 가능 토큰 ${savings.savedTokens}`,
   );
   lines.push('');
-  lines.push('| server | tool | defTokens | calls | respTokens | loaded/sessions | action | reason |');
-  lines.push('| --- | --- | --- | --- | --- | --- | --- | --- |');
+  lines.push('| server | tool | defTokens | calls | respTokens | loaded/sessions | 실패율 | 실패토큰 | action | reason |');
+  lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |');
   for (const row of rows) {
     lines.push(`| ${rowCells(row).join(' | ')} |`);
   }
@@ -73,6 +75,19 @@ function formatAi(rows: MatrixRow[], savings: Savings): string {
     for (const row of actionable) {
       lines.push(
         `- [${row.recommendation.action}] ${row.serverName}/${row.toolName}: ${row.recommendation.reason} (${row.recommendation.evidenceLabel})`,
+      );
+    }
+  }
+
+  const inspects = rows.filter((r) => r.recommendation.action === 'inspect');
+  lines.push('');
+  lines.push('## 불량 툴 점검 권고');
+  if (inspects.length === 0) {
+    lines.push('- 불량 툴 없음');
+  } else {
+    for (const row of inspects) {
+      lines.push(
+        `- ${row.serverName}/${row.toolName}: ${row.recommendation.reason}`,
       );
     }
   }

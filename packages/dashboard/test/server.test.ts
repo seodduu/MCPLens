@@ -69,6 +69,9 @@ describe('dashboard HTTP contract', () => {
     );
     expect(usedRow.callCount).toBe(1);
     expect(usedRow.recommendation.action).toBe('keep');
+    expect(usedRow.reliability).toBeDefined();
+    expect(usedRow.reliability.errorRate).toBe(0);
+    expect('loadPattern' in usedRow).toBe(true);
     expect(body.savings).toBeDefined();
     expect(typeof body.savings.potentialTokens).toBe('number');
   });
