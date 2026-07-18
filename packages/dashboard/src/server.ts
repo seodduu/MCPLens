@@ -74,11 +74,48 @@ function serveStatic(req: IncomingMessage, res: ServerResponse, pathname: string
   createReadStream(target).pipe(res);
 }
 
-export async function startDashboard(store: LensStore, port: number): Promise<http.Server> {
+export async function startDashboard(
+  store: LensStore,
+  port: number,
+  opts?: { watchFile?: string },
+): Promise<http.Server> {
+  // 파일 기반 store 는 장시간 구동 시 파일이 갱신되어도 sql.js 인메모리 사본이 stale 해진다.
+  // /api/* 요청 처리 전 mtime 을 확인해 변경되었으면 재오픈해 교체한다.
+  // :memory: 등 파일 백엔드가 아닌 경우(watchFile 미지정)에는 검사를 건너뛴다.
+  let current = store;
+  const watchFile = opts?.watchFile;
+  let lastMtimeMs = watchFile && existsSync(watchFile) ? statSync(watchFile).mtimeMs : null;
+
+  async function maybeReload(): Promise<void> {
+    if (!watchFile || !existsSync(watchFile)) return;
+    const mtimeMs = statSync(watchFile).mtimeMs;
+    if (lastMtimeMs !== null && mtimeMs === lastMtimeMs) return;
+    lastMtimeMs = mtimeMs;
+    const next = await LensStore.open(watchFile);
+    const prev = current;
+    current = next;
+    prev.close();
+  }
+
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
     const { pathname } = url;
 
+    if (pathname.startsWith('/api/')) {
+      maybeReload()
+        .catch(() => {})
+        .finally(() => handleApi(current, url, pathname, res));
+      return;
+    }
+
+    serveStatic(req, res, pathname);
+  });
+
+  await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
+  return server;
+}
+
+function handleApi(store: LensStore, url: URL, pathname: string, res: ServerResponse): void {
     if (pathname === '/api/matrix') {
       const since = sinceIso(parseDays(url, 30));
       const input = loadEngineInput(store, since);
@@ -103,14 +140,5 @@ export async function startDashboard(store: LensStore, port: number): Promise<ht
       return;
     }
 
-    if (pathname.startsWith('/api/')) {
-      sendJson(res, 404, { error: 'not found', path: pathname });
-      return;
-    }
-
-    serveStatic(req, res, pathname);
-  });
-
-  await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
-  return server;
+    sendJson(res, 404, { error: 'not found', path: pathname });
 }

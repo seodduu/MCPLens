@@ -6,6 +6,7 @@
   "main": "dist-server/server.js",
   "scripts": {
     "build": "vite build && tsc -p tsconfig.server.json",
+    "start": "node dist-server/start.js",
     "dev": "vite"
   },
   "dependencies": {

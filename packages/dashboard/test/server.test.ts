@@ -118,3 +118,25 @@ describe('dashboard HTTP contract', () => {
     expect([200, 404]).toContain(res.status);
   });
 });
+
+describe('dashboard with :memory: store (no watchFile → no reload path)', () => {
+  it('API 는 정상 동작하고 파일 재로딩을 시도하지 않는다', async () => {
+    const memStore = await LensStore.open(':memory:');
+    memStore.upsertDefinitions([
+      { serverName: 'github', toolName: 'search_issues', definitionTokens: 500, scannedAt: FIXED_ISO },
+    ]);
+    memStore.ingest(fakeResult());
+    // watchFile 미지정 → 파일 stat/재오픈 경로를 타지 않음
+    const srv = await startDashboard(memStore, 0);
+    const addr = srv.address() as AddressInfo;
+    try {
+      const res = await fetch(`http://127.0.0.1:${addr.port}/api/matrix`);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(Array.isArray(body.rows)).toBe(true);
+    } finally {
+      await new Promise<void>((resolve) => srv.close(() => resolve()));
+      memStore.close();
+    }
+  });
+});
