@@ -1,0 +1,15 @@
+{
+  "name": "@mcp-lens/core",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": { "build": "tsc -p tsconfig.json" },
+  "dependencies": {
+    "sql.js": "^1.11.0",
+    "js-tiktoken": "^1.0.14",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "chokidar": "^3.6.0"
+  },
+  "devDependencies": { "@types/sql.js": "^1.4.9" }
+}
