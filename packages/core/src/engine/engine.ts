@@ -120,7 +120,7 @@ function recommend(
       ? `제거 시 매 세션 약 ${t}토큰 절약`
       : `절약은 작지만 검색 공간 정리 효과`;
 
-  const pollutionSuffix = row.loadPattern === 'search-pollution' ? ' — 로드는 되나 호출 0회 — 검색 공간 오염' : '';
+  const pollutionSuffix = row.loadPattern === 'search-pollution' ? ' (로드는 되나 호출 0회 — 검색 공간 오염)' : '';
 
   if (row.callCount === 0 && row.definitionTokens != null) {
     if (server && server.total >= 10 && server.used > 0 && server.used / server.total < 0.2)
