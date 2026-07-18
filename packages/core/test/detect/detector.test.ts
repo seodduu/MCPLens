@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, utimesSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, utimesSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { ClientId } from '../../src/types.js';
@@ -100,5 +100,21 @@ describe('detectClients', () => {
     const result = detectClients(NOW, roots);
     const claude = result.find((r) => r.client === 'claude-code')!;
     expect(claude.activeWithinDays).toBe(1);
+  });
+
+  it('사라진/깨진 파일(dangling symlink)이 섞여 있어도 나머지 파일 기준으로 탐지를 계속한다', () => {
+    const root = scratchDir();
+    makeFile(path.join(root, 'valid.jsonl'), new Date('2026-07-17T00:00:00Z')); // 2 days before NOW
+    // 존재하지 않는 대상을 가리키는 깨진 심볼릭 링크 — statSync 시 ENOENT 유발
+    symlinkSync(path.join(root, 'does-not-exist.jsonl'), path.join(root, 'broken.jsonl'));
+    const roots = new Map<ClientId, string[]>([
+      ['claude-code', [root]],
+      ['codex', [path.join(scratchDir(), 'missing')]],
+      ['gemini-cli', [path.join(scratchDir(), 'missing')]],
+    ]);
+    const result = detectClients(NOW, roots);
+    const claude = result.find((r) => r.client === 'claude-code')!;
+    expect(claude.installed).toBe(true);
+    expect(claude.activeWithinDays).toBe(2); // 깨진 심볼릭 링크는 무시하고 정상 파일 기준
   });
 });

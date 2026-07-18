@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, copyFileSync, utimesSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, copyFileSync, utimesSync, readFileSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { LensStore } from '../../src/store/store.js';
@@ -62,5 +62,17 @@ describe('LogWatcher.backfill', () => {
     const r = await w.backfill();
     expect(r.files).toBe(1);
     expect(r.parseErrors).toBeGreaterThan(0);
+  });
+
+  it('사라진/깨진 파일(dangling symlink)이 섞여 있어도 나머지는 정상 적재하고 던지지 않는다', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'lens-'));
+    copyFileSync(FIXTURE, path.join(dir, 's1.jsonl'));
+    // 존재하지 않는 대상을 가리키는 깨진 심볼릭 링크 — stat/readFile 시 ENOENT 유발
+    symlinkSync(path.join(dir, 'does-not-exist.jsonl'), path.join(dir, 'broken.jsonl'));
+    const store = await LensStore.open(':memory:');
+    const w = new LogWatcher(store, [new TestClaudeAdapter(dir)]);
+    const r = await w.backfill();
+    expect(r.files).toBe(1); // 정상 파일만 카운트, 깨진 파일은 조용히 스킵
+    expect(store.callsSince('2000-01-01').length).toBeGreaterThan(0);
   });
 });
