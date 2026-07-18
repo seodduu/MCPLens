@@ -186,3 +186,13 @@ export const geminiAdapter: LogAdapter = {
     };
   },
 };
+
+// 공유 계약(LogAdapter 구현체는 class) 복원용 래퍼 — 표면들은 new GeminiAdapter()를 사용한다.
+export class GeminiAdapter implements LogAdapter {
+  readonly client = 'gemini-cli' as const;
+  sessionRoots(): string[] { return geminiAdapter.sessionRoots(); }
+  matches(filePath: string): boolean { return geminiAdapter.matches(filePath); }
+  parseFile(filePath: string, content: string): AdapterResult {
+    return geminiAdapter.parseFile(filePath, content);
+  }
+}
