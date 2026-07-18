@@ -86,7 +86,11 @@ Wave 4                      ▼
 | 1 | **4** | Task 2 Claude 어댑터 | Task 3 Codex 어댑터 | Task 4 Gemini 어댑터 | Task 5 저장소 → Task 6 스캐너 | 4개 브랜치 전부 유닛테스트 통과 → T1이 순서대로 머지 |
 | 2 | **2** (+선택 1) | Task 7 분석 엔진 | Task 8 감지기 → Task 9 워처+백필 | (선택: 대시보드 UI 목업 선행) | — | 워처가 픽스처 디렉토리 → DB 적재 E2E 통과 |
 | 3 | **4** | Task 10 CLI | Task 11 VS Code 확장 | Task 12 대시보드 | Task 13 /lens-audit 플러그인 | 각 표면이 데모 가능 |
+| 3.5 | **1** (메인) | Task 15 신뢰도 축 + 로드 패턴 (계약 확장 — 직렬 전용) | — | — | — | 확장된 매트릭스 테스트 통과 |
 | 4 | **1** | Task 14 통합 E2E + 스모크 | — | — | — | 실기기 로그로 매트릭스 출력 확인 |
+
+Wave 3.5가 직렬인 이유: `types.ts`(공유 계약) 수정을 포함하므로 병렬 트랙과 공존 불가 —
+계약 파일은 메인 터미널의 머지 커밋에서만 수정한다는 규칙(0-3)을 그대로 따른다.
 
 권장 총 터미널: **최대 4개**. 5개 이상은 이 프로젝트의 독립 단위 폭을 넘어서 머지 대기만 생긴다.
 분석 엔진(Task 7)은 types만 소비하는 순수 함수라 **일손이 남으면 Wave 1의 5번째 트랙으로 앞당겨도 안전**하다.
@@ -2067,6 +2071,149 @@ allowed-tools: Bash(npx mcp-lens *)
 
 ---
 
+## 5.5 Wave 3.5 — 직렬, 메인 터미널 (설계문서 개정 반영, 2026-07-19 추가)
+
+설계문서 7장 기능 1이 "비용 × 사용 × **신뢰도** 매트릭스"로 확장됨에 따른 추가 태스크.
+Wave 3 머지 완료 후, Wave 4 진입 전에 수행한다.
+
+**전제 확인(이미 충족)**: 신뢰도 축의 원료는 전부 수집되고 있다 —
+3사 어댑터 모두 `isError` 판별 구현(Claude `is_error` / Codex `{Err}` / Gemini `status !== 'success'`),
+store가 `is_error`·`response_tokens`·`tool_loads` 적재. **스키마·어댑터 변경 불필요.**
+따라서 이 태스크는 계약(types.ts) 확장 + 엔진 확장 + 표면 표시만 다룬다.
+
+### Task 15: 신뢰도 축 + 낭비 2분류 + 로드 패턴 분석
+
+**Files:**
+- Modify: `packages/core/src/types.ts` (계약 확장 — 메인 터미널 전용)
+- Modify: `packages/core/src/engine/engine.ts`
+- Modify: `packages/core/test/engine/engine.test.ts` (추가 테스트)
+- Modify: `packages/cli/src/report.ts` + `packages/cli/test/report.test.ts` (신뢰도 열 표시)
+- Modify: `packages/dashboard` 매트릭스 응답에 새 필드 자동 포함 (MatrixRow 직렬화라 코드 변경 최소)
+
+**Interfaces (types.ts에 추가 — 기존 필드는 불변, 추가만):**
+
+```ts
+/** 신뢰도 축 (설계문서 7장 기능 1 개정) — 수집 비용 0: 기존 is_error/response_tokens 재활용 */
+export interface ReliabilityStats {
+  errorCount: number;
+  /** callCount 0이면 null (미호출 툴은 신뢰도 판정 불가) */
+  errorRate: number | null;
+  /** 실패 호출의 응답 토큰 합 — "실패 체인 낭비" 크기 */
+  failedResponseTokens: number;
+}
+
+/** 로드 패턴 (v1 계승) — DEFERRED 세션의 tool_loads 기반 */
+export type LoadPattern =
+  | 'always-load-candidate'   // 세션 대부분에서 로드됨 → alwaysLoad 후보
+  | 'search-pollution'        // 로드되지만 호출 0회 → 검색 공간 오염 후보
+  | null;                     // 로드 기록 없음 or 판정 불가
+
+// MatrixRow에 필드 추가:
+//   reliability: ReliabilityStats;
+//   loadPattern: LoadPattern;
+// Recommendation.action에 값 추가: 'inspect' (불량 툴 — 점검·대체 권장)
+```
+
+**판정 규칙 (엔진):**
+
+| 분류 | 조건 | action | reason 형식 |
+|---|---|---|---|
+| 죽은 툴 (정의 낭비) | callCount 0 + 정의 있음 | `remove`/`filter-server` (기존 로직 유지) | 기존 유지 |
+| **불량 툴 (실패 체인 낭비)** | callCount ≥ 3 && errorRate ≥ 0.5 | **`inspect`** | `"N회 중 M회 실패(rate%), 실패 응답 K토큰 낭비 — 점검·대체 권장"` |
+| alwaysLoad 후보 | loadedSessionCount / sessionCount ≥ 0.5 && callCount > 0 | (action 불변, loadPattern만) | — |
+| 검색 공간 오염 | loads > 0 && callCount 0 | (remove/filter reason에 덧붙임) | `"로드는 되나 호출 0회 — 검색 공간 오염"` |
+
+우선순위: 불량 툴 판정(inspect)이 keep보다 우선. 죽은 툴 판정과는 상호배타(호출 유무로 갈림).
+
+- [ ] **Step 1: 엔진의 실패하는 테스트 추가** (기존 테스트는 수정 없이 통과 유지 — MatrixRow 추가 필드는 기존 assertion을 깨지 않는다)
+
+```ts
+// engine.test.ts에 추가
+describe('신뢰도 축 (설계문서 개정)', () => {
+  const errCall = (tool: string, isError: boolean, tokens = 100) => ({
+    sessionId: 's1', serverName: 'github', toolName: tool,
+    calledAt: '2026-07-10T00:00:00Z', durationMs: 10, isError,
+    responseTokens: tokens, responseText: null });
+
+  it('실패율 50% 이상 + 3회 이상 호출 → inspect (불량 툴)', () => {
+    const input: EngineInput = {
+      definitions: [def('flaky', 500)],
+      calls: [errCall('flaky', true), errCall('flaky', true), errCall('flaky', false)],
+      loads: [], sessions: [session('UPFRONT')],
+    };
+    const [row] = buildMatrix(input);
+    expect(row.recommendation.action).toBe('inspect');
+    expect(row.reliability.errorCount).toBe(2);
+    expect(row.reliability.errorRate).toBeCloseTo(2 / 3);
+    expect(row.reliability.failedResponseTokens).toBe(200);
+  });
+
+  it('호출 0회 툴의 errorRate는 null, 판정은 기존 remove 유지', () => {
+    const input: EngineInput = {
+      definitions: [def('unused', 800)], calls: [], loads: [],
+      sessions: [session('UPFRONT')],
+    };
+    const [row] = buildMatrix(input);
+    expect(row.reliability.errorRate).toBeNull();
+    expect(row.recommendation.action).toBe('remove');
+  });
+
+  it('2회 실패는 표본 부족 → inspect 아님 (keep 유지)', () => {
+    const input: EngineInput = {
+      definitions: [def('rare', 300)],
+      calls: [errCall('rare', true), errCall('rare', true)],
+      loads: [], sessions: [session('UPFRONT')],
+    };
+    expect(buildMatrix(input)[0].recommendation.action).toBe('keep');
+  });
+});
+
+describe('로드 패턴 (v1 계승)', () => {
+  it('과반 세션에서 로드 + 호출 있음 → always-load-candidate', () => {
+    const input: EngineInput = {
+      definitions: [def('hot', 400)],
+      calls: [call('hot')],
+      loads: [
+        { sessionId: 's1', serverName: 'github', toolName: 'hot', loadedTokens: null },
+        { sessionId: 's2', serverName: 'github', toolName: 'hot', loadedTokens: null },
+      ],
+      sessions: [session('DEFERRED_MEASURABLE'),
+        { ...session('DEFERRED_MEASURABLE'), sessionId: 's2' }],
+    };
+    expect(buildMatrix(input)[0].loadPattern).toBe('always-load-candidate');
+  });
+
+  it('로드되나 호출 0회 → search-pollution + reason에 오염 표기', () => {
+    const input: EngineInput = {
+      definitions: [def('noise', 600)], calls: [],
+      loads: [{ sessionId: 's1', serverName: 'github', toolName: 'noise', loadedTokens: null }],
+      sessions: [session('DEFERRED_MEASURABLE')],
+    };
+    const [row] = buildMatrix(input);
+    expect(row.loadPattern).toBe('search-pollution');
+    expect(row.recommendation.reason).toContain('검색 공간 오염');
+  });
+});
+```
+
+- [ ] **Step 2: types.ts 계약 확장** — 위 Interfaces 블록대로 `ReliabilityStats`·`LoadPattern` 추가, `MatrixRow`에 `reliability`/`loadPattern` 필드 추가, `Recommendation.action` 유니언에 `'inspect'` 추가. **기존 필드·이름 변경 금지 (추가만).**
+
+- [ ] **Step 3: 엔진 구현** — `buildMatrix`의 행 집계에 에러 카운트·실패 토큰 누적 추가, `recommend()`에 불량 툴 분기(표의 조건·우선순위), `baseRow`에 기본값(`reliability: {errorCount:0, errorRate:null, failedResponseTokens:0}`, `loadPattern: null`), 로드 패턴 판정 추가. 임계값은 파일 상단 상수로: `INSPECT_MIN_CALLS = 3`, `INSPECT_ERROR_RATE = 0.5`, `ALWAYS_LOAD_SESSION_RATIO = 0.5`.
+
+- [ ] **Step 4: 전체 테스트 통과 확인** — 기존 엔진 테스트 + 신규 5개 전부 PASS
+
+- [ ] **Step 5: CLI 표면 반영** — `report.ts` 테이블에 `실패율`·`실패토큰` 열 추가, `--format ai` 출력에 inspect 권고 섹션 추가. 테스트: inspect 행이 ai 포맷에 나타나는지 1케이스 추가.
+
+- [ ] **Step 6: 대시보드 확인** — `/api/matrix`는 MatrixRow 직렬화이므로 새 필드가 자동 포함되는지 서버 테스트의 기대 JSON에 필드 존재 assertion만 추가. React 표시(inspect=노랑 배지)는 선택 — 시간 없으면 Wave 4 이후로 이월 가능.
+
+- [ ] **Step 7: Commit** — `git commit -m "feat: reliability axis, dead/faulty tool classification, load patterns (design doc rev)"`
+
+**알려진 한계 (리포트에 명시할 것):**
+- Claude의 `responseTokens`는 null(실측 분리 불가)이라 failedResponseTokens가 Claude 세션에서는 0으로 잡힌다 — 실패 **횟수**·비율은 정확하고, 실패 토큰은 Codex/Gemini에서만 실측.
+- Gemini 픽스처에 에러 케이스가 없어 Gemini의 isError 경로는 유닛테스트 커버리지 밖 — Wave 4 스모크에서 확인.
+
+---
+
 ## 6. Wave 4 — 직렬, 터미널 1개
 
 ### Task 14: 통합 E2E + 실기기 스모크
@@ -2112,6 +2259,8 @@ it('3개 클라이언트 로그가 하나의 매트릭스로 통합된다', asyn
   2. 스캐너 실서버: `~/.claude.json`의 실제 서버 1개로 `scanServer` 실행 → definitions가 DB에 적재되고 리포트의 `정의 토큰` 열이 채워지는가
   3. F5 확장: 상태바 → showReport → 새 Claude Code 세션을 하나 굴려 툴콜 발생 → 상태바 숫자가 갱신되는가 (라이브 반영 — 기능 2)
   4. 대시보드: 매트릭스에 remove 권고가 실데이터로 나타나는가 — **발표 시연 시나리오 그대로**
+     + Task 15 확장 검증: 신뢰도 열(실패율·실패토큰)이 채워지는가, Codex 픽스처 세션의
+     Err 호출이 inspect 후보 집계에 잡히는가, Gemini 실세션에서 isError 경로가 동작하는가
   5. `/lens-audit` — 요약이 컨텍스트에 올라오는가
 - [ ] **Step 3: 결과를 docs/SMOKE.md에 기록 후 Commit** — `git commit -m "test: e2e pipeline + smoke record"`
 
@@ -2119,6 +2268,6 @@ it('3개 클라이언트 로그가 하나의 매트릭스로 통합된다', asyn
 
 ## 7. Self-Review 결과 (계획 검증)
 
-- **설계문서 커버리지**: MVP 4종 — 기능 1(Task 6·7·10), 기능 2(Task 9·11), 기능 3(Task 12), 기능 4(Task 13) ✅. 구현 제약 3종 → 전역 제약에 반영 ✅. Tier 2·3 프록시, OpenCode, 훅 트리거 채널, 세션 리플레이는 설계문서 9장 로드맵대로 **의도적 제외** (훅 트리거는 MVP에서 chokidar 폴백으로 대체 — 설계문서도 Gemini에 대해 같은 폴백을 명시).
+- **설계문서 커버리지**: MVP 4종 — 기능 1(Task 6·7·10 + **개정분은 Task 15**: 신뢰도 축·2분류 판정·로드 패턴), 기능 2(Task 9·11), 기능 3(Task 12), 기능 4(Task 13) ✅. 구현 제약 3종 → 전역 제약에 반영 ✅. Tier 2·3 프록시, OpenCode, 훅 트리거 채널, 세션 리플레이는 설계문서 9장 로드맵대로 **의도적 제외** (훅 트리거는 MVP에서 chokidar 폴백으로 대체 — 설계문서도 Gemini에 대해 같은 폴백을 명시).
 - **타입 일관성**: `AdapterResult`/`LensStore.ingest`/`EngineInput`/`MatrixRow`의 필드명이 태스크 간 일치함을 교차 확인 ✅.
 - **알려진 불확실성 (구현자에게)**: Claude의 `tool_reference` 정확한 레코드 형태, Codex `token_count`의 턴별 필드명, Gemini 레코드의 토큰 분해 필드명은 **픽스처가 진실이다**. 코드 주석에 적어둔 후보 중 픽스처와 일치하는 쪽으로 확정하고, 계약(types.ts)은 손대지 마라.
