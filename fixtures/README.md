@@ -21,7 +21,8 @@
 설계문서 4-2 "모드는 세션 단위 속성"의 실증). 이 파일은 mcp__ 문자열이 `attachment` 레코드
 (툴 정의 델타)에만 있고 실제 MCP 호출·ToolSearch가 없는 일반 세션이다.
 어댑터 파싱 시 기대 결과: toolCalls=0, toolLoads=0, mode=`DEFERRED_OPAQUE`.
-용도: 파싱 강건성(깨진 줄) 테스트. Task 2 테스트 중 이 파일로 UPFRONT 모드를 검증하는 부분이 있다면
+용도: 파싱 강건성 테스트의 베이스 파일 (이 파일 자체에 깨진 줄은 없다 — Task 2 테스트가
+`'not-json\n' + 픽스처` 로 깨진 줄을 직접 앞에 붙여 검증한다). Task 2 테스트 중 이 파일로 UPFRONT 모드를 검증하는 부분이 있다면
 **테스트 기대값을 DEFERRED_OPAQUE로 수정**해야 한다 (픽스처가 진실).
 
 ## codex/rollout-codemode.jsonl (97KB) — DEFERRED_MEASURABLE (코드 모드), lenstest 실험 세션
