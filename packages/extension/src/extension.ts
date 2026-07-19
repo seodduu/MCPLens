@@ -35,7 +35,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
         loads: store!.loadsSince(since), sessions: store!.sessionsSince(since) };
       const rows = buildMatrix(input);
       const doc = rows.map((r) =>
-        `${r.serverName}/${r.toolName}: ${r.callCount}회, 정의 ${r.definitionTokens ?? '?'}tok → ${r.recommendation.action} (${r.recommendation.reason})`).join('\n');
+        `${r.serverName}/${r.toolName}: ${r.callCount}회, 응답 ${r.responseTokens}tok, 정의 ${r.definitionTokens ?? '?'}tok → ${r.recommendation.action} (${r.recommendation.reason})`).join('\n');
       vscode.workspace.openTextDocument({ content: doc, language: 'markdown' })
         .then((d) => vscode.window.showTextDocument(d));
     }));
