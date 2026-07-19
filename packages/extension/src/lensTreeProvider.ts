@@ -22,7 +22,11 @@ export class LensTreeProvider implements vscode.TreeDataProvider<LensNode> {
     item.description = n.description;
     item.tooltip = n.tooltip;
     if (n.kind === 'client') item.iconPath = new vscode.ThemeIcon('device-desktop');
-    else if (n.kind === 'server') item.iconPath = new vscode.ThemeIcon('server');
+    else if (n.kind === 'server') {
+      item.iconPath = new vscode.ThemeIcon(n.enabled === false ? 'close' : 'server');
+      if (n.enabled === true) item.contextValue = 'mcpServer-enabled';
+      else if (n.enabled === false) item.contextValue = 'mcpServer-disabled';
+    }
     else if (n.enabled === false) {
       item.iconPath = new vscode.ThemeIcon('close');
       item.contextValue = 'mcpTool-disabled';

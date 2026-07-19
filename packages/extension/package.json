@@ -29,12 +29,22 @@
       {
         "command": "mcp-lens.addTool",
         "title": "Add (차단 해제)"
+      },
+      {
+        "command": "mcp-lens.removeServer",
+        "title": "Remove (서버 전체 차단)"
+      },
+      {
+        "command": "mcp-lens.addServer",
+        "title": "Add (서버 차단 해제)"
       }
     ],
     "menus": {
       "commandPalette": [
         { "command": "mcp-lens.removeTool", "when": "false" },
-        { "command": "mcp-lens.addTool", "when": "false" }
+        { "command": "mcp-lens.addTool", "when": "false" },
+        { "command": "mcp-lens.removeServer", "when": "false" },
+        { "command": "mcp-lens.addServer", "when": "false" }
       ],
       "view/item/context": [
         {
@@ -44,6 +54,14 @@
         {
           "command": "mcp-lens.addTool",
           "when": "view == mcpLens.matrix && viewItem == mcpTool-disabled"
+        },
+        {
+          "command": "mcp-lens.removeServer",
+          "when": "view == mcpLens.matrix && viewItem == mcpServer-enabled"
+        },
+        {
+          "command": "mcp-lens.addServer",
+          "when": "view == mcpLens.matrix && viewItem == mcpServer-disabled"
         }
       ]
     },
