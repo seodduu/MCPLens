@@ -13,6 +13,11 @@ export interface LensNode {
   children: LensNode[];
 }
 
+/** 성공은 기본값 — 실패가 있을 때만 괄호로 표기 */
+function fmtCalls(calls: number, errors: number): string {
+  return errors > 0 ? `${calls}회(실패 ${errors})` : `${calls}회`;
+}
+
 export function buildTree(input: EngineInput): LensNode[] {
   return splitByClient(input).map(({ client, input: sub }) => {
     const rows = buildMatrix(sub)
@@ -26,22 +31,26 @@ export function buildTree(input: EngineInput): LensNode[] {
       kind: 'server',
       id: `${client}/${server}`,
       label: server,
-      description: `${rs.reduce((s, r) => s + r.callCount, 0)}회 · ${rs.reduce((s, r) => s + r.responseTokens, 0)}tok`,
+      description: `${fmtCalls(
+        rs.reduce((s, r) => s + r.callCount, 0),
+        rs.reduce((s, r) => s + r.reliability.errorCount, 0),
+      )} · ${rs.reduce((s, r) => s + r.responseTokens, 0)}tok`,
       children: rs.map((r): LensNode => ({
         kind: 'tool',
         id: `${client}/${server}/${r.toolName}`,
         label: r.toolName,
-        description: `${r.callCount}회 · ${r.responseTokens}tok · ${r.recommendation.action}`,
+        description: `${fmtCalls(r.callCount, r.reliability.errorCount)} · ${r.responseTokens}tok · ${r.recommendation.action}`,
         tooltip: r.recommendation.reason,
         action: r.recommendation.action,
         children: [],
       })),
     }));
     const totalCalls = rows.reduce((s, r) => s + r.callCount, 0);
+    const totalErrors = rows.reduce((s, r) => s + r.reliability.errorCount, 0);
     const totalTokens = rows.reduce((s, r) => s + r.responseTokens, 0);
     return {
       kind: 'client' as const, id: client, label: client,
-      description: `세션 ${sub.sessions.length}개 · 총 ${totalCalls}회 · ${totalTokens}tok`,
+      description: `세션 ${sub.sessions.length}개 · 총 ${fmtCalls(totalCalls, totalErrors)} · ${totalTokens}tok`,
       children: servers,
     };
   });

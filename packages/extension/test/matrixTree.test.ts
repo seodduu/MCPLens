@@ -58,3 +58,25 @@ describe('집계 표시', () => {
     expect(server.description).toBe('2회 · 100tok');
   });
 });
+
+describe('실패 표기 (실패만 괄호로)', () => {
+  const input: EngineInput = {
+    definitions: [],
+    calls: [call('c1', 'github', 'flaky', true), call('c1', 'github', 'flaky', true),
+            call('c1', 'github', 'ok')],
+    loads: [],
+    sessions: [session('c1', 'claude-code')],
+  };
+  it('실패 있는 툴/서버/클라이언트는 (실패 N) 표기', () => {
+    const client = buildTree(input)[0];
+    expect(client.description).toContain('총 3회(실패 2)');
+    expect(client.children[0].description).toContain('3회(실패 2)');
+    const flaky = client.children[0].children.find((t) => t.label === 'flaky')!;
+    expect(flaky.description).toContain('2회(실패 2)');
+  });
+  it('실패 0인 툴은 괄호 없이 깔끔하게', () => {
+    const ok = buildTree(input)[0].children[0].children.find((t) => t.label === 'ok')!;
+    expect(ok.description).toContain('1회 ·');
+    expect(ok.description).not.toContain('실패');
+  });
+});
