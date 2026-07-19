@@ -62,6 +62,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
           `${node.serverName}/${node.toolName} 차단됨 — 새 Claude Code 세션부터 적용됩니다.`);
       } else {
         allowMcpTool(claudeSettingsPath(), node.serverName, node.toolName);
+        void vscode.window.showInformationMessage(
+          `${node.serverName}/${node.toolName} 차단 해제됨 — 새 Claude Code 세션부터 적용됩니다.`);
       }
     } catch (e) {
       void vscode.window.showErrorMessage(
