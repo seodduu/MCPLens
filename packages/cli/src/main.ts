@@ -4,17 +4,21 @@ import { readFileSync } from 'node:fs';
 import { LensStore, LogWatcher, buildMatrix, sessionSavings, dbPath,
   scanServer, ClaudeAdapter, CodexAdapter, GeminiAdapter,
   collectAllSpecs, configSources, collectFromSource,
+  authenticateServer, clearStoredOAuth,
   type McpServerSpec } from '@mcp-lens/core';
 import { formatReport } from './report.js';
 import { collectServerSpecs } from './scan-config.js';
 import { scanFailureLine, formatSourceCounts } from './scan-report.js';
+import { openUrl } from './auth-open.js';
+import { resolveAuthTarget } from './auth-target.js';
 
 async function main() {
   const args = process.argv.slice(2);
   const cmd = args[0] ?? 'report';
   if (cmd === 'scan') { await runScan(args); return; }
+  if (cmd === 'auth') { await runAuth(args); return; }
   if (cmd !== 'report') {
-    console.error(`unknown command: ${cmd} (expected 'report' or 'scan')`);
+    console.error(`unknown command: ${cmd} (expected 'report', 'scan' or 'auth')`);
     process.exit(1);
   }
   await runReport(args);
@@ -98,6 +102,54 @@ async function runScan(args: string[]) {
   }
   store.save();
   store.close();
+}
+
+/** `mcp-lens auth <serverName> [--clear]` — http 서버 OAuth 로그인 후 즉시 1개 서버만 스캔·적재. */
+async function runAuth(args: string[]) {
+  const rest = args.slice(1);
+  const clear = rest.includes('--clear');
+  const name = rest.find((a) => !a.startsWith('--'));
+
+  if (!name) {
+    console.log('사용법: mcp-lens auth <serverName> [--clear]');
+    process.exit(1);
+    return;
+  }
+
+  if (clear) {
+    clearStoredOAuth(name);
+    console.log(`${name}: 저장된 인증 정보를 삭제했습니다.`);
+    return;
+  }
+
+  const { specs } = collectAllSpecs();
+  const target = resolveAuthTarget(specs, name);
+  if (!target.ok) {
+    console.log(target.message);
+    process.exit(1);
+    return;
+  }
+
+  try {
+    await authenticateServer(target.spec, { openUrl });
+  } catch (e) {
+    console.log(`${name}: 로그인 실패 — ${(e as Error).message}`);
+    process.exit(1);
+    return;
+  }
+
+  const store = await LensStore.open(dbPath());
+  try {
+    const defs = await scanServer(target.spec);
+    store.upsertDefinitions(defs);
+    const total = defs.reduce((n, d) => n + d.definitionTokens, 0);
+    console.log(`${name}: 로그인 완료, 툴 ${defs.length}개 · ${total}토큰`);
+    store.save();
+  } catch (e) {
+    console.log(scanFailureLine(name, e as Error));
+  } finally {
+    store.close();
+  }
 }
 
 function argValue(args: string[], flag: string): string | undefined {

@@ -2,7 +2,7 @@
 /** scan 서버별 실패 메시지 포맷. auth-required 오류는 전용 안내 문구로 표기. */
 export function scanFailureLine(name: string, err: Error): string {
   if (err.message.includes('auth-required')) {
-    return `- ${name}: 인증 필요 — 스킵 (OAuth 지원은 로드맵)`;
+    return `- ${name}: 인증 필요 — 스킵 (npx mcp-lens auth ${name} 로 로그인)`;
   }
   return `- ${name}: 스캔 실패 — ${err.message}`;
 }
