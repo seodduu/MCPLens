@@ -2,7 +2,8 @@ import * as vscode from 'vscode';
 import * as path from 'node:path';
 import { LensStore, LogWatcher, buildMatrix, splitByClient, visibleMatrixRows, sessionSavings, dbPath,
   detectClients, ClaudeAdapter, CodexAdapter, GeminiAdapter,
-  claudeSettingsPath, readDeniedMcpTools, denyMcpTool, allowMcpTool } from '@mcp-lens/core';
+  claudeSettingsPath, readDeniedMcpTools, denyMcpTool, allowMcpTool,
+  defaultClaudeConfigPaths, listManagedServers, disableServer, enableServer, type ManagedServer } from '@mcp-lens/core';
 import { formatStatus } from './statusBar.js';
 import { buildTree } from './matrixTree.js';
 import type { LensNode } from './matrixTree.js';
@@ -34,12 +35,17 @@ export async function activate(ctx: vscode.ExtensionContext) {
     try { return readDeniedMcpTools(claudeSettingsPath()); }
     catch { return new Set(); } // 깨진 settings.json — 표시는 계속, 쓰기 시점에 에러 안내
   };
+  const configPaths = defaultClaudeConfigPaths();
+  const listManagedSafe = (): ManagedServer[] => {
+    try { return listManagedServers(configPaths); }
+    catch { return []; } // 수집 실패 — 표시는 계속
+  };
   const refresh = () => {
     const since = sinceIso();
     const input = { definitions: store!.allDefinitions(), calls: store!.callsSince(since),
       loads: store!.loadsSince(since), sessions: store!.sessionsSince(since) };
     item.text = formatStatus(input.calls.length, sessionSavings(input).savedTokens);
-    treeProvider.setRoots(buildTree(input, readDeniedSafe()));
+    treeProvider.setRoots(buildTree(input, readDeniedSafe(), listManagedSafe()));
   };
   await watcher.backfill(); // 시작 시 밀린 세션 따라잡기 (기능 2)
   refresh();
@@ -74,6 +80,42 @@ export async function activate(ctx: vscode.ExtensionContext) {
   ctx.subscriptions.push(
     vscode.commands.registerCommand('mcp-lens.removeTool', (n: LensNode) => toggleTool(n, 'deny')),
     vscode.commands.registerCommand('mcp-lens.addTool', (n: LensNode) => toggleTool(n, 'allow')));
+
+  // 서버 단위 토글: 설정 파일들이 원본 — 커맨드는 파일만 수정, 워처가 트리에 반영
+  const toggleServer = async (node: LensNode, action: 'disable' | 'enable') => {
+    if (node?.kind !== 'server' || !node.serverName) return;
+    try {
+      if (action === 'disable') {
+        const pick = await vscode.window.showWarningMessage(
+          `${node.serverName} 서버를 Claude Code에서 차단할까요? 서버 연결과 툴 정의 로드가 모두 중단됩니다.`,
+          { modal: true }, '차단');
+        if (pick !== '차단') return;
+        disableServer(configPaths, node.serverName);
+        void vscode.window.showInformationMessage(
+          `${node.serverName} 서버 차단됨 — 새 Claude Code 세션부터 적용됩니다.`);
+      } else {
+        enableServer(configPaths, node.serverName);
+        void vscode.window.showInformationMessage(
+          `${node.serverName} 서버 차단 해제됨 — 새 Claude Code 세션부터 적용됩니다.`);
+      }
+    } catch (e) {
+      void vscode.window.showErrorMessage(
+        `서버 설정을 수정하지 못했습니다: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    refresh();
+  };
+  ctx.subscriptions.push(
+    vscode.commands.registerCommand('mcp-lens.removeServer', (n: LensNode) => toggleServer(n, 'disable')),
+    vscode.commands.registerCommand('mcp-lens.addServer', (n: LensNode) => toggleServer(n, 'enable')));
+
+  const watchFile = (absPath: string) => {
+    const w = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(vscode.Uri.file(path.dirname(absPath)), path.basename(absPath)));
+    w.onDidChange(refresh); w.onDidCreate(refresh); w.onDidDelete(refresh);
+    ctx.subscriptions.push(w);
+  };
+  watchFile(configPaths.claudeJsonPath); // ~/.claude.json
+  watchFile(configPaths.stashPath);      // ~/.mcplens/disabled-servers.json
 
   const settingsDir = vscode.Uri.file(path.dirname(claudeSettingsPath()));
   const settingsWatcher = vscode.workspace.createFileSystemWatcher(
