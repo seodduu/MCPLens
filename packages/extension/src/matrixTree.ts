@@ -10,6 +10,12 @@ export interface LensNode {
   tooltip?: string;
   /** 'inspect'|'remove' 등 — 래퍼가 아이콘 선택에 사용 */
   action?: MatrixRow['recommendation']['action'];
+  /** deny 토글용 — 툴 노드에만 채움 */
+  client?: string;
+  serverName?: string;
+  toolName?: string;
+  /** claude-code 하위 툴에만 존재. false = deny됨(✕) */
+  enabled?: boolean;
   children: LensNode[];
 }
 
@@ -18,7 +24,7 @@ function fmtCalls(calls: number, errors: number): string {
   return errors > 0 ? `${calls}회(실패 ${errors})` : `${calls}회`;
 }
 
-export function buildTree(input: EngineInput): LensNode[] {
+export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set()): LensNode[] {
   return splitByClient(input).map(({ client, input: sub }) => {
     // 모드 인지 표시: 지연 로딩 클라이언트에서는 실비용 0인 미사용 툴을 숨긴다
     const rows = visibleMatrixRows(buildMatrix(sub), sub.sessions);

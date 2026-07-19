@@ -1,0 +1,7 @@
+{
+  "model": "opus",
+  "permissions": {
+    "allow": ["Bash(npm run *)"],
+    "deny": ["mcp__github__search", "Read(.env)"]
+  }
+}
