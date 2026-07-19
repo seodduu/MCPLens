@@ -4,7 +4,7 @@ import { scanFailureLine, formatSourceCounts } from '../src/scan-report.js';
 describe('scanFailureLine', () => {
   it('auth-required 오류는 인증 필요 안내로 표기한다', () => {
     const line = scanFailureLine('remote-http', new Error('auth-required: 401 from server'));
-    expect(line).toBe('- remote-http: 인증 필요 — 스킵 (OAuth 지원은 로드맵)');
+    expect(line).toBe('- remote-http: 인증 필요 — 스킵 (npx mcp-lens auth remote-http 로 로그인)');
   });
 
   it('그 외 오류는 일반 실패 메시지를 표기한다', () => {
