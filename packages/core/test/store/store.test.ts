@@ -48,4 +48,23 @@ describe('LensStore', () => {
     expect(s2.callsSince('2026-01-01')).toHaveLength(2);
     s2.close();
   });
+
+  it('loadsSince는 세션 시작일로 기간 필터한다 (M6)', async () => {
+    const s = await LensStore.open(':memory:');
+    const old = fakeResult('old'); old.session.startedAt = '2026-01-01T00:00:00Z';
+    old.toolLoads = [{ sessionId: 'old', serverName: 'github', toolName: 'a', loadedTokens: 10 }];
+    const recent = fakeResult('recent'); recent.session.startedAt = '2026-07-01T00:00:00Z';
+    recent.toolLoads = [{ sessionId: 'recent', serverName: 'github', toolName: 'b', loadedTokens: 20 }];
+    s.ingest(old); s.ingest(recent);
+    const loads = s.loadsSince('2026-06-01');
+    expect(loads.map((l) => l.toolName)).toEqual(['b']); // old는 제외
+  });
+
+  it('startedAt이 null인 세션의 로드는 보수적으로 포함한다', async () => {
+    const s = await LensStore.open(':memory:');
+    const r = fakeResult('x'); r.session.startedAt = null;
+    r.toolLoads = [{ sessionId: 'x', serverName: 'g', toolName: 't', loadedTokens: 5 }];
+    s.ingest(r);
+    expect(s.loadsSince('2026-06-01')).toHaveLength(1);
+  });
 });

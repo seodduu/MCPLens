@@ -92,8 +92,12 @@ export class LensStore {
       responseTokens: r.response_tokens as number | null, responseText: null,
     }));
   }
-  loadsSince(_iso: string): ToolLoadEvent[] {
-    return this.select('SELECT * FROM tool_loads', []).map((r) => ({
+  loadsSince(iso: string): ToolLoadEvent[] {
+    return this.select(
+      `SELECT l.* FROM tool_loads l
+       JOIN sessions s ON s.session_id = l.session_id
+       WHERE s.started_at IS NULL OR s.started_at >= ?`, [iso]
+    ).map((r) => ({
       sessionId: r.session_id as string, serverName: r.server_name as string | null,
       toolName: r.tool_name as string, loadedTokens: r.loaded_tokens as number | null,
     }));

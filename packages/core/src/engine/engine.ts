@@ -79,13 +79,21 @@ export function sessionSavings(input: EngineInput) {
   const potentialTokens = input.definitions.reduce((s, d) => s + d.definitionTokens, 0);
   const defTokens = new Map(input.definitions.map(
     (d) => [`${d.serverName} ${d.toolName}`, d.definitionTokens]));
-  const loadedKeys = new Set(input.loads.map((l) => `${l.serverName ?? ''} ${l.toolName}`));
+  // 키(서버/툴) 단위로 택일: 직접 기록(loadedTokens)이 있으면 그 값, 없으면 정의 조인값.
+  // 정의가 없는 서버(스캔 미커버)의 로드는 비교집합 밖 — 제외 (potentialTokens와 집합 일치).
+  const perKey = new Map<string, number>();
+  for (const l of input.loads) {
+    const k = `${l.serverName ?? ''} ${l.toolName}`;
+    if (!defTokens.has(k)) continue;
+    const joined = defTokens.get(k)!;
+    const v = l.loadedTokens != null && l.loadedTokens > 0 ? l.loadedTokens : joined;
+    const prev = perKey.get(k);
+    if (prev === undefined || v > prev) perKey.set(k, v);
+  }
   let actualTokens = 0;
-  for (const k of loadedKeys) actualTokens += defTokens.get(k) ?? 0;
-  // Codex처럼 loadedTokens가 직접 기록된 경우는 그 값을 우선
-  const direct = input.loads.reduce((s, l) => s + (l.loadedTokens ?? 0), 0);
-  actualTokens = Math.max(actualTokens, direct);
-  return { potentialTokens, actualTokens, savedTokens: potentialTokens - actualTokens };
+  for (const v of perKey.values()) actualTokens += v;
+  return { potentialTokens, actualTokens,
+    savedTokens: Math.max(0, potentialTokens - actualTokens) };
 }
 
 function baseRow(serverName: string, toolName: string, definitionTokens: number | null): MatrixRow {

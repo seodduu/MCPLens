@@ -130,6 +130,49 @@ describe('sessionSavings', () => {
   });
 });
 
+describe('sessionSavings 재설계 (M5 + 비교집합)', () => {
+  it('스캔 안 된 서버의 로드는 실비용에서 제외한다 (비교집합 일치)', () => {
+    const input: EngineInput = {
+      definitions: [def('a', 500)], // github/a만 스캔됨
+      calls: [],
+      loads: [
+        { sessionId: 's1', serverName: 'github', toolName: 'a', loadedTokens: null },
+        { sessionId: 's1', serverName: 'unscanned', toolName: 'x', loadedTokens: 9999 }, // 제외돼야
+      ],
+      sessions: [session('DEFERRED_MEASURABLE')],
+    };
+    const s = sessionSavings(input);
+    expect(s.potentialTokens).toBe(500);
+    expect(s.actualTokens).toBe(500);  // a의 조인값만
+    expect(s.savedTokens).toBe(0);
+  });
+
+  it('조인 기반과 직접 기록은 max가 아니라 키 단위로 택일해 합산한다 (M5)', () => {
+    const input: EngineInput = {
+      definitions: [def('a', 500), def('b', 700)],
+      calls: [],
+      loads: [
+        { sessionId: 's1', serverName: 'github', toolName: 'a', loadedTokens: null }, // 조인 → 500
+        { sessionId: 's1', serverName: 'github', toolName: 'b', loadedTokens: 650 },  // 직접 → 650 (조인 700보다 직접 우선)
+      ],
+      sessions: [session('DEFERRED_MEASURABLE')],
+    };
+    const s = sessionSavings(input);
+    expect(s.actualTokens).toBe(1150); // 500 + 650 — max(700,650)도 max(500,650)도 아님
+    expect(s.savedTokens).toBe(50);    // 1200 − 1150
+  });
+
+  it('절감은 음수가 되지 않는다 (안전망)', () => {
+    const input: EngineInput = {
+      definitions: [def('a', 100)],
+      calls: [],
+      loads: [{ sessionId: 's1', serverName: 'github', toolName: 'a', loadedTokens: 250 }],
+      sessions: [session('DEFERRED_MEASURABLE')],
+    };
+    expect(sessionSavings(input).savedTokens).toBe(0); // max(0, 100−250)
+  });
+});
+
 describe('splitByClient', () => {
   it('세션의 클라이언트별로 calls/loads가 분할되고 definitions는 공유된다', () => {
     const input: EngineInput = {
