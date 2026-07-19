@@ -2,6 +2,12 @@
 
 | # | 항목 | 내용 | 발화 조건 |
 |---|---|---|---|
+| R1 | 설정 소스 3사 확장 | 스캔·자동스캔이 `~/.claude.json`만 읽음 — Codex `config.toml`, Gemini `settings.json`, 프로젝트 `.mcp.json` 파서 추가 필요 | 파서만 추가하면 스캔·저장·조인은 재사용 |
+| R2 | http 원격 서버 스캔 | SDK http 전송으로 url 서버도 tools/list 가능 (인증 필요 서버는 한계) | `?` 축소 |
+| R3 | 서버 지시문 토큰 채굴 | Claude 로그 `mcp_instructions_delta.addedBlocks`에 서버 지시문 원문 기록됨 — tiktoken으로 세면 서버당 부분 비용 추가 가능. **주의: 툴 단위 정의는 로그에 없음** (2026-07-20 전수 조사로 확정 — "로그 채굴로 툴 `?` 채우기"는 불가) | 원격·내장 서버의 비용 축 부분 보완 |
+
+| # | 항목 | 내용 | 발화 조건 |
+|---|---|---|---|
 | ~~M4~~ | ~~엔진 row 합집합에 loads 미포함~~ | **해결됨 (2026-07-19)** — row 합집합에 loads 추가 (serverName null 로드는 제외). 실데이터 확인: 현재 로드-온리 MCP 툴은 0건 (null-서버 로드는 전부 내장 툴이라 MCP 범위 밖) | — |
 | M5 | sessionSavings 혼합 클라이언트 과소계상 | actualTokens = max(이름조인합, 직접기록합) — Claude(조인)와 Codex(직접)가 공존하면 합이 아니라 max라 절감량 과대표시 | 단일 클라이언트에선 정확. 키 겹침 없는 합산으로 교체 |
 | M6 | loadsSince가 날짜 인자 무시 | tool_loads에 타임스탬프 컬럼이 없어 전 기간 로드가 집계됨 (calls/sessions는 필터됨) | sessions 조인으로 기간 필터 추가 또는 한계 문서화 |
