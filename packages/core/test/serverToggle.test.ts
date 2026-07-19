@@ -51,7 +51,8 @@ describe('listManagedServers', () => {
     put('broken.json', paths.claudeJsonPath);
     put('mcp-project.json', paths.mcpJsonPaths[0]);
     const names = listManagedServers(paths).map((m) => m.name);
-    expect(names).toEqual(['shared-db']);
+    expect(names).toHaveLength(1);
+    expect(names).toContain('shared-db');
   });
 });
 
@@ -139,5 +140,86 @@ describe('enableServer', () => {
   it('어디에도 없는 서버는 no-op (멱등)', () => {
     expect(() => enableServer(paths, 'ghost')).not.toThrow();
     expect(fs.existsSync(paths.claudeJsonPath)).toBe(false);
+  });
+});
+
+describe('strict-write 순서 보장 (모든 쓰기 대상을 쓰기 전에 먼저 읽는다)', () => {
+  it('enableServer: settings.json이 깨져 있으면 throw + claude.json·스태시 모두 미변경', () => {
+    put('claude-user.json', paths.claudeJsonPath);
+    disableServer(paths, 'lenstest'); // 스태시에 이동시켜 둔다
+    const cjBefore = fs.readFileSync(paths.claudeJsonPath, 'utf8');
+    const stashBefore = fs.readFileSync(paths.stashPath, 'utf8');
+    put('broken.json', paths.settingsPath);
+
+    expect(() => enableServer(paths, 'lenstest')).toThrow();
+
+    expect(fs.readFileSync(paths.claudeJsonPath, 'utf8')).toBe(cjBefore);
+    expect(fs.readFileSync(paths.stashPath, 'utf8')).toBe(stashBefore);
+  });
+
+  it('disableServer: claude.json과 .mcp.json 양쪽에 있는 이름 + 깨진 settings.json → throw + claude.json·스태시 모두 미변경', () => {
+    fs.writeFileSync(paths.claudeJsonPath, JSON.stringify({
+      mcpServers: { dualserver: { command: 'node', args: ['dual.js'] } },
+    }));
+    fs.writeFileSync(paths.mcpJsonPaths[0], JSON.stringify({
+      mcpServers: { dualserver: { command: 'npx', args: ['dual-mcp'] } },
+    }));
+    put('broken.json', paths.settingsPath);
+    const cjBefore = fs.readFileSync(paths.claudeJsonPath, 'utf8');
+
+    expect(() => disableServer(paths, 'dualserver')).toThrow();
+
+    expect(fs.readFileSync(paths.claudeJsonPath, 'utf8')).toBe(cjBefore);
+    expect(fs.existsSync(paths.stashPath)).toBe(false);
+  });
+});
+
+describe('disableServer — 크래시 복구 (스태시-먼저 순서의 중간 상태)', () => {
+  it('스태시엔 이미 있지만 claude.json엔 아직 남아있는 경우 재호출로 claude.json만 정리하고 스태시는 보존한다', () => {
+    put('claude-user.json', paths.claudeJsonPath); // claude.json엔 여전히 lenstest가 남아있음
+    const crashedEntry = {
+      origin: { kind: 'user' },
+      spec: { command: 'node', args: ['server.js'], env: { PORT: '3100' } },
+      disabledAt: '2020-01-01T00:00:00.000Z',
+    };
+    fs.writeFileSync(paths.stashPath, JSON.stringify({ lenstest: crashedEntry }));
+
+    disableServer(paths, 'lenstest');
+
+    const cj = readJson(paths.claudeJsonPath);
+    expect(cj.mcpServers.lenstest).toBeUndefined(); // claude.json 정리됨
+    const stash = readJson(paths.stashPath);
+    expect(stash.lenstest).toEqual(crashedEntry); // 기존 스태시 항목은 덮어쓰지 않음 (disabledAt 그대로)
+  });
+});
+
+describe('enableServer — 사용자가 스태시 이후 수동으로 재등록한 서버 보호', () => {
+  it('claude.json에 같은 이름이 이미 있으면 스태시된 옛 스펙으로 덮어쓰지 않고, 스태시 항목은 제거한다', () => {
+    const staleEntry = {
+      origin: { kind: 'user' },
+      spec: { command: 'node', args: ['old-server.js'] },
+      disabledAt: '2020-01-01T00:00:00.000Z',
+    };
+    fs.writeFileSync(paths.stashPath, JSON.stringify({ lenstest: staleEntry }));
+    const userSpec = { command: 'node', args: ['new-server.js'], env: { PORT: '4200' } };
+    fs.writeFileSync(paths.claudeJsonPath, JSON.stringify({
+      mcpServers: { lenstest: userSpec },
+    }));
+
+    enableServer(paths, 'lenstest');
+
+    const cj = readJson(paths.claudeJsonPath);
+    expect(cj.mcpServers.lenstest).toEqual(userSpec); // 사용자의 새 정의 보존
+    const stash = readJson(paths.stashPath);
+    expect(stash.lenstest).toBeUndefined(); // 스태시 항목은 정리됨
+  });
+});
+
+describe('disableServer — 어디에도 없는 서버', () => {
+  it('no-op: 파일도 생성하지 않고 throw도 하지 않는다', () => {
+    expect(() => disableServer(paths, 'ghost')).not.toThrow();
+    expect(fs.existsSync(paths.claudeJsonPath)).toBe(false);
+    expect(fs.existsSync(paths.stashPath)).toBe(false);
+    expect(fs.existsSync(paths.settingsPath)).toBe(false);
   });
 });

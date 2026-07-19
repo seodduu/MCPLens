@@ -91,9 +91,18 @@ export function listManagedServers(paths: ClaudeConfigPaths): ManagedServer[] {
 }
 
 export function disableServer(paths: ClaudeConfigPaths, name: string): void {
-  // 1) 유저 전역: ~/.claude.json → 스태시 이동. 쓰기 대상이므로 엄격 읽기(깨졌으면 throw).
+  // 이 호출에서 쓸 수도 있는 모든 파일을 먼저 엄격하게 읽는다 (쓰기 전 전부 읽기 —
+  // 파싱 실패는 어떤 파일도 쓰기 전에 throw되어야 strict-write 보장이 성립한다).
   const cj = readJsonFile(paths.claudeJsonPath) as
     { mcpServers?: Record<string, unknown>; projects?: Record<string, { mcpServers?: Record<string, unknown> }> } | null;
+
+  const inMcpJson = paths.mcpJsonPaths.some((p) => serverNames(readLenient(p)).includes(name));
+  const settings = inMcpJson
+    ? ((readJsonFile(paths.settingsPath) ?? {}) as Record<string, unknown>)
+    : null;
+  const stash = (readJsonFile(paths.stashPath) ?? {}) as Record<string, StashedServer>;
+
+  // 1) 유저 전역: ~/.claude.json → 스태시 이동.
   let origin: StashOrigin | null = null;
   let spec: unknown;
   if (cj?.mcpServers && name in cj.mcpServers) {
@@ -111,18 +120,18 @@ export function disableServer(paths: ClaudeConfigPaths, name: string): void {
     }
   }
   if (origin && cj) {
-    const stash = (readJsonFile(paths.stashPath) ?? {}) as Record<string, StashedServer>;
+    // 스태시 항목 쓰기와 claude.json 정리는 별개 관심사: 스태시는 없을 때만 채우고
+    // (멱등성), claude.json은 서버가 여전히 남아있을 때마다 정리한다
+    // (스태시-먼저 순서로 인한 크래시/EPERM 중간 상태에서도 재시도로 복구 가능해야 함).
     if (!(name in stash)) {
       stash[name] = { origin, spec, disabledAt: new Date().toISOString() };
       writeJsonFile(paths.stashPath, stash);      // 스펙 유실 방지: 스태시 먼저
-      writeJsonFile(paths.claudeJsonPath, cj);
     }
+    writeJsonFile(paths.claudeJsonPath, cj);
   }
 
   // 2) 프로젝트 .mcp.json: settings의 disabledMcpjsonServers에 추가 (.mcp.json은 읽기 전용).
-  const inMcpJson = paths.mcpJsonPaths.some((p) => serverNames(readLenient(p)).includes(name));
-  if (inMcpJson) {
-    const settings = (readJsonFile(paths.settingsPath) ?? {}) as Record<string, unknown>;
+  if (inMcpJson && settings) {
     const list = disabledMcpjson(settings);
     if (!list.includes(name)) {
       settings.disabledMcpjsonServers = [...list, name];
@@ -132,26 +141,39 @@ export function disableServer(paths: ClaudeConfigPaths, name: string): void {
 }
 
 export function enableServer(paths: ClaudeConfigPaths, name: string): void {
-  // 1) 스태시 → ~/.claude.json 원위치 복원 (복원 먼저, 스태시 제거는 나중 — 스펙 유실 방지).
+  // 이 호출에서 쓸 수도 있는 모든 파일을 먼저 엄격하게 읽는다 (쓰기 전 전부 읽기 —
+  // 파싱 실패는 어떤 파일도 쓰기 전에 throw되어야 strict-write 보장이 성립한다).
   const stash = (readJsonFile(paths.stashPath) ?? {}) as Record<string, StashedServer>;
   const entry = stash[name];
-  if (entry) {
-    const cj = (readJsonFile(paths.claudeJsonPath) ?? {}) as
-      { mcpServers?: Record<string, unknown>; projects?: Record<string, { mcpServers?: Record<string, unknown> }> };
+  const cj = entry
+    ? ((readJsonFile(paths.claudeJsonPath) ?? {}) as
+        { mcpServers?: Record<string, unknown>; projects?: Record<string, { mcpServers?: Record<string, unknown> }> })
+    : null;
+  const settings = readJsonFile(paths.settingsPath) as Record<string, unknown> | null;
+
+  // 1) 스태시 → ~/.claude.json 원위치 복원 (복원 먼저, 스태시 제거는 나중 — 스펙 유실 방지).
+  if (entry && cj) {
     if (entry.origin.kind === 'user') {
-      cj.mcpServers = { ...cj.mcpServers, [name]: entry.spec };
+      // 사용자가 스태시 이후 같은 이름으로 직접 재등록했다면 그 정의를 보존한다 —
+      // 스태시된(오래된) 스펙으로 덮어쓰지 않는다.
+      if (!cj.mcpServers || !(name in cj.mcpServers)) {
+        cj.mcpServers = { ...cj.mcpServers, [name]: entry.spec };
+        writeJsonFile(paths.claudeJsonPath, cj);
+      }
     } else {
       const pp = entry.origin.projectPath;
-      cj.projects = { ...cj.projects };
-      cj.projects[pp] = { ...cj.projects[pp], mcpServers: { ...cj.projects[pp]?.mcpServers, [name]: entry.spec } };
+      const existing = cj.projects?.[pp]?.mcpServers;
+      if (!existing || !(name in existing)) {
+        cj.projects = { ...cj.projects };
+        cj.projects[pp] = { ...cj.projects[pp], mcpServers: { ...cj.projects[pp]?.mcpServers, [name]: entry.spec } };
+        writeJsonFile(paths.claudeJsonPath, cj);
+      }
     }
-    writeJsonFile(paths.claudeJsonPath, cj);
     delete stash[name];
     writeJsonFile(paths.stashPath, stash);
   }
 
   // 2) disabledMcpjsonServers에서 제거.
-  const settings = readJsonFile(paths.settingsPath) as Record<string, unknown> | null;
   const list = disabledMcpjson(settings);
   if (settings && list.includes(name)) {
     settings.disabledMcpjsonServers = list.filter((n) => n !== name);
