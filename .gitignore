@@ -3,3 +3,4 @@ dist/
 *.vsix
 .mcplens-scratch/
 .superpowers/
+lens-db-dump.md
