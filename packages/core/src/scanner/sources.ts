@@ -11,11 +11,9 @@ export interface ConfigSource {
   filePath: string;
 }
 
-/** ~/.claude.json 의 projects 키에서 프로젝트 경로 목록을 뽑는다 (읽기 실패 시 빈 배열). */
-function claudeProjectPaths(): string[] {
-  const claudeJsonPath = path.join(os.homedir(), '.claude.json');
+/** ~/.claude.json 텍스트의 projects 키에서 프로젝트 경로 목록을 뽑는다 (파싱 실패 시 빈 배열). */
+function claudeProjectPathsFromText(text: string): string[] {
   try {
-    const text = fs.readFileSync(claudeJsonPath, 'utf-8');
     const cfg = JSON.parse(text);
     const projects = cfg?.projects;
     if (!projects || typeof projects !== 'object') return [];
@@ -25,13 +23,37 @@ function claudeProjectPaths(): string[] {
   }
 }
 
+/** ~/.claude.json 을 읽어 projects 키에서 프로젝트 경로 목록을 뽑는다 (읽기 실패 시 빈 배열). */
+function claudeProjectPaths(): string[] {
+  const claudeJsonPath = path.join(os.homedir(), '.claude.json');
+  try {
+    const text = fs.readFileSync(claudeJsonPath, 'utf-8');
+    return claudeProjectPathsFromText(text);
+  } catch {
+    return [];
+  }
+}
+
+export interface ConfigSourcesOptions {
+  /**
+   * ~/.claude.json 내용을 주입해 claude-project 경로를 유도한다.
+   * 제공되면 실제 파일을 읽지 않는다 (유닛테스트에서 실기기 파일 접근을 피하기 위함).
+   * 생략 시 기존 동작대로 ~/.claude.json 을 readFileSync 한다 (없으면 무시).
+   */
+  claudeUserJson?: string;
+}
+
 /** 이 머신에서 감시·수집할 설정 파일 목록 (존재 여부와 무관하게 경로 반환). */
-export function configSources(): ConfigSource[] {
+export function configSources(opts?: ConfigSourcesOptions): ConfigSource[] {
   const h = os.homedir();
   const sources: ConfigSource[] = [
     { kind: 'claude-user', filePath: path.join(h, '.claude.json') },
   ];
-  for (const projectPath of claudeProjectPaths()) {
+  const projectPaths =
+    opts?.claudeUserJson !== undefined
+      ? claudeProjectPathsFromText(opts.claudeUserJson)
+      : claudeProjectPaths();
+  for (const projectPath of projectPaths) {
     sources.push({ kind: 'claude-project', filePath: path.join(projectPath, '.mcp.json') });
   }
   sources.push({ kind: 'codex', filePath: path.join(h, '.codex', 'config.toml') });
@@ -62,6 +84,8 @@ function collectCodex(text: string): CollectResult {
     if (typeof s?.command === 'string') {
       specs.push({ name, command: s.command, args: s.args ?? [], env: s.env });
     }
+    // command 도 없고 enabled=false 도 아닌 항목(전송 판별 불가)은 의도적으로 무시한다.
+    // collectServerSpecs 의 unknown 처리와 달리 codex 는 http url 필드가 없어 skipped 사유가 다르므로 별도 계약 없이 drop.
   }
 
   return { specs, skipped };

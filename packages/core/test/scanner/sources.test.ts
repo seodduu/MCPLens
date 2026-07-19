@@ -82,13 +82,17 @@ describe('collectFromSource(claude-user)', () => {
   });
 });
 
+const CLAUDE_USER_JSON_FIXTURE = JSON.stringify({
+  mcpServers: { github: { command: 'gh-mcp', args: [] } },
+  projects: {
+    '/home/u/proj-a': { mcpServers: {} },
+    '/home/u/proj-b': { mcpServers: {} },
+  },
+});
+
 describe('configSources', () => {
-  it('4종 경로를 os.homedir 기반 절대경로로 반환', () => {
-    const sources = configSources();
-    const kinds = sources.map((s) => s.kind);
-    expect(kinds).toContain('claude-user');
-    expect(kinds).toContain('codex');
-    expect(kinds).toContain('gemini');
+  it('4종 경로를 os.homedir 기반 절대경로로 반환하고, claude-project는 주입된 fixture에서 결정적으로 유도된다', () => {
+    const sources = configSources({ claudeUserJson: CLAUDE_USER_JSON_FIXTURE });
 
     const claudeUser = sources.find((s) => s.kind === 'claude-user')!;
     expect(claudeUser.filePath).toBe(path.join(os.homedir(), '.claude.json'));
@@ -100,10 +104,18 @@ describe('configSources', () => {
     const gemini = sources.find((s) => s.kind === 'gemini')!;
     expect(gemini.filePath).toBe(path.join(os.homedir(), '.gemini', 'settings.json'));
 
-    // claude-project entries (if any) must have absolute filePath ending in .mcp.json
-    for (const s of sources.filter((s) => s.kind === 'claude-project')) {
-      expect(path.isAbsolute(s.filePath)).toBe(true);
-      expect(s.filePath.endsWith('.mcp.json')).toBe(true);
-    }
+    const claudeProjects = sources.filter((s) => s.kind === 'claude-project');
+    expect(claudeProjects.map((s) => s.filePath).sort()).toEqual(
+      [path.join('/home/u/proj-a', '.mcp.json'), path.join('/home/u/proj-b', '.mcp.json')].sort(),
+    );
+  });
+
+  it('claudeUserJson이 깨져있거나 projects가 없으면 claude-project 항목이 없다', () => {
+    expect(
+      configSources({ claudeUserJson: '{broken' }).filter((s) => s.kind === 'claude-project'),
+    ).toEqual([]);
+    expect(
+      configSources({ claudeUserJson: '{}' }).filter((s) => s.kind === 'claude-project'),
+    ).toEqual([]);
   });
 });
