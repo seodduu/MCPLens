@@ -8,6 +8,7 @@ import * as path from 'node:path';
 import { claudeSettingsPath } from './claudeSettings.js';
 import { configSources } from '../scanner/sources.js';
 import { lensHome } from '../paths.js';
+import { readJsonFile, writeJsonFile } from './fileUtils.js';
 
 export interface ClaudeConfigPaths {
   settingsPath: string;   // ~/.claude/settings.json
@@ -46,17 +47,114 @@ export interface ManagedServer {
   origins: ('user' | 'project')[];
 }
 
+/** 읽기 관대 버전: 깨진 파일은 null로 취급. */
+function readLenient(filePath: string): unknown | null {
+  try { return readJsonFile(filePath); } catch { return null; }
+}
+
+function serverNames(obj: unknown): string[] {
+  const m = (obj as { mcpServers?: unknown } | null)?.mcpServers;
+  return m && typeof m === 'object' ? Object.keys(m) : [];
+}
+
+function disabledMcpjson(settings: unknown): string[] {
+  const list = (settings as { disabledMcpjsonServers?: unknown } | null)?.disabledMcpjsonServers;
+  return Array.isArray(list) ? list.filter((n): n is string => typeof n === 'string') : [];
+}
+
 export function listManagedServers(paths: ClaudeConfigPaths): ManagedServer[] {
-  void paths;
-  return []; // Task 1에서 구현
+  const disabledJson = new Set(disabledMcpjson(readLenient(paths.settingsPath)));
+  const stash = (readLenient(paths.stashPath) ?? {}) as Record<string, StashedServer>;
+
+  const origins = new Map<string, Set<'user' | 'project'>>();
+  const add = (name: string, origin: 'user' | 'project') => {
+    if (!origins.has(name)) origins.set(name, new Set());
+    origins.get(name)!.add(origin);
+  };
+
+  const cj = readLenient(paths.claudeJsonPath) as
+    { mcpServers?: unknown; projects?: Record<string, unknown> } | null;
+  for (const name of serverNames(cj)) add(name, 'user');
+  for (const proj of Object.values(cj?.projects ?? {})) {
+    for (const name of serverNames(proj)) add(name, 'user');
+  }
+  for (const p of paths.mcpJsonPaths) {
+    for (const name of serverNames(readLenient(p))) add(name, 'project');
+  }
+  for (const name of Object.keys(stash)) add(name, 'user'); // 스태시는 항상 유저 전역 출신
+
+  return [...origins.entries()].map(([name, o]) => ({
+    name,
+    enabled: !disabledJson.has(name) && !(name in stash),
+    origins: [...o],
+  }));
 }
 
 export function disableServer(paths: ClaudeConfigPaths, name: string): void {
-  void paths; void name;
-  throw new Error('not implemented'); // Task 1에서 구현
+  // 1) 유저 전역: ~/.claude.json → 스태시 이동. 쓰기 대상이므로 엄격 읽기(깨졌으면 throw).
+  const cj = readJsonFile(paths.claudeJsonPath) as
+    { mcpServers?: Record<string, unknown>; projects?: Record<string, { mcpServers?: Record<string, unknown> }> } | null;
+  let origin: StashOrigin | null = null;
+  let spec: unknown;
+  if (cj?.mcpServers && name in cj.mcpServers) {
+    origin = { kind: 'user' };
+    spec = cj.mcpServers[name];
+    delete cj.mcpServers[name];
+  } else if (cj?.projects) {
+    for (const [projectPath, proj] of Object.entries(cj.projects)) {
+      if (proj?.mcpServers && name in proj.mcpServers) {
+        origin = { kind: 'user-project', projectPath };
+        spec = proj.mcpServers[name];
+        delete proj.mcpServers[name];
+        break;
+      }
+    }
+  }
+  if (origin && cj) {
+    const stash = (readJsonFile(paths.stashPath) ?? {}) as Record<string, StashedServer>;
+    if (!(name in stash)) {
+      stash[name] = { origin, spec, disabledAt: new Date().toISOString() };
+      writeJsonFile(paths.stashPath, stash);      // 스펙 유실 방지: 스태시 먼저
+      writeJsonFile(paths.claudeJsonPath, cj);
+    }
+  }
+
+  // 2) 프로젝트 .mcp.json: settings의 disabledMcpjsonServers에 추가 (.mcp.json은 읽기 전용).
+  const inMcpJson = paths.mcpJsonPaths.some((p) => serverNames(readLenient(p)).includes(name));
+  if (inMcpJson) {
+    const settings = (readJsonFile(paths.settingsPath) ?? {}) as Record<string, unknown>;
+    const list = disabledMcpjson(settings);
+    if (!list.includes(name)) {
+      settings.disabledMcpjsonServers = [...list, name];
+      writeJsonFile(paths.settingsPath, settings);
+    }
+  }
 }
 
 export function enableServer(paths: ClaudeConfigPaths, name: string): void {
-  void paths; void name;
-  throw new Error('not implemented'); // Task 1에서 구현
+  // 1) 스태시 → ~/.claude.json 원위치 복원 (복원 먼저, 스태시 제거는 나중 — 스펙 유실 방지).
+  const stash = (readJsonFile(paths.stashPath) ?? {}) as Record<string, StashedServer>;
+  const entry = stash[name];
+  if (entry) {
+    const cj = (readJsonFile(paths.claudeJsonPath) ?? {}) as
+      { mcpServers?: Record<string, unknown>; projects?: Record<string, { mcpServers?: Record<string, unknown> }> };
+    if (entry.origin.kind === 'user') {
+      cj.mcpServers = { ...cj.mcpServers, [name]: entry.spec };
+    } else {
+      const pp = entry.origin.projectPath;
+      cj.projects = { ...cj.projects };
+      cj.projects[pp] = { ...cj.projects[pp], mcpServers: { ...cj.projects[pp]?.mcpServers, [name]: entry.spec } };
+    }
+    writeJsonFile(paths.claudeJsonPath, cj);
+    delete stash[name];
+    writeJsonFile(paths.stashPath, stash);
+  }
+
+  // 2) disabledMcpjsonServers에서 제거.
+  const settings = readJsonFile(paths.settingsPath) as Record<string, unknown> | null;
+  const list = disabledMcpjson(settings);
+  if (settings && list.includes(name)) {
+    settings.disabledMcpjsonServers = list.filter((n) => n !== name);
+    writeJsonFile(paths.settingsPath, settings);
+  }
 }
