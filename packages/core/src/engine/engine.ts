@@ -104,12 +104,34 @@ function pickLoadPattern(row: MatrixRow): LoadPattern {
   return null;
 }
 
-function pickDominantMode(sessions: SessionMeta[]): SessionMeta['mode'] {
+/**
+ * 세션들의 지배 회계 모드. DEFERRED_OPAQUE는 "MCP 증거 없음"이지 모드의 증거가 아니므로
+ * 다수결에서 제외한다 — 증거 있는 세션이 하나도 없을 때만 OPAQUE.
+ */
+export function dominantMode(sessions: SessionMeta[]): SessionMeta['mode'] {
   const counts = new Map<SessionMeta['mode'], number>();
-  for (const s of sessions) counts.set(s.mode, (counts.get(s.mode) ?? 0) + 1);
-  let best: SessionMeta['mode'] = 'DEFERRED_OPAQUE', n = -1;
+  for (const s of sessions) {
+    if (s.mode === 'DEFERRED_OPAQUE') continue;
+    counts.set(s.mode, (counts.get(s.mode) ?? 0) + 1);
+  }
+  let best: SessionMeta['mode'] = 'DEFERRED_OPAQUE', n = 0;
   for (const [m, c] of counts) if (c > n) { best = m; n = c; }
   return best;
+}
+
+/**
+ * 모드 인지 표시 필터 (설계문서 4-2의 표시 계층 적용).
+ * 지연 로딩: 호출 0 && 로드 0 툴은 실비용 0 → 숨김 (search-pollution은 로드분 실비용이 있어 유지).
+ * 업프론트: 미사용 정의도 매 세션 실비용 → 전부 표시.
+ * DB에는 전부 기록돼 있으며 이 필터는 표시 전용이다.
+ */
+export function visibleMatrixRows(rows: MatrixRow[], sessions: SessionMeta[]): MatrixRow[] {
+  if (dominantMode(sessions) === 'UPFRONT') return rows;
+  return rows.filter((r) => r.callCount > 0 || r.loadedSessionCount > 0);
+}
+
+function pickDominantMode(sessions: SessionMeta[]): SessionMeta['mode'] {
+  return dominantMode(sessions);
 }
 
 function recommend(

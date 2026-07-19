@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { LensStore, LogWatcher, buildMatrix, splitByClient, sessionSavings, dbPath,
+import { LensStore, LogWatcher, buildMatrix, splitByClient, visibleMatrixRows, sessionSavings, dbPath,
   detectClients, ClaudeAdapter, CodexAdapter, GeminiAdapter } from '@mcp-lens/core';
 import { formatStatus } from './statusBar.js';
 import { buildTree } from './matrixTree.js';
@@ -51,10 +51,14 @@ export async function activate(ctx: vscode.ExtensionContext) {
       const input = { definitions: store!.allDefinitions(), calls: store!.callsSince(since),
         loads: store!.loadsSince(since), sessions: store!.sessionsSince(since) };
       const sections = splitByClient(input).map(({ client, input: sub }) => {
-        const rows = buildMatrix(sub).filter((r) => r.callCount > 0 || r.definitionTokens != null);
+        const all = buildMatrix(sub);
+        const rows = visibleMatrixRows(all, sub.sessions);
+        const hidden = all.length - rows.length;
         const lines = rows.map((r) =>
           `- ${r.serverName}/${r.toolName}: ${r.callCount}회, 응답 ${r.responseTokens}tok, 정의 ${r.definitionTokens ?? '?'}tok → ${r.recommendation.action} (${r.recommendation.reason})`);
-        return `## ${client} (세션 ${sub.sessions.length}개)\n${lines.length ? lines.join('\n') : '- MCP 호출 없음'}`;
+        const hiddenNote = hidden > 0
+          ? `\n- _(지연 로딩 — 로드·호출 0회라 실비용 없는 툴 ${hidden}개 표시 생략)_` : '';
+        return `## ${client} (세션 ${sub.sessions.length}개)\n${lines.length ? lines.join('\n') : '- MCP 호출 없음'}${hiddenNote}`;
       });
       const doc = `# MCP Lens Report (최근 ${reportDays()}일)\n\n${sections.join('\n\n')}`;
       vscode.workspace.openTextDocument({ content: doc, language: 'markdown' })

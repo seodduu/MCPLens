@@ -1,6 +1,6 @@
 // packages/core/test/engine/engine.test.ts
 import { describe, it, expect } from 'vitest';
-import { buildMatrix, sessionSavings, splitByClient } from '../../src/engine/engine.js';
+import { buildMatrix, sessionSavings, splitByClient, dominantMode, visibleMatrixRows } from '../../src/engine/engine.js';
 import type { EngineInput } from '../../src/engine/engine.js';
 
 const def = (tool: string, tokens: number) => ({
@@ -180,5 +180,40 @@ describe('M4: 로드만 되고 정의·호출이 없는 툴도 행이 생긴다'
       sessions: [session('DEFERRED_MEASURABLE')],
     };
     expect(buildMatrix(input)).toHaveLength(0);
+  });
+});
+
+describe('dominantMode: OPAQUE는 증거 부재이므로 다수결에서 제외', () => {
+  it('OPAQUE 2 + UPFRONT 1 → UPFRONT (Gemini 실사례)', () => {
+    const sessions = [
+      { ...session('DEFERRED_OPAQUE'), sessionId: 'g1', client: 'gemini-cli' as const },
+      { ...session('DEFERRED_OPAQUE'), sessionId: 'g2', client: 'gemini-cli' as const },
+      { ...session('UPFRONT'), sessionId: 'g3', client: 'gemini-cli' as const },
+    ];
+    expect(dominantMode(sessions)).toBe('UPFRONT');
+  });
+  it('전부 OPAQUE면 OPAQUE', () => {
+    expect(dominantMode([session('DEFERRED_OPAQUE')])).toBe('DEFERRED_OPAQUE');
+  });
+});
+
+describe('visibleMatrixRows: 모드 인지 표시 필터', () => {
+  const rows = (mode: any) => buildMatrix({
+    definitions: [def('unused', 100), def('used', 100), def('loaded_only', 100)],
+    calls: [call('used')],
+    loads: [{ sessionId: 's1', serverName: 'github', toolName: 'loaded_only', loadedTokens: null }],
+    sessions: [session(mode)],
+  });
+
+  it('지연 로딩: 호출 0 && 로드 0 행은 숨김 (실비용 0)', () => {
+    const visible = visibleMatrixRows(rows('DEFERRED_MEASURABLE'),
+      [session('DEFERRED_MEASURABLE')]);
+    const names = visible.map((r) => r.toolName).sort();
+    expect(names).toEqual(['loaded_only', 'used']); // unused만 숨겨짐
+  });
+
+  it('업프론트: 전부 표시 (미사용도 매 세션 실비용)', () => {
+    const visible = visibleMatrixRows(rows('UPFRONT'), [session('UPFRONT')]);
+    expect(visible).toHaveLength(3);
   });
 });
