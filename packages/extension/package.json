@@ -1,7 +1,14 @@
 {
   "name": "mcp-lens",
   "displayName": "MCP Lens",
+  "description": "Automatically accounts for MCP context usage across Claude Code, Codex, and Gemini CLI.",
   "version": "0.1.0",
+  "publisher": "doohyun",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/doohyun/mcp-lens"
+  },
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -46,7 +53,10 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "build": "node esbuild.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "smoke": "node scripts/bundle-smoke.mjs",
+    "vscode:prepublish": "npm run typecheck && npm run build"
   },
   "dependencies": {
     "@mcp-lens/core": "*"
