@@ -1,25 +1,69 @@
 // packages/extension/src/autoScan.ts
 import * as vscode from 'vscode';
 import { watchFile, unwatchFile } from 'node:fs';
-import { collectAllSpecs, configSources, scanServer, type LensStore, type McpServerSpec } from '@mcp-lens/core';
+import {
+  collectAllSpecs, configSources, scanServer, authenticateServer,
+  type LensStore, type McpServerSpec,
+} from '@mcp-lens/core';
 import { decideScanAction, type AutoScanSetting } from './scanDecision.js';
+import { decideAuthPrompt } from './authDecision.js';
 
 async function runScan(store: LensStore, targets: McpServerSpec[],
   onDone: () => void): Promise<void> {
-  let tools = 0, tokens = 0, failed: string[] = [];
+  let tools = 0, tokens = 0, failed: string[] = [], authFailed: McpServerSpec[] = [];
   for (const spec of targets) {
     try {
       const defs = await scanServer(spec);
       store.upsertDefinitions(defs);
       tools += defs.length;
       tokens += defs.reduce((s, d) => s + d.definitionTokens, 0);
-    } catch { failed.push(spec.name); }
+    } catch (err) {
+      failed.push(spec.name);
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('auth-required') || msg.includes('token-expired')) authFailed.push(spec);
+    }
   }
   store.save();
   onDone(); // refresh() — 상태바·사이드바 ?tok 갱신
   const failNote = failed.length ? ` (실패: ${failed.join(', ')})` : '';
   vscode.window.setStatusBarMessage(
     `$(check) Lens: ${targets.length - failed.length}개 서버 · 툴 ${tools}개 · ${tokens}tok 스캔 완료${failNote}`, 8000);
+  if (authFailed.length) await maybeAuthPrompt(store, authFailed, onDone);
+}
+
+/** 스캔 후 auth-required/token-expired 실패 서버에 대해 로그인 동의창 1개를 띄운다. */
+export async function maybeAuthPrompt(
+  store: LensStore, failedServers: McpServerSpec[], onDone: () => void,
+): Promise<void> {
+  const config = vscode.workspace.getConfiguration('mcpLens');
+  const ignoreList = config.get<string[]>('authIgnore', []);
+  const action = decideAuthPrompt({ failedServers, ignoreList });
+  if (action.kind === 'skip') return;
+
+  const names = action.targets.map((t) => t.name).join(', ');
+  const pick = await vscode.window.showInformationMessage(
+    `MCP 서버 ${action.targets.length}개(${names})는 로그인이 필요합니다. ` +
+    `브라우저에서 로그인할까요? (Lens 명의로 접근 권한을 요청합니다)`,
+    '로그인', '나중에', '이 서버는 묻지 않음');
+
+  if (pick === '로그인') {
+    for (const spec of action.targets) {
+      try {
+        await authenticateServer(spec, {
+          openUrl: async (url) => { await vscode.env.openExternal(vscode.Uri.parse(url)); },
+        });
+        const defs = await scanServer(spec);
+        store.upsertDefinitions(defs);
+      } catch {
+        // 로그인/재스캔 실패 — 다음 스캔 때 다시 auth-required로 잡힌다.
+      }
+    }
+    store.save();
+    onDone();
+  } else if (pick === '이 서버는 묻지 않음') {
+    const names2 = action.targets.map((t) => t.name);
+    await config.update('authIgnore', [...ignoreList, ...names2], vscode.ConfigurationTarget.Global);
+  } // '나중에'/닫기 → 아무것도 저장 안 함
 }
 
 export async function maybeAutoScan(store: LensStore, onDone: () => void): Promise<void> {

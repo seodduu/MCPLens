@@ -59,6 +59,12 @@
             "자동 스캔하지 않습니다 (npx mcp-lens scan 수동 사용)"
           ],
           "markdownDescription": "MCP 서버 툴 정의 자동 스캔. 스캔은 등록된 stdio 서버를 잠깐 실행해 tools/list를 요청합니다 — LLM 토큰을 소모하지 않고 설정 파일을 수정하지 않습니다."
+        },
+        "mcpLens.authIgnore": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "markdownDescription": "로그인 필요 알림을 다시 띄우지 않을 MCP 서버 이름 목록. `이 서버는 묻지 않음` 버튼으로 자동 추가됩니다."
         }
       }
     }
