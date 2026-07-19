@@ -12,7 +12,8 @@ export class CodexAdapter implements LogAdapter {
 
   matches(filePath: string): boolean {
     const p = filePath.split(path.sep).join('/');
-    return /\/\.codex\/sessions\/[^/]+\/rollout-[^/]+\.jsonl$/.test(p);
+    // 실제 레이아웃은 sessions/YYYY/MM/DD/rollout-*.jsonl (중첩 날짜 디렉토리)
+    return /\/\.codex\/sessions\/.+\/rollout-[^/]+\.jsonl$/.test(p);
   }
 
   parseFile(filePath: string, content: string): AdapterResult {

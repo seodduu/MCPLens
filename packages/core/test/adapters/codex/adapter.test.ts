@@ -13,6 +13,8 @@ describe('CodexAdapter', () => {
 
   it('matches는 .codex/sessions 밑 rollout-*.jsonl만 승인', () => {
     expect(a.matches('/h/.codex/sessions/2026-07-19/rollout-1.jsonl')).toBe(true);
+    // 회귀: 실기기 레이아웃은 연/월/일 중첩 디렉토리
+    expect(a.matches('/h/.codex/sessions/2026/07/19/rollout-1.jsonl')).toBe(true);
     expect(a.matches('/h/.claude/projects/x/y.jsonl')).toBe(false);
   });
 
