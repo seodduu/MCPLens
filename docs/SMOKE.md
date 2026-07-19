@@ -1,5 +1,17 @@
 # 실기기 스모크 기록
 
+## Wave 8 (2026-07-20) — OAuth 실완주 (vercel)
+
+- `mcp-lens auth vercel` → 브라우저 동의 → **"로그인 완료, 툴 30개 · 9,146토큰"** — 인증 필요 서버가 비용 축에 편입
+- 재스캔: `- vercel: 30개 툴, 9146 토큰` — 저장 토큰 자동 사용 (인증 스킵 아님, 브라우저 안 뜸)
+- `~/.mcplens/oauth/vercel.json` 퍼미션 `-rw-------`(0600) 확인
+- 미검증 잔여: 재로그인 반복(redirect_uri 포트 불일치 케이스), 확장 알림 [로그인] 경로 — 백로그 기록
+
+## Wave 9 (2026-07-20) — 절감량 버그 실데이터 검산
+
+- 수정 전: potential=13,452 / actual=25,065 / **saved=−11,613** (음수 — M5+M6+비교집합 합작)
+- 수정 후: potential=13,452 / actual=197 / **saved=+13,255** — saved ≥ 0, actual ≤ potential 성립
+
 ## Wave 7 (2026-07-20) — 설정 소스 3사 + http 스캔
 
 `node packages/cli/dist/main.js scan` 1회 실행으로 전 경로 검증:
