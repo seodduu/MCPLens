@@ -32,3 +32,17 @@ describe('readClaudeMcpConfig', () => {
     expect(readClaudeMcpConfig('{oops')).toEqual([]);
   });
 });
+
+describe('headers 패스스루 (PAT 방식 http 서버)', () => {
+  it('http 서버의 headers가 spec에 실린다', () => {
+    const json = JSON.stringify({ mcpServers: {
+      github: { type: 'http', url: 'https://api.githubcopilot.com/mcp/',
+                headers: { Authorization: 'Bearer ghp_test123' } } } });
+    const specs = readClaudeMcpConfig(json);
+    expect(specs[0].headers).toEqual({ Authorization: 'Bearer ghp_test123' });
+  });
+  it('headers가 없으면 undefined', () => {
+    const json = JSON.stringify({ mcpServers: { x: { type: 'http', url: 'https://a' } } });
+    expect(readClaudeMcpConfig(json)[0].headers).toBeUndefined();
+  });
+});

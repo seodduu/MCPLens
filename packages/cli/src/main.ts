@@ -133,7 +133,14 @@ async function runAuth(args: string[]) {
   try {
     await authenticateServer(target.spec, { openUrl });
   } catch (e) {
-    console.log(`${name}: 로그인 실패 — ${(e as Error).message}`);
+    const msg = (e as Error).message;
+    console.log(`${name}: 로그인 실패 — ${msg}`);
+    if (/dynamic client registration/i.test(msg)) {
+      console.log(
+        `  이 서버는 동적 클라이언트 등록(DCR)을 지원하지 않습니다 (예: GitHub 원격 MCP).\n` +
+        `  대신 설정의 headers 필드에 PAT를 넣으면 스캔됩니다:\n` +
+        `  "${name}": { "type": "http", "url": "...", "headers": { "Authorization": "Bearer <토큰>" } }`);
+    }
     process.exit(1);
     return;
   }

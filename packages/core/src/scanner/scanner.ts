@@ -9,10 +9,12 @@ import { storedTokenProvider } from './oauth.js';
 
 type AuthProvider = NonNullable<ReturnType<typeof storedTokenProvider>>;
 
-/** HTTP 응답/에러 메시지에서 인증 요구(401/403·OAuth) 신호를 감지한다. */
-function isAuthRequired(err: unknown): boolean {
+/** HTTP 응답/에러 메시지에서 인증 요구(401/403·OAuth) 신호를 감지한다.
+ *  일부 서버(GitHub 원격 MCP)는 표준 401 대신 400 + "missing required Authorization header"로
+ *  거절하므로 Authorization 헤더 언급도 인증 요구로 분류한다 (실기기 관찰, 2026-07-20). */
+export function isAuthRequired(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
-  return /\b401\b|\b403\b|unauthor|forbidden|oauth|invalid_token|www-authenticate/i.test(msg);
+  return /\b401\b|\b403\b|unauthor|forbidden|oauth|invalid_token|www-authenticate|authorization header/i.test(msg);
 }
 
 /** spec의 전송 방식에 맞는 클라이언트 transport를 생성한다 (생성만 분기, 이후 로직은 공유). */
@@ -26,10 +28,11 @@ function createTransport(spec: McpServerSpec, authProvider: AuthProvider | undef
     });
   }
   if (kind === 'http') {
-    return new StreamableHTTPClientTransport(
-      new URL(spec.url!),
-      authProvider ? { authProvider } : undefined,
-    );
+    return new StreamableHTTPClientTransport(new URL(spec.url!), {
+      ...(authProvider ? { authProvider } : {}),
+      // PAT 등 커스텀 헤더 패스스루 (설정의 headers 필드 — GitHub 원격 MCP류)
+      ...(spec.headers ? { requestInit: { headers: spec.headers } } : {}),
+    });
   }
   throw new Error(`unknown transport: ${spec.name}`);
 }

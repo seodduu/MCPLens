@@ -6,6 +6,8 @@ export interface McpServerSpec {
   env?: Record<string, string>;
   /** http 서버: 접속 URL. stdio 서버: undefined */
   url?: string;
+  /** http 서버: 요청에 실을 커스텀 헤더 (PAT 등, 예: Authorization: Bearer ...) */
+  headers?: Record<string, string>;
 }
 
 /** command 있으면 'stdio', 없고 url 있으면 'http', 둘 다 없으면 'unknown'. */
@@ -25,7 +27,8 @@ export function readClaudeMcpConfig(jsonText: string): McpServerSpec[] {
         return [{ name, command: s.command, args: s.args ?? [], env: s.env }];
       }
       if (typeof s?.url === 'string') {
-        return [{ name, command: undefined, args: undefined, env: undefined, url: s.url }];
+        const headers = s.headers && typeof s.headers === 'object' ? s.headers : undefined;
+        return [{ name, command: undefined, args: undefined, env: undefined, url: s.url, headers }];
       }
       return [];
     });

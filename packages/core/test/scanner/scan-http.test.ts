@@ -17,8 +17,10 @@ interface ToolSpec {
  */
 async function startLocalHttpMcp(
   tools: ToolSpec[],
-): Promise<{ url: string; close: () => Promise<void> }> {
+): Promise<{ url: string; close: () => Promise<void>; seenHeaders: Array<Record<string, unknown>> }> {
+  const seenHeaders: Array<Record<string, unknown>> = [];
   const httpServer: Server = createServer((req, res) => {
+    seenHeaders.push({ ...req.headers });
     const mcp = new McpServer({ name: 'local-http-test', version: '0.0.1' });
     for (const t of tools) {
       mcp.registerTool(
@@ -46,6 +48,7 @@ async function startLocalHttpMcp(
   return {
     url,
     close: () => new Promise<void>((resolve) => httpServer.close(() => resolve())),
+    seenHeaders,
   };
 }
 
@@ -65,7 +68,33 @@ describe('scanServer — http transport', () => {
     }
   });
 
+  it('spec.headers가 실제 HTTP 요청 헤더로 전달된다 (PAT 패스스루)', async () => {
+    const { url, close, seenHeaders } = await startLocalHttpMcp([
+      { name: 'echo', description: 'Echo for header passthrough test' },
+    ]);
+    try {
+      await scanServer({ name: 'pat-test', url,
+        headers: { Authorization: 'Bearer test-pat-123', 'X-Custom': 'lens' } });
+      expect(seenHeaders.length).toBeGreaterThan(0);
+      for (const h of seenHeaders) {
+        expect(h['authorization']).toBe('Bearer test-pat-123');
+        expect(h['x-custom']).toBe('lens');
+      }
+    } finally {
+      await close();
+    }
+  });
+
   it('unknown 전송은 throw', async () => {
     await expect(scanServer({ name: 'x' })).rejects.toThrow(/unknown transport/);
+  });
+});
+
+describe('isAuthRequired 분류 확대', () => {
+  it('GitHub식 400 + Authorization header 메시지도 인증 요구로 분류', async () => {
+    const { isAuthRequired } = await import('../../src/scanner/scanner.js');
+    expect(isAuthRequired(new Error(
+      'Streamable HTTP error: Error POSTing to endpoint: bad request: missing required Authorization header'))).toBe(true);
+    expect(isAuthRequired(new Error('connection refused'))).toBe(false);
   });
 });
