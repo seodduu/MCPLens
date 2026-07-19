@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildTree } from '../src/matrixTree.js';
-import type { EngineInput } from '@mcp-lens/core';
+import type { EngineInput, ManagedServer } from '@mcp-lens/core';
 
 const call = (sessionId: string, server: string, tool: string, isError = false) => ({
   sessionId, serverName: server, toolName: tool, calledAt: '2026-07-10T00:00:00Z',
@@ -117,5 +117,50 @@ describe('deny 토글 표시', () => {
   it('deniedRules 생략 시 기존 동작 그대로 (전부 enabled=true)', () => {
     const tool = buildTree(input)[0].children[0].children[0];
     expect(tool.enabled).toBe(true);
+  });
+});
+
+describe('서버 단위 토글 표시', () => {
+  const input: EngineInput = {
+    definitions: [],
+    calls: [call('c1', 'github', 'search'), call('x1', 'github', 'search')],
+    loads: [],
+    sessions: [session('c1', 'claude-code'), session('x1', 'codex')],
+  };
+  const m = (name: string, enabled: boolean): ManagedServer =>
+    ({ name, enabled, origins: ['user'] });
+
+  it('managed 서버의 enabled가 서버 노드에 반영된다', () => {
+    const server = buildTree(input, new Set(), [m('github', true)])[0].children[0];
+    expect(server.enabled).toBe(true);
+    expect(server.serverName).toBe('github');
+  });
+  it('disabled 서버는 description에 차단됨 + 하위 툴 메뉴 숨김(enabled 미부여)', () => {
+    const server = buildTree(input, new Set(), [m('github', false)])[0].children[0];
+    expect(server.enabled).toBe(false);
+    expect(server.description).toContain('차단됨');
+    expect(server.children[0].enabled).toBeUndefined();
+  });
+  it('managed에 없는 서버(claude.ai 커넥터 등)는 enabled=undefined (메뉴 미노출)', () => {
+    const server = buildTree(input, new Set(), [])[0].children[0];
+    expect(server.enabled).toBeUndefined();
+  });
+  it('codex 클라이언트에는 managed가 적용되지 않는다', () => {
+    const server = buildTree(input, new Set(), [m('github', false)])[1].children[0];
+    expect(server.enabled).toBeUndefined();
+  });
+  it('사용 이력 없는 managed 서버는 0회 노드로 추가된다', () => {
+    const claude = buildTree(input, new Set(), [m('github', true), m('lenstest', false)])[0];
+    const zero = claude.children.find((s) => s.label === 'lenstest')!;
+    expect(zero.description).toBe('0회 · 0tok · 차단됨');
+    expect(zero.enabled).toBe(false);
+    expect(zero.children).toEqual([]);
+  });
+  it('claude-code 세션이 없어도 0회 서버로 클라이언트 노드를 만든다', () => {
+    const noClaude: EngineInput = { definitions: [], calls: [], loads: [], sessions: [] };
+    const roots = buildTree(noClaude, new Set(), [m('lenstest', true)]);
+    const claude = roots.find((r) => r.id === 'claude-code')!;
+    expect(claude.description).toContain('세션 0개');
+    expect(claude.children.map((s) => s.label)).toEqual(['lenstest']);
   });
 });
