@@ -2,16 +2,29 @@
   "name": "mcp-lens",
   "displayName": "MCP Lens",
   "version": "0.1.0",
-  "type": "module",
-  "engines": { "vscode": "^1.90.0" },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
   "main": "./dist/extension.js",
-  "activationEvents": ["onStartupFinished"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "contributes": {
-    "commands": [{ "command": "mcp-lens.showReport", "title": "MCP Lens: Show Report" }]
+    "commands": [
+      {
+        "command": "mcp-lens.showReport",
+        "title": "MCP Lens: Show Report"
+      }
+    ]
   },
   "scripts": {
     "build": "tsc -p tsconfig.json"
   },
-  "dependencies": { "@mcp-lens/core": "*" },
-  "devDependencies": { "@types/vscode": "^1.90.0", "typescript": "^5.5.0" }
+  "dependencies": {
+    "@mcp-lens/core": "*"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.5.0"
+  }
 }

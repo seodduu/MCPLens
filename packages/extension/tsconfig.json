@@ -3,7 +3,9 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
-    "types": ["vscode", "node"]
+    "types": ["vscode", "node"],
+    "module": "CommonJS",
+    "moduleResolution": "Node10"
   },
   "include": ["src"]
 }
