@@ -37,7 +37,9 @@ describe('ClaudeAdapter', () => {
     expect(c.toolName).not.toContain('__');
     expect(c.serverName).toBe('claude_ai_PlayMCP');
     expect(c.responseText === null || typeof c.responseText === 'string').toBe(true);
-    expect(c.responseTokens).toBeNull();
+    // 응답 본문이 있으면 tiktoken 추정치, 없으면 null
+    if (c.responseText) expect(c.responseTokens).toBeGreaterThan(0);
+    else expect(c.responseTokens).toBeNull();
     expect(typeof c.isError).toBe('boolean');
     // 내장 툴(ToolSearch/AskUserQuestion)은 toolCalls에 들어가지 않는다
     for (const tc of r.toolCalls) expect(tc.serverName).toBe('claude_ai_PlayMCP');
@@ -83,5 +85,18 @@ describe('ClaudeAdapter', () => {
     expect(r.parseErrors).toBe(0);
     expect(r.toolCalls).toEqual([]);
     expect(r.session.mode).toBe('DEFERRED_OPAQUE');
+  });
+});
+
+describe('응답 토큰 추정 (tiktoken 폴백)', () => {
+  it('응답 본문이 있는 호출은 responseTokens가 양수 추정치로 채워진다', () => {
+    const a = new ClaudeAdapter();
+    const r = a.parseFile('/fake/s.jsonl', fx('session-toolsearch.jsonl'));
+    const withBody = r.toolCalls.filter((c) => c.responseText && c.responseText.length > 0);
+    expect(withBody.length).toBeGreaterThan(0);
+    for (const c of withBody) {
+      expect(c.responseTokens).not.toBeNull();
+      expect(c.responseTokens!).toBeGreaterThan(0);
+    }
   });
 });

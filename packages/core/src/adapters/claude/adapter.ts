@@ -9,6 +9,7 @@ import type {
   TokenUsageEvent,
 } from '../../types.js';
 import { clientLogRoots } from '../../paths.js';
+import { countTokens } from '../../tokenize.js';
 
 const MCP_NAME = /^mcp__(.+?)__(.+)$/;
 
@@ -93,6 +94,7 @@ export class ClaudeAdapter implements LogAdapter {
           const u = pendingUse.get(part.tool_use_id);
           if (u) {
             pendingUse.delete(part.tool_use_id);
+            const responseText = flattenResult(part.content);
             toolCalls.push({
               sessionId,
               serverName: u.server,
@@ -100,8 +102,9 @@ export class ClaudeAdapter implements LogAdapter {
               calledAt: u.at,
               durationMs: null,
               isError: part.is_error === true,
-              responseTokens: null,
-              responseText: flattenResult(part.content),
+              // Claude는 툴 응답 토큰을 분리 실측하지 않음 → 본문 tiktoken 추정 (설계문서 8장 원칙)
+              responseTokens: responseText ? countTokens(responseText) : null,
+              responseText,
             });
           }
         }
