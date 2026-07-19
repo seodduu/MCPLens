@@ -17,8 +17,12 @@ export async function activate(ctx: vscode.ExtensionContext) {
     [new ClaudeAdapter(), new CodexAdapter(), new GeminiAdapter()]
       .filter((a) => active.some((c) => c.client === a.client)));
 
+  const reportDays = () =>
+    Math.max(1, vscode.workspace.getConfiguration('mcpLens').get<number>('reportDays', 30));
+  const sinceIso = () => new Date(Date.now() - reportDays() * 86_400_000).toISOString();
+
   const refresh = () => {
-    const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+    const since = sinceIso();
     const input = { definitions: store!.allDefinitions(), calls: store!.callsSince(since),
       loads: store!.loadsSince(since), sessions: store!.sessionsSince(since) };
     item.text = formatStatus(input.calls.length, sessionSavings(input).savedTokens);
@@ -27,10 +31,13 @@ export async function activate(ctx: vscode.ExtensionContext) {
   refresh();
   watcher.on('ingested', refresh);
   watcher.start();
+  ctx.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
+    if (e.affectsConfiguration('mcpLens.reportDays')) refresh();
+  }));
 
   ctx.subscriptions.push(
     vscode.commands.registerCommand('mcp-lens.showReport', () => {
-      const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+      const since = sinceIso();
       const input = { definitions: store!.allDefinitions(), calls: store!.callsSince(since),
         loads: store!.loadsSince(since), sessions: store!.sessionsSince(since) };
       const sections = splitByClient(input).map(({ client, input: sub }) => {
@@ -39,7 +46,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
           `- ${r.serverName}/${r.toolName}: ${r.callCount}회, 응답 ${r.responseTokens}tok, 정의 ${r.definitionTokens ?? '?'}tok → ${r.recommendation.action} (${r.recommendation.reason})`);
         return `## ${client} (세션 ${sub.sessions.length}개)\n${lines.length ? lines.join('\n') : '- MCP 호출 없음'}`;
       });
-      const doc = `# MCP Lens Report (최근 30일)\n\n${sections.join('\n\n')}`;
+      const doc = `# MCP Lens Report (최근 ${reportDays()}일)\n\n${sections.join('\n\n')}`;
       vscode.workspace.openTextDocument({ content: doc, language: 'markdown' })
         .then((d) => vscode.window.showTextDocument(d));
     }));
