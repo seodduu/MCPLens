@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, statSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync, existsSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -43,6 +43,13 @@ describe('oauth token store', () => {
     const file = path.join(dir, 'vercel.json');
     const mode = statSync(file).mode & 0o777;
     expect(mode).toBe(0o600);
+  });
+
+  it('tightens a pre-existing looser-permission base dir to 0700', () => {
+    chmodSync(dir, 0o755);
+    saveStoredOAuth(sample, dir);
+    const mode = statSync(dir).mode & 0o777;
+    expect(mode).toBe(0o700);
   });
 
   it('clears a stored server', () => {

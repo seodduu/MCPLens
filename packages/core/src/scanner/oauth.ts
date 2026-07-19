@@ -45,6 +45,9 @@ export function loadStoredOAuth(serverName: string, baseDir: string = oauthDir()
 /** 자격증명을 0600 모드로 저장한다 (평문 — 아래 보안 주석 참조). */
 export function saveStoredOAuth(data: StoredOAuth, baseDir: string = oauthDir()): void {
   mkdirSync(baseDir, { recursive: true, mode: 0o700 });
+  // mkdirSync의 mode도 신규 생성 시에만 적용되므로, 기존에 더 느슨한 권한으로
+  // 존재하던 디렉토리도 chmod로 강제한다 (파일의 chmod 패턴과 동일).
+  chmodSync(baseDir, 0o700);
   const file = path.join(baseDir, safeFileName(data.serverName));
   // writeFileSync의 mode는 신규 생성 시에만 적용되므로 chmod로 기존 파일까지 강제한다.
   writeFileSync(file, JSON.stringify(data, null, 2), { mode: 0o600 });
