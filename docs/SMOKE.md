@@ -16,6 +16,18 @@
 - http 성공 경로는 유닛(127.0.0.1 루프백 실서버)으로 검증됨; 실원격은 인증 스킵 경로 확인
 - 남은 수동 항목: F5 확장에서 `~/.codex/config.toml` 수정 시 자동 재스캔 (감시 3파일 확장 검증)
 
+### 실원격 http 완주 (DeepWiki, 2026-07-20 추가 검증)
+
+무인증 공개 http MCP(`https://mcp.deepwiki.com/mcp`)로 등록→스캔→호출→판정 전 구간 실증:
+
+```
+deepwiki/ask_question         정의 113tok · 1회 · 응답 766tok → keep
+deepwiki/read_wiki_structure  정의  71tok · 0회              → remove
+deepwiki/read_wiki_contents   정의  67tok · 0회              → remove
+```
+
+원격 http 서버에서 비용·사용 양축 실측 + 판정까지 성립한 첫 사례 (R2a 실전 검증 완료).
+
 ## Wave 4 실기기 스모크 기록 (2026-07-19)
 
 계획서 Task 14 Step 2의 실기기 검증 결과. 자동화 항목은 메인 터미널이 직렬 수행,
