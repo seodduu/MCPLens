@@ -43,12 +43,18 @@ export function buildMatrix(input: EngineInput): MatrixRow[] {
 
   const dominantMode = pickDominantMode(sessions);
 
-  // 정의된 툴 + 정의 없이 호출만 된 툴의 합집합
+  // 정의된 툴 + 호출만 된 툴 + 로드만 된 툴의 합집합 (M4)
+  // 로드만 된 툴을 빼면 "로드됐는데 호출 0회"(검색 공간 오염)가 표면화되지 않는다.
   const rows = new Map<string, MatrixRow>();
   for (const d of definitions) rows.set(key(d.serverName, d.toolName), baseRow(d.serverName, d.toolName, d.definitionTokens));
   for (const c of calls) {
     const k = key(c.serverName, c.toolName);
     if (!rows.has(k)) rows.set(k, baseRow(c.serverName, c.toolName, null));
+  }
+  for (const l of loads) {
+    if (l.serverName == null) continue; // 서버 귀속 불가 로드(코드모드 검색 집계 등)는 행 대상 아님
+    const k = key(l.serverName, l.toolName);
+    if (!rows.has(k)) rows.set(k, baseRow(l.serverName, l.toolName, null));
   }
 
   for (const [k, row] of rows) {

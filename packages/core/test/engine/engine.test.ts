@@ -155,3 +155,30 @@ describe('splitByClient', () => {
     expect(claude.definitions).toEqual(codex.definitions); // 공유
   });
 });
+
+describe('M4: 로드만 되고 정의·호출이 없는 툴도 행이 생긴다', () => {
+  it('load-only 툴이 search-pollution으로 표면화된다', () => {
+    const input: EngineInput = {
+      definitions: [], // 스캐너 미커버 서버
+      calls: [],
+      loads: [{ sessionId: 's1', serverName: 'unscanned', toolName: 'ghost_tool', loadedTokens: 120 }],
+      sessions: [session('DEFERRED_MEASURABLE')],
+    };
+    const rows = buildMatrix(input);
+    const ghost = rows.find((r) => r.toolName === 'ghost_tool');
+    expect(ghost).toBeDefined();
+    expect(ghost!.serverName).toBe('unscanned');
+    expect(ghost!.loadPattern).toBe('search-pollution');
+    expect(ghost!.callCount).toBe(0);
+    expect(ghost!.definitionTokens).toBeNull(); // 정의 미확보는 그대로 정직하게
+  });
+
+  it('serverName이 null인 로드(코드모드 검색 등)는 행을 만들지 않는다', () => {
+    const input: EngineInput = {
+      definitions: [], calls: [],
+      loads: [{ sessionId: 's1', serverName: null, toolName: '(code-mode-search)', loadedTokens: 500 }],
+      sessions: [session('DEFERRED_MEASURABLE')],
+    };
+    expect(buildMatrix(input)).toHaveLength(0);
+  });
+});
