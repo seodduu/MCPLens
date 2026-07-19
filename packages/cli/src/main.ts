@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 // packages/cli/src/main.ts
-import os from 'node:os';
-import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { LensStore, LogWatcher, buildMatrix, sessionSavings, dbPath,
-  scanServer, ClaudeAdapter, CodexAdapter, GeminiAdapter } from '@mcp-lens/core';
+  scanServer, ClaudeAdapter, CodexAdapter, GeminiAdapter,
+  collectAllSpecs, configSources, collectFromSource,
+  type McpServerSpec } from '@mcp-lens/core';
 import { formatReport } from './report.js';
 import { collectServerSpecs } from './scan-config.js';
+import { scanFailureLine, formatSourceCounts } from './scan-report.js';
 
 async function main() {
   const args = process.argv.slice(2);
@@ -38,22 +39,49 @@ async function runReport(args: string[]) {
   store.close();
 }
 
+/** configSources() 각 파일을 읽어 소스 종류별 발견 스펙 수를 센다 (읽기 전용). */
+function sourceDiscoveryCounts(): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const source of configSources()) {
+    let text: string;
+    try {
+      text = readFileSync(source.filePath, 'utf8');
+    } catch {
+      continue;
+    }
+    const { specs } = collectFromSource(source.kind, text);
+    counts[source.kind] = (counts[source.kind] ?? 0) + specs.length;
+  }
+  return counts;
+}
+
 async function runScan(args: string[]) {
-  const configPath = argValue(args, '--config') ?? path.join(os.homedir(), '.claude.json');
-  let jsonText: string;
-  try {
-    jsonText = readFileSync(configPath, 'utf8');
-  } catch {
-    console.log(`설정 파일을 찾을 수 없습니다: ${configPath}`);
-    console.log('Claude Code에서 MCP 서버를 설정한 뒤 다시 시도하세요.');
-    return;
+  const configPath = argValue(args, '--config');
+  let specs: McpServerSpec[];
+  let skipped: string[];
+
+  if (configPath) {
+    let jsonText: string;
+    try {
+      jsonText = readFileSync(configPath, 'utf8');
+    } catch {
+      console.log(`설정 파일을 찾을 수 없습니다: ${configPath}`);
+      console.log('Claude Code에서 MCP 서버를 설정한 뒤 다시 시도하세요.');
+      return;
+    }
+    ({ specs, skipped } = collectServerSpecs(jsonText));
+  } else {
+    const result = collectAllSpecs();
+    specs = result.specs;
+    skipped = result.skipped;
+    const summary = formatSourceCounts(sourceDiscoveryCounts());
+    if (summary) console.log(`발견: ${summary}`);
   }
 
-  const { specs, skipped } = collectServerSpecs(jsonText);
   for (const name of skipped)
     console.log(`- ${name}: stdio 서버가 아니어서 건너뜀 (command 필드 없음)`);
   if (specs.length === 0) {
-    console.log('스캔할 stdio MCP 서버가 없습니다.');
+    console.log('스캔할 MCP 서버가 없습니다.');
     return;
   }
 
@@ -65,7 +93,7 @@ async function runScan(args: string[]) {
       const total = defs.reduce((n, d) => n + d.definitionTokens, 0);
       console.log(`- ${spec.name}: ${defs.length}개 툴, ${total} 토큰`);
     } catch (e) {
-      console.log(`- ${spec.name}: 스캔 실패 — ${(e as Error).message}`);
+      console.log(scanFailureLine(spec.name, e as Error));
     }
   }
   store.save();

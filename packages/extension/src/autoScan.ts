@@ -1,14 +1,8 @@
 // packages/extension/src/autoScan.ts
 import * as vscode from 'vscode';
-import { watchFile, unwatchFile, readFileSync, existsSync } from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { collectServerSpecs, scanServer, type LensStore, type McpServerSpec } from '@mcp-lens/core';
+import { watchFile, unwatchFile } from 'node:fs';
+import { collectAllSpecs, configSources, scanServer, type LensStore, type McpServerSpec } from '@mcp-lens/core';
 import { decideScanAction, type AutoScanSetting } from './scanDecision.js';
-
-export function claudeConfigPath(): string {
-  return path.join(os.homedir(), '.claude.json');
-}
 
 async function runScan(store: LensStore, targets: McpServerSpec[],
   onDone: () => void): Promise<void> {
@@ -29,9 +23,7 @@ async function runScan(store: LensStore, targets: McpServerSpec[],
 }
 
 export async function maybeAutoScan(store: LensStore, onDone: () => void): Promise<void> {
-  const cfgPath = claudeConfigPath();
-  if (!existsSync(cfgPath)) return;
-  const { specs } = collectServerSpecs(readFileSync(cfgPath, 'utf8'));
+  const { specs } = collectAllSpecs();
   const config = vscode.workspace.getConfiguration('mcpLens');
   const setting = config.get<AutoScanSetting>('autoScan', 'prompt');
   const knownServers = new Set(store.allDefinitions().map((d) => d.serverName));
@@ -54,14 +46,19 @@ export async function maybeAutoScan(store: LensStore, onDone: () => void): Promi
   } // '나중에'/닫기 → 아무것도 저장 안 함 → 다음 시작 때 재질문
 }
 
-/** ~/.claude.json 변경 감시 → 디바운스 후 재판정. dispose 반환. */
-export function watchClaudeConfig(store: LensStore, onDone: () => void): vscode.Disposable {
-  const cfgPath = claudeConfigPath();
+/** 전 소스(claude-user/project, codex, gemini) 설정 파일 변경 감시 → 디바운스 후 재판정. dispose 반환. */
+export function watchConfigSources(store: LensStore, onDone: () => void): vscode.Disposable {
+  const paths = configSources().map((s) => s.filePath);
   let timer: ReturnType<typeof setTimeout> | undefined;
   const listener = () => {
     clearTimeout(timer);
     timer = setTimeout(() => void maybeAutoScan(store, onDone), 2000); // 저장 연타 흡수
   };
-  watchFile(cfgPath, { interval: 5000 }, listener);
-  return { dispose: () => { clearTimeout(timer); unwatchFile(cfgPath, listener); } };
+  for (const p of paths) watchFile(p, { interval: 5000 }, listener);
+  return {
+    dispose: () => {
+      clearTimeout(timer);
+      for (const p of paths) unwatchFile(p, listener);
+    },
+  };
 }
