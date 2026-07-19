@@ -91,8 +91,10 @@ describe('disableServer — 유저 전역(~/.claude.json)', () => {
   it('이미 스태시된 서버는 no-op (멱등)', () => {
     disableServer(paths, 'lenstest');
     const stashBefore = fs.readFileSync(paths.stashPath, 'utf8');
+    const cjBefore = fs.readFileSync(paths.claudeJsonPath, 'utf8');
     disableServer(paths, 'lenstest');
     expect(fs.readFileSync(paths.stashPath, 'utf8')).toBe(stashBefore);
+    expect(fs.readFileSync(paths.claudeJsonPath, 'utf8')).toBe(cjBefore);
   });
 });
 
@@ -212,6 +214,30 @@ describe('enableServer — 사용자가 스태시 이후 수동으로 재등록�
     expect(cj.mcpServers.lenstest).toEqual(userSpec); // 사용자의 새 정의 보존
     const stash = readJson(paths.stashPath);
     expect(stash.lenstest).toBeUndefined(); // 스태시 항목은 정리됨
+  });
+});
+
+describe('disableServer — 스태시 이후 사용자가 다른 스펙으로 재등록한 서버를 다시 disable', () => {
+  it('스태시의 spec이 최신(방금 제거된) 스펙으로 갱신되고, disabledAt은 최초 값 그대로 유지되며, claude.json에서는 제거된다', () => {
+    const originalDisabledAt = '2020-01-01T00:00:00.000Z';
+    const staleEntry = {
+      origin: { kind: 'user' },
+      spec: { command: 'node', args: ['old-server.js'] },
+      disabledAt: originalDisabledAt,
+    };
+    fs.writeFileSync(paths.stashPath, JSON.stringify({ lenstest: staleEntry }));
+    const newSpec = { command: 'node', args: ['new-server.js'], env: { PORT: '4200' } };
+    fs.writeFileSync(paths.claudeJsonPath, JSON.stringify({
+      mcpServers: { lenstest: newSpec },
+    }));
+
+    disableServer(paths, 'lenstest');
+
+    const stash = readJson(paths.stashPath);
+    expect(stash.lenstest.spec).toEqual(newSpec); // 오래된 스펙이 아니라 방금 제거된 스펙
+    expect(stash.lenstest.disabledAt).toBe(originalDisabledAt); // 최초 비활성화 시각 보존
+    const cj = readJson(paths.claudeJsonPath);
+    expect(cj.mcpServers.lenstest).toBeUndefined(); // claude.json에서는 제거됨
   });
 });
 

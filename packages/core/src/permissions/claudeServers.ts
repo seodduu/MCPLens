@@ -120,13 +120,17 @@ export function disableServer(paths: ClaudeConfigPaths, name: string): void {
     }
   }
   if (origin && cj) {
-    // 스태시 항목 쓰기와 claude.json 정리는 별개 관심사: 스태시는 없을 때만 채우고
-    // (멱등성), claude.json은 서버가 여전히 남아있을 때마다 정리한다
-    // (스태시-먼저 순서로 인한 크래시/EPERM 중간 상태에서도 재시도로 복구 가능해야 함).
-    if (!(name in stash)) {
-      stash[name] = { origin, spec, disabledAt: new Date().toISOString() };
-      writeJsonFile(paths.stashPath, stash);      // 스펙 유실 방지: 스태시 먼저
-    }
+    // 스태시는 항상 "방금 claude.json에서 실제로 제거한 스펙"을 반영해야 한다.
+    // 사용자가 이전 disable 이후 같은 이름을 다른 스펙으로 손수 재등록했을 수 있으므로
+    // (이 경우 origin이 다시 발견되어 이 분기로 들어온다), stash에 이미 항목이 있어도
+    // 그 오래된 spec으로 skip하면 안 되고 방금 읽은 새 spec으로 덮어써야 한다 —
+    // 그래야 claude.json에서 지워지는 스펙과 stash에 남는 스펙이 항상 일치한다 (무손실).
+    // disabledAt만은 최초 비활성화 시각을 보존해 멱등성을 유지한다
+    // (서버가 claude.json에 없으면 애초에 origin이 잡히지 않아 이 분기에 들어오지 않으므로,
+    // 진짜 이중 disable은 여기서 아무것도 쓰지 않는 완전한 no-op으로 남는다).
+    const prior = stash[name];
+    stash[name] = { origin, spec, disabledAt: prior?.disabledAt ?? new Date().toISOString() };
+    writeJsonFile(paths.stashPath, stash);      // 스펙 유실 방지: 스태시 먼저
     writeJsonFile(paths.claudeJsonPath, cj);
   }
 
@@ -149,6 +153,11 @@ export function enableServer(paths: ClaudeConfigPaths, name: string): void {
     ? ((readJsonFile(paths.claudeJsonPath) ?? {}) as
         { mcpServers?: Record<string, unknown>; projects?: Record<string, { mcpServers?: Record<string, unknown> }> })
     : null;
+  // disableServer와 달리 여기서는 settings.json 읽기를 특정 조건으로 게이팅할 수 없다:
+  // disableServer는 이름이 .mcp.json에 있는지(inMcpJson)로 필요 여부를 미리 판단할 수 있지만,
+  // enableServer는 이름이 disabledMcpjsonServers 목록에 있는지 settings.json을 읽기 전에는
+  // 알 방법이 없다. 그래서 항상 무조건 엄격하게 읽는다 — 그 결과 settings.json이 깨져 있으면
+  // 실제로는 아무것도 쓰지 않을 이름(name)에 대해서도 enableServer가 throw한다 (의도된 동작).
   const settings = readJsonFile(paths.settingsPath) as Record<string, unknown> | null;
 
   // 1) 스태시 → ~/.claude.json 원위치 복원 (복원 먼저, 스태시 제거는 나중 — 스펙 유실 방지).
