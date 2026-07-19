@@ -1,4 +1,22 @@
-# Wave 4 실기기 스모크 기록 (2026-07-19)
+# 실기기 스모크 기록
+
+## Wave 7 (2026-07-20) — 설정 소스 3사 + http 스캔
+
+`node packages/cli/dist/main.js scan` 1회 실행으로 전 경로 검증:
+
+```
+발견: claude-user 3개 · claude-project 1개 · codex 1개   ← R1: 소스별 발견
+- computer-use: stdio 서버가 아니어서 건너뜀              ← enabled=false/판별불가 스킵
+- lenstest: 12개 툴, 936 토큰                            ← 기존 stdio 경로 무손상
+- lenstest2: 12개 툴, 936 토큰
+- vercel: 인증 필요 — 스킵 (OAuth 지원은 로드맵)           ← R2a: 실제 원격 http에 접속, 401을 정확히 분류
+- node_repl: 3개 툴, 1247 토큰                           ← ★ Codex 등록 서버가 비용 축에 처음 편입
+```
+
+- http 성공 경로는 유닛(127.0.0.1 루프백 실서버)으로 검증됨; 실원격은 인증 스킵 경로 확인
+- 남은 수동 항목: F5 확장에서 `~/.codex/config.toml` 수정 시 자동 재스캔 (감시 3파일 확장 검증)
+
+## Wave 4 실기기 스모크 기록 (2026-07-19)
 
 계획서 Task 14 Step 2의 실기기 검증 결과. 자동화 항목은 메인 터미널이 직렬 수행,
 수동 항목 3건은 하단에 절차와 함께 남김.
