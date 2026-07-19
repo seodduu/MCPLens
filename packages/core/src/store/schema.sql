@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS tool_definitions (
   tool_name         TEXT NOT NULL,
   definition_tokens INTEGER NOT NULL,
   scanned_at        TEXT NOT NULL,
+  first_scanned_at  TEXT,
   PRIMARY KEY (server_name, tool_name)
 );
 CREATE TABLE IF NOT EXISTS token_usage (

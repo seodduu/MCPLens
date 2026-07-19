@@ -5,7 +5,7 @@ import type { EngineInput } from '../../src/engine/engine.js';
 
 const def = (tool: string, tokens: number) => ({
   serverName: 'github', toolName: tool, definitionTokens: tokens,
-  scannedAt: '2026-07-19T00:00:00Z' });
+  scannedAt: '2026-07-19T00:00:00Z', firstScannedAt: '2026-07-19T00:00:00Z' });
 const call = (tool: string) => ({
   sessionId: 's1', serverName: 'github', toolName: tool,
   calledAt: '2026-07-10T00:00:00Z', durationMs: 10, isError: false,

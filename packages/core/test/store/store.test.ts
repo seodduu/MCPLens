@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { LensStore } from '../../src/store/store.js';
 import type { AdapterResult } from '../../src/types.js';
+import initSqlJs from 'sql.js';
+import { writeFileSync } from 'node:fs';
 
 function fakeResult(sessionId: string, calls = 2): AdapterResult {
   return {
@@ -66,5 +68,51 @@ describe('LensStore', () => {
     r.toolLoads = [{ sessionId: 'x', serverName: 'g', toolName: 't', loadedTokens: 5 }];
     s.ingest(r);
     expect(s.loadsSince('2026-06-01')).toHaveLength(1);
+  });
+
+  it('upsert를 2회 해도 first_scanned_at은 최초값을 보존한다', async () => {
+    const s = await LensStore.open(':memory:');
+    s.upsertDefinitions([{ serverName: 'github', toolName: 'a',
+      definitionTokens: 100, scannedAt: '2026-01-01T00:00:00Z',
+      firstScannedAt: '2026-01-01T00:00:00Z' }]);
+    s.upsertDefinitions([{ serverName: 'github', toolName: 'a',
+      definitionTokens: 120, scannedAt: '2026-07-01T00:00:00Z',
+      firstScannedAt: '2026-07-01T00:00:00Z' }]);
+    const [d] = s.allDefinitions();
+    expect(d.definitionTokens).toBe(120);              // 최신값으로 갱신
+    expect(d.scannedAt).toBe('2026-07-01T00:00:00Z');  // 최신값으로 갱신
+    expect(d.firstScannedAt).toBe('2026-01-01T00:00:00Z'); // 최초값 보존
+  });
+
+  it('first_scanned_at 없는 구스키마 DB를 열면 컬럼이 추가되고 scanned_at으로 백필된다', async () => {
+    const tmp = `${process.env.TMPDIR ?? '/tmp'}/lens-migrate-${Date.now()}.db`;
+    // 구스키마 DB를 손으로 만든다 (first_scanned_at 컬럼 없음)
+    const SQL = await initSqlJs();
+    const legacy = new SQL.Database();
+    legacy.exec(`CREATE TABLE tool_definitions (
+      server_name TEXT NOT NULL, tool_name TEXT NOT NULL,
+      definition_tokens INTEGER NOT NULL, scanned_at TEXT NOT NULL,
+      PRIMARY KEY (server_name, tool_name));
+      INSERT INTO tool_definitions VALUES('github','old',700,'2026-02-02T00:00:00Z');`);
+    writeFileSync(tmp, Buffer.from(legacy.export()));
+    legacy.close();
+
+    const s = await LensStore.open(tmp);
+    const [d] = s.allDefinitions();
+    expect(d.toolName).toBe('old');
+    expect(d.firstScannedAt).toBe('2026-02-02T00:00:00Z'); // scanned_at으로 백필
+    s.close();
+  });
+
+  it('lastCallByTool은 전 기간 기준 툴별 마지막 호출 시각을 준다', async () => {
+    const s = await LensStore.open(':memory:');
+    const old = fakeResult('old', 0);
+    old.session.startedAt = '2026-01-01T00:00:00Z';
+    old.toolCalls = [{ sessionId: 'old', serverName: 'github', toolName: 'stale',
+      calledAt: '2026-01-05T00:00:00Z', durationMs: 1, isError: false,
+      responseTokens: 10, responseText: null }];
+    s.ingest(old);
+    expect(s.lastCallByTool().get('github stale')).toBe('2026-01-05T00:00:00Z');
+    expect(s.lastCallByTool().get('github ghost')).toBeUndefined();
   });
 });

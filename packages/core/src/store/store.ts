@@ -8,6 +8,21 @@ import type { AdapterResult, SessionMeta, ToolCallEvent, ToolDefinition,
 const SCHEMA = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), 'schema.sql'), 'utf8');
 
+/**
+ * schema.sql은 CREATE TABLE IF NOT EXISTS라 기존 DB에는 새 컬럼이 생기지 않는다.
+ * 열 때마다 실제 컬럼 목록을 보고 없으면 추가·백필한다 (멱등).
+ */
+function migrate(db: Database): void {
+  const cols = new Set<string>();
+  const st = db.prepare('PRAGMA table_info(tool_definitions)');
+  while (st.step()) cols.add(st.getAsObject().name as string);
+  st.free();
+  if (!cols.has('first_scanned_at')) {
+    db.exec('ALTER TABLE tool_definitions ADD COLUMN first_scanned_at TEXT');
+    db.exec('UPDATE tool_definitions SET first_scanned_at = scanned_at');
+  }
+}
+
 export class LensStore {
   private constructor(private db: Database, private filePath: string) {}
 
@@ -17,6 +32,7 @@ export class LensStore {
       ? new SQL.Database(readFileSync(filePath))
       : new SQL.Database();
     db.exec(SCHEMA);
+    migrate(db);
     return new LensStore(db, filePath);
   }
 
@@ -55,11 +71,15 @@ export class LensStore {
   upsertDefinitions(defs: ToolDefinition[]): void {
     for (const d of defs)
       this.run(
-        `INSERT INTO tool_definitions(server_name, tool_name, definition_tokens, scanned_at)
-         VALUES(?,?,?,?)
+        `INSERT INTO tool_definitions(server_name, tool_name, definition_tokens,
+           scanned_at, first_scanned_at)
+         VALUES(?,?,?,?,?)
          ON CONFLICT(server_name, tool_name) DO UPDATE
-           SET definition_tokens=excluded.definition_tokens, scanned_at=excluded.scanned_at`,
-        [d.serverName, d.toolName, d.definitionTokens, d.scannedAt]);
+           SET definition_tokens=excluded.definition_tokens,
+               scanned_at=excluded.scanned_at,
+               first_scanned_at=COALESCE(tool_definitions.first_scanned_at,
+                                         excluded.first_scanned_at)`,
+        [d.serverName, d.toolName, d.definitionTokens, d.scannedAt, d.firstScannedAt]);
   }
 
   getCursor(filePath: string): { byteOffset: number; mtimeMs: number } | null {
@@ -80,6 +100,8 @@ export class LensStore {
     return this.select('SELECT * FROM tool_definitions', []).map((r) => ({
       serverName: r.server_name as string, toolName: r.tool_name as string,
       definitionTokens: r.definition_tokens as number, scannedAt: r.scanned_at as string,
+      // 마이그레이션 직후·구행 방어: 값이 없으면 scanned_at을 최초 관찰로 간주
+      firstScannedAt: (r.first_scanned_at as string | null) ?? (r.scanned_at as string),
     }));
   }
   callsSince(iso: string): ToolCallEvent[] {
@@ -110,6 +132,22 @@ export class LensStore {
       filePath: r.file_path as string, startedAt: r.started_at as string | null,
       mode: r.mode as SessionMeta['mode'],
     }));
+  }
+
+  /**
+   * 전 기간 기준 툴별 마지막 호출 시각. 키는 `${serverName} ${toolName}`.
+   * 분석 창(callsSince) 밖의 과거 사용 이력을 확신 등급에 반영하기 위한 것 —
+   * 창 안 호출만 보면 "예전엔 쓰던 툴"과 "한 번도 안 쓴 툴"이 구분되지 않는다.
+   */
+  lastCallByTool(): Map<string, string> {
+    const rows = this.select(
+      `SELECT server_name, tool_name, MAX(called_at) AS last_called_at
+       FROM tool_calls WHERE called_at IS NOT NULL
+       GROUP BY server_name, tool_name`, []);
+    return new Map(rows.map((r) => [
+      `${r.server_name as string} ${r.tool_name as string}`,
+      r.last_called_at as string,
+    ]));
   }
 
   save(): void {
