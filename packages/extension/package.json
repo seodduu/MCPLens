@@ -56,7 +56,8 @@
     "build": "node esbuild.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "smoke": "node scripts/bundle-smoke.mjs",
-    "vscode:prepublish": "npm run typecheck && npm run build"
+    "vscode:prepublish": "npm run typecheck && npm run build",
+    "package": "vsce package --no-dependencies"
   },
   "dependencies": {
     "@mcp-lens/core": "*"
