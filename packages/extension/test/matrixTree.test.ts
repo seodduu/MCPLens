@@ -80,3 +80,42 @@ describe('실패 표기 (실패만 괄호로)', () => {
     expect(ok.description).not.toContain('실패');
   });
 });
+
+describe('deny 토글 표시', () => {
+  const input: EngineInput = {
+    definitions: [],
+    calls: [call('c1', 'github', 'search'), call('c1', 'github', 'get_file'),
+            call('x1', 'github', 'search')],
+    loads: [],
+    sessions: [session('c1', 'claude-code'), session('x1', 'codex')],
+  };
+  const denied = new Set(['mcp__github__search']);
+
+  it('claude-code 툴 노드에 client/serverName/toolName이 채워진다', () => {
+    const tool = buildTree(input, denied)[0].children[0].children
+      .find((t) => t.label === 'search')!;
+    expect(tool.client).toBe('claude-code');
+    expect(tool.serverName).toBe('github');
+    expect(tool.toolName).toBe('search');
+  });
+  it('deny된 claude-code 툴은 enabled=false + description에 차단됨', () => {
+    const tool = buildTree(input, denied)[0].children[0].children
+      .find((t) => t.label === 'search')!;
+    expect(tool.enabled).toBe(false);
+    expect(tool.description).toContain('차단됨');
+  });
+  it('deny 안 된 claude-code 툴은 enabled=true', () => {
+    const tool = buildTree(input, denied)[0].children[0].children
+      .find((t) => t.label === 'get_file')!;
+    expect(tool.enabled).toBe(true);
+    expect(tool.description).not.toContain('차단됨');
+  });
+  it('codex 툴은 같은 서버·툴이라도 enabled=undefined (범위 제외)', () => {
+    const codexTool = buildTree(input, denied)[1].children[0].children[0];
+    expect(codexTool.enabled).toBeUndefined();
+  });
+  it('deniedRules 생략 시 기존 동작 그대로 (전부 enabled=true)', () => {
+    const tool = buildTree(input)[0].children[0].children[0];
+    expect(tool.enabled).toBe(true);
+  });
+});

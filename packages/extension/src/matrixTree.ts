@@ -1,6 +1,6 @@
 // packages/extension/src/matrixTree.ts — vscode import 금지 (테스트 가능성)
 import type { EngineInput, MatrixRow } from '@mcp-lens/core';
-import { buildMatrix, splitByClient, visibleMatrixRows } from '@mcp-lens/core';
+import { buildMatrix, mcpDenyRule, splitByClient, visibleMatrixRows } from '@mcp-lens/core';
 
 export interface LensNode {
   kind: 'client' | 'server' | 'tool';
@@ -41,15 +41,22 @@ export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set
         rs.reduce((s, r) => s + r.callCount, 0),
         rs.reduce((s, r) => s + r.reliability.errorCount, 0),
       )} · ${rs.reduce((s, r) => s + r.responseTokens, 0)}tok`,
-      children: rs.map((r): LensNode => ({
-        kind: 'tool',
-        id: `${client}/${server}/${r.toolName}`,
-        label: r.toolName,
-        description: `${fmtCalls(r.callCount, r.reliability.errorCount)} · ${r.responseTokens}tok · ${r.recommendation.action}`,
-        tooltip: r.recommendation.reason,
-        action: r.recommendation.action,
-        children: [],
-      })),
+      children: rs.map((r): LensNode => {
+        const enabled = client === 'claude-code'
+          ? !deniedRules.has(mcpDenyRule(server, r.toolName)) : undefined;
+        const desc = `${fmtCalls(r.callCount, r.reliability.errorCount)} · ${r.responseTokens}tok · ${r.recommendation.action}`;
+        return {
+          kind: 'tool',
+          id: `${client}/${server}/${r.toolName}`,
+          label: r.toolName,
+          description: enabled === false ? `${desc} · 차단됨` : desc,
+          tooltip: r.recommendation.reason,
+          action: r.recommendation.action,
+          client, serverName: server, toolName: r.toolName,
+          enabled,
+          children: [],
+        };
+      }),
     }));
     const totalCalls = rows.reduce((s, r) => s + r.callCount, 0);
     const totalErrors = rows.reduce((s, r) => s + r.reliability.errorCount, 0);
