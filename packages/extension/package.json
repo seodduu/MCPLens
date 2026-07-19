@@ -16,6 +16,23 @@
         "title": "MCP Lens: Show Report"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "mcpLens",
+          "title": "MCP Lens",
+          "icon": "media/lens.svg"
+        }
+      ]
+    },
+    "views": {
+      "mcpLens": [
+        {
+          "id": "mcpLens.matrix",
+          "name": "비용×사용 매트릭스"
+        }
+      ]
+    },
     "configuration": {
       "title": "MCP Lens",
       "properties": {

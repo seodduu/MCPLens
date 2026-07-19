@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import { LensStore, LogWatcher, buildMatrix, splitByClient, sessionSavings, dbPath,
   detectClients, ClaudeAdapter, CodexAdapter, GeminiAdapter } from '@mcp-lens/core';
 import { formatStatus } from './statusBar.js';
+import { buildTree } from './matrixTree.js';
+import { LensTreeProvider } from './lensTreeProvider.js';
 
 let watcher: LogWatcher | undefined;
 let store: LensStore | undefined;
@@ -10,6 +12,9 @@ export async function activate(ctx: vscode.ExtensionContext) {
   const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   item.text = 'Lens: starting…'; item.command = 'mcp-lens.showReport'; item.show();
   ctx.subscriptions.push(item);
+
+  const treeProvider = new LensTreeProvider();
+  ctx.subscriptions.push(vscode.window.registerTreeDataProvider('mcpLens.matrix', treeProvider));
 
   store = await LensStore.open(dbPath()); // 전역 제약 2: 공유 경로
   const active = detectClients().filter((c) => c.installed);
@@ -26,6 +31,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
     const input = { definitions: store!.allDefinitions(), calls: store!.callsSince(since),
       loads: store!.loadsSince(since), sessions: store!.sessionsSince(since) };
     item.text = formatStatus(input.calls.length, sessionSavings(input).savedTokens);
+    treeProvider.setRoots(buildTree(input));
   };
   await watcher.backfill(); // 시작 시 밀린 세션 따라잡기 (기능 2)
   refresh();
