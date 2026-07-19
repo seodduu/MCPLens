@@ -12,6 +12,7 @@ export async function scanServer(
   spec: McpServerSpec,
   timeoutMs = 15000,
 ): Promise<ToolDefinition[]> {
+  if (!spec.command) throw new Error('stdio spec without command');
   const transport = new StdioClientTransport({
     command: spec.command,
     args: spec.args,

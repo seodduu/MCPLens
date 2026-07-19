@@ -8,7 +8,7 @@ export { CodexAdapter } from './adapters/codex/adapter.js';
 export { GeminiAdapter, splitFlattenedName } from './adapters/gemini/adapter.js';
 export { LensStore } from './store/store.js';
 export { scanServer } from './scanner/scanner.js';
-export { readClaudeMcpConfig, type McpServerSpec } from './scanner/configs.js';
+export { readClaudeMcpConfig, specTransport, type McpServerSpec } from './scanner/configs.js';
 export { collectServerSpecs, type CollectResult } from './scanner/configs.js';
 export { detectClients, type ClientStatus } from './detect/detector.js';
 export { LogWatcher } from './watch/watcher.js';

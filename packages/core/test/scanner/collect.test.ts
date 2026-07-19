@@ -35,16 +35,19 @@ describe('collectServerSpecs', () => {
     expect(specs[0].command).toBe('top-cmd');
   });
 
-  it('command 없는 (http 등) 서버는 skip 목록에 넣고 스펙에서 제외한다', () => {
+  it('url이 있는 http 서버는 스펙에 포함되고 전송 판별 불가한 서버만 skip된다', () => {
     const json = JSON.stringify({
       mcpServers: {
         github: { command: 'gh-mcp' },
         remote: { type: 'http', url: 'https://example.com/mcp' },
+        unknown: { type: 'http' },
+        empty: {},
       },
     });
     const { specs, skipped } = collectServerSpecs(json);
-    expect(specs.map((s) => s.name)).toEqual(['github']);
-    expect(skipped).toEqual(['remote']);
+    expect(specs.map((s) => s.name).sort()).toEqual(['github', 'remote']);
+    expect(specs.find((s) => s.name === 'remote')!.url).toBe('https://example.com/mcp');
+    expect(skipped.sort()).toEqual(['empty', 'unknown']);
   });
 
   it('잘못된 JSON 은 throw 하지 않고 빈 결과를 반환한다', () => {
