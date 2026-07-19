@@ -1,6 +1,6 @@
 // packages/core/test/engine/engine.test.ts
 import { describe, it, expect } from 'vitest';
-import { buildMatrix, sessionSavings } from '../../src/engine/engine.js';
+import { buildMatrix, sessionSavings, splitByClient } from '../../src/engine/engine.js';
 import type { EngineInput } from '../../src/engine/engine.js';
 
 const def = (tool: string, tokens: number) => ({
@@ -127,5 +127,31 @@ describe('sessionSavings', () => {
     expect(s.potentialTokens).toBe(1200);
     expect(s.actualTokens).toBe(500);  // 로드된 a만 — 이름 조인으로 500 산출
     expect(s.savedTokens).toBe(700);
+  });
+});
+
+describe('splitByClient', () => {
+  it('세션의 클라이언트별로 calls/loads가 분할되고 definitions는 공유된다', () => {
+    const input: EngineInput = {
+      definitions: [def('shared_tool', 100)],
+      calls: [
+        { ...call('a'), sessionId: 'c1' },
+        { ...call('b'), sessionId: 'x1' },
+      ],
+      loads: [{ sessionId: 'c1', serverName: 'github', toolName: 'a', loadedTokens: null }],
+      sessions: [
+        { ...session('DEFERRED_MEASURABLE'), sessionId: 'c1', client: 'claude-code' },
+        { ...session('UPFRONT'), sessionId: 'x1', client: 'codex' },
+      ],
+    };
+    const parts = splitByClient(input);
+    expect(parts.map((p) => p.client)).toEqual(['claude-code', 'codex']);
+    const claude = parts[0].input, codex = parts[1].input;
+    expect(claude.calls).toHaveLength(1);
+    expect(claude.calls[0].toolName).toBe('a');
+    expect(claude.loads).toHaveLength(1);
+    expect(codex.calls[0].toolName).toBe('b');
+    expect(codex.loads).toHaveLength(0);
+    expect(claude.definitions).toEqual(codex.definitions); // 공유
   });
 });

@@ -1,6 +1,6 @@
 // packages/core/src/engine/engine.ts
-import type { LoadPattern, MatrixRow, Recommendation, SessionMeta, ToolCallEvent,
-  ToolDefinition, ToolLoadEvent } from '../types.js';
+import type { ClientId, LoadPattern, MatrixRow, Recommendation, SessionMeta,
+  ToolCallEvent, ToolDefinition, ToolLoadEvent } from '../types.js';
 
 export interface EngineInput {
   definitions: ToolDefinition[];
@@ -143,4 +143,27 @@ function recommend(
   }
   if (row.callCount > 0) return { action: 'keep', reason: `${row.callCount}회 호출됨`, evidenceLabel };
   return { action: 'unknown', reason: '정의 토큰 미확보 (스캐너 미커버)', evidenceLabel: '측정 불가' };
+}
+
+/**
+ * EngineInput을 클라이언트별로 분할한다 (클라이언트별 매트릭스 표시용).
+ * definitions는 클라이언트 무관 공유 자원이므로 각 분할에 그대로 포함된다.
+ */
+export function splitByClient(
+  input: EngineInput,
+): Array<{ client: ClientId; input: EngineInput }> {
+  const clients = [...new Set(input.sessions.map((s) => s.client))].sort();
+  return clients.map((client) => {
+    const ids = new Set(
+      input.sessions.filter((s) => s.client === client).map((s) => s.sessionId));
+    return {
+      client,
+      input: {
+        definitions: input.definitions,
+        calls: input.calls.filter((c) => ids.has(c.sessionId)),
+        loads: input.loads.filter((l) => ids.has(l.sessionId)),
+        sessions: input.sessions.filter((s) => s.client === client),
+      },
+    };
+  });
 }

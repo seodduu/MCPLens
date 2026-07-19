@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import { LensStore, LogWatcher, buildMatrix, sessionSavings, dbPath, detectClients,
-  ClaudeAdapter, CodexAdapter, GeminiAdapter } from '@mcp-lens/core';
+import { LensStore, LogWatcher, buildMatrix, splitByClient, sessionSavings, dbPath,
+  detectClients, ClaudeAdapter, CodexAdapter, GeminiAdapter } from '@mcp-lens/core';
 import { formatStatus } from './statusBar.js';
 
 let watcher: LogWatcher | undefined;
@@ -33,9 +33,13 @@ export async function activate(ctx: vscode.ExtensionContext) {
       const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
       const input = { definitions: store!.allDefinitions(), calls: store!.callsSince(since),
         loads: store!.loadsSince(since), sessions: store!.sessionsSince(since) };
-      const rows = buildMatrix(input);
-      const doc = rows.map((r) =>
-        `${r.serverName}/${r.toolName}: ${r.callCount}회, 응답 ${r.responseTokens}tok, 정의 ${r.definitionTokens ?? '?'}tok → ${r.recommendation.action} (${r.recommendation.reason})`).join('\n');
+      const sections = splitByClient(input).map(({ client, input: sub }) => {
+        const rows = buildMatrix(sub).filter((r) => r.callCount > 0 || r.definitionTokens != null);
+        const lines = rows.map((r) =>
+          `- ${r.serverName}/${r.toolName}: ${r.callCount}회, 응답 ${r.responseTokens}tok, 정의 ${r.definitionTokens ?? '?'}tok → ${r.recommendation.action} (${r.recommendation.reason})`);
+        return `## ${client} (세션 ${sub.sessions.length}개)\n${lines.length ? lines.join('\n') : '- MCP 호출 없음'}`;
+      });
+      const doc = `# MCP Lens Report (최근 30일)\n\n${sections.join('\n\n')}`;
       vscode.workspace.openTextDocument({ content: doc, language: 'markdown' })
         .then((d) => vscode.window.showTextDocument(d));
     }));
