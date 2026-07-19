@@ -24,3 +24,4 @@ export { configSources, collectFromSource, collectAllSpecs, type ConfigSource } 
 export { detectClients, type ClientStatus } from './detect/detector.js';
 export { LogWatcher } from './watch/watcher.js';
 export { claudeSettingsPath, mcpDenyRule, readDeniedMcpTools, denyMcpTool, allowMcpTool } from './permissions/claudeSettings.js';
+export { defaultClaudeConfigPaths, listManagedServers, disableServer, enableServer, type ClaudeConfigPaths, type ManagedServer, type StashedServer, type StashOrigin } from './permissions/claudeServers.js';

@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "shared-db": { "command": "npx", "args": ["db-mcp"] }
+  }
+}

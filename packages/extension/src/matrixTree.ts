@@ -1,5 +1,5 @@
 // packages/extension/src/matrixTree.ts — vscode import 금지 (테스트 가능성)
-import type { EngineInput, MatrixRow } from '@mcp-lens/core';
+import type { EngineInput, ManagedServer, MatrixRow } from '@mcp-lens/core';
 import { buildMatrix, mcpDenyRule, splitByClient, visibleMatrixRows } from '@mcp-lens/core';
 
 export interface LensNode {
@@ -24,7 +24,8 @@ function fmtCalls(calls: number, errors: number): string {
   return errors > 0 ? `${calls}회(실패 ${errors})` : `${calls}회`;
 }
 
-export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set()): LensNode[] {
+export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set(),
+  managedServers: ManagedServer[] = []): LensNode[] {
   return splitByClient(input).map(({ client, input: sub }) => {
     // 모드 인지 표시: 지연 로딩 클라이언트에서는 실비용 0인 미사용 툴을 숨긴다
     const rows = visibleMatrixRows(buildMatrix(sub), sub.sessions);

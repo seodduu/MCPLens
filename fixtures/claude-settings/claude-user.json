@@ -1,0 +1,12 @@
+{
+  "oauthAccount": { "email": "user@example.com" },
+  "mcpServers": {
+    "lenstest": { "command": "node", "args": ["server.js"], "env": { "PORT": "3100" } }
+  },
+  "projects": {
+    "/Users/x/proj": {
+      "allowedTools": [],
+      "mcpServers": { "projserver": { "url": "https://proj.example/mcp" } }
+    }
+  }
+}
