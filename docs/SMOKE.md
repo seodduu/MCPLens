@@ -18,9 +18,11 @@ defTokens 열이 `-`, savings 0은 **데이터 부재이지 버그 아님**. std
 
 ## 수동 항목 (사용자 수행 필요)
 
-1. **VS Code F5 확장 스모크**: `packages/extension`을 VS Code로 열고 F5 → Extension Development Host에서
-   상태바에 `Lens: N calls · Xk saved` 표시 확인 → 새 Claude Code 세션에서 MCP 툴콜 발생시켜
-   상태바 숫자 갱신(라이브 반영) 확인 → 상태바 클릭 시 리포트 문서 열림 확인
+1. ~~**VS Code F5 확장 스모크**~~ ✅ **통과 (2026-07-19)**: F5 스모크에서 치명 결함 1건 발견·수정 —
+   확장이 ESM으로 컴파일되어 확장 호스트(CJS 전용)가 로드 실패하던 문제 → CJS 전환 커밋.
+   수정 후 상태바 표시·클릭 리포트 정상. **라이브 반영 실증**: 세션에서 MCP 툴 호출
+   (`mcp__ide__getDiagnostics`) → 확장 워처가 실시간 적재(직후 CLI가 "0 files backfilled"인데
+   해당 행 존재 = 워처가 먼저 적재했다는 증거) → 상태바 숫자 갱신 확인
 2. **대시보드 브라우저 렌더**: `npm start -w @mcp-lens/dashboard` 후 http://127.0.0.1:43117 접속 —
    매트릭스 테이블(권고 색상)과 세션 타임라인 렌더 확인
 3. **/lens-audit**: 플러그인 로컬 설치 후 Claude Code에서 `/lens-audit` 실행 —
