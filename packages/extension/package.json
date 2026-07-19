@@ -21,8 +21,32 @@
       {
         "command": "mcp-lens.showReport",
         "title": "MCP Lens: Show Report"
+      },
+      {
+        "command": "mcp-lens.removeTool",
+        "title": "Remove (Claude Code에서 차단)"
+      },
+      {
+        "command": "mcp-lens.addTool",
+        "title": "Add (차단 해제)"
       }
     ],
+    "menus": {
+      "commandPalette": [
+        { "command": "mcp-lens.removeTool", "when": "false" },
+        { "command": "mcp-lens.addTool", "when": "false" }
+      ],
+      "view/item/context": [
+        {
+          "command": "mcp-lens.removeTool",
+          "when": "view == mcpLens.matrix && viewItem == mcpTool-enabled"
+        },
+        {
+          "command": "mcp-lens.addTool",
+          "when": "view == mcpLens.matrix && viewItem == mcpTool-disabled"
+        }
+      ]
+    },
     "viewsContainers": {
       "activitybar": [
         {
