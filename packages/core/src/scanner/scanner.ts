@@ -5,6 +5,7 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { countTokens } from '../tokenize.js';
 import type { ToolDefinition } from '../types.js';
 import { specTransport, type McpServerSpec } from './configs.js';
+import { storedTokenProvider } from './oauth.js';
 
 /** HTTP 응답/에러 메시지에서 인증 요구(401/403·OAuth) 신호를 감지한다. */
 function isAuthRequired(err: unknown): boolean {
@@ -23,7 +24,12 @@ function createTransport(spec: McpServerSpec): Transport {
     });
   }
   if (kind === 'http') {
-    return new StreamableHTTPClientTransport(new URL(spec.url!));
+    // 저장된 Lens 명의 토큰이 있으면 자동 첨부 (비인터랙티브 — redirect는 throw).
+    const authProvider = storedTokenProvider(spec) ?? undefined;
+    return new StreamableHTTPClientTransport(
+      new URL(spec.url!),
+      authProvider ? { authProvider } : undefined,
+    );
   }
   throw new Error(`unknown transport: ${spec.name}`);
 }
@@ -56,7 +62,11 @@ export async function scanServer(
   } catch (err) {
     // 인증 요구는 정상 실패 — 표면이 "인증 필요 — 스킵"으로 안내하도록 신호를 담는다.
     if (isAuthRequired(err)) {
-      throw new Error(`auth-required: ${spec.name} — ${err instanceof Error ? err.message : String(err)}`);
+      const base = err instanceof Error ? err.message : String(err);
+      // 저장 토큰을 첨부했는데도 인증 실패 → 만료+갱신 실패로 보고 재로그인 유도 힌트를 추가한다.
+      const hadTokens = specTransport(spec) === 'http' && storedTokenProvider(spec) != null;
+      const hint = hadTokens ? ' (token-expired)' : '';
+      throw new Error(`auth-required: ${spec.name} — ${base}${hint}`);
     }
     throw err;
   } finally {

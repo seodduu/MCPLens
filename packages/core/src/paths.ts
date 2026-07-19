@@ -8,6 +8,10 @@ export function lensHome(): string {
 export function dbPath(): string {
   return path.join(lensHome(), 'lens.db');
 }
+/** OAuth 토큰·클라이언트 등록 정보 저장 디렉토리 (파일 모드 0600). */
+export function oauthDir(): string {
+  return path.join(lensHome(), 'oauth');
+}
 export function clientLogRoots(client: ClientId): string[] {
   const h = os.homedir();
   switch (client) {
