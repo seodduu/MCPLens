@@ -40,3 +40,21 @@ describe('buildTree', () => {
     expect(buildTree(input)[0].description).toContain('1');
   });
 });
+
+describe('집계 표시', () => {
+  const input: EngineInput = {
+    definitions: [],
+    calls: [call('c1', 'github', 'search'), call('c1', 'github', 'get_file')],
+    loads: [],
+    sessions: [session('c1', 'claude-code')],
+  };
+  it('클라이언트 노드에 총 호출수·응답토큰 합이 들어간다', () => {
+    const client = buildTree(input)[0];
+    expect(client.description).toContain('총 2회');
+    expect(client.description).toContain('100tok'); // 50 + 50
+  });
+  it('서버 노드에 호출수·응답토큰 합이 들어간다', () => {
+    const server = buildTree(input)[0].children[0];
+    expect(server.description).toBe('2회 · 100tok');
+  });
+});

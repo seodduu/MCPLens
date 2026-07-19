@@ -26,7 +26,7 @@ export function buildTree(input: EngineInput): LensNode[] {
       kind: 'server',
       id: `${client}/${server}`,
       label: server,
-      description: `${rs.reduce((s, r) => s + r.callCount, 0)}회`,
+      description: `${rs.reduce((s, r) => s + r.callCount, 0)}회 · ${rs.reduce((s, r) => s + r.responseTokens, 0)}tok`,
       children: rs.map((r): LensNode => ({
         kind: 'tool',
         id: `${client}/${server}/${r.toolName}`,
@@ -37,9 +37,12 @@ export function buildTree(input: EngineInput): LensNode[] {
         children: [],
       })),
     }));
+    const totalCalls = rows.reduce((s, r) => s + r.callCount, 0);
+    const totalTokens = rows.reduce((s, r) => s + r.responseTokens, 0);
     return {
       kind: 'client' as const, id: client, label: client,
-      description: `세션 ${sub.sessions.length}개`, children: servers,
+      description: `세션 ${sub.sessions.length}개 · 총 ${totalCalls}회 · ${totalTokens}tok`,
+      children: servers,
     };
   });
 }
