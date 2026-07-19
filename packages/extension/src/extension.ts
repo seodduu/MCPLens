@@ -4,6 +4,7 @@ import { LensStore, LogWatcher, buildMatrix, splitByClient, sessionSavings, dbPa
 import { formatStatus } from './statusBar.js';
 import { buildTree } from './matrixTree.js';
 import { LensTreeProvider } from './lensTreeProvider.js';
+import { maybeAutoScan, watchClaudeConfig } from './autoScan.js';
 
 let watcher: LogWatcher | undefined;
 let store: LensStore | undefined;
@@ -40,6 +41,9 @@ export async function activate(ctx: vscode.ExtensionContext) {
   ctx.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
     if (e.affectsConfiguration('mcpLens.reportDays')) refresh();
   }));
+
+  void maybeAutoScan(store, refresh);                     // 시작 시 1회 판정
+  ctx.subscriptions.push(watchClaudeConfig(store, refresh)); // 이후 설정 파일 감시
 
   ctx.subscriptions.push(
     vscode.commands.registerCommand('mcp-lens.showReport', () => {
