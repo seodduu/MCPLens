@@ -1,0 +1,14 @@
+{
+  "session_id": "claude-session-anon-001",
+  "transcript_path": "/tmp/claude/session-anon-001.jsonl",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "mcp__github__search__issues",
+  "tool_use_id": "toolu_anon_success_001",
+  "tool_input": {
+    "query": "CLAUDE_TOOL_INPUT_SECRET_7f3d"
+  },
+  "tool_response": {
+    "content": "CLAUDE_TOOL_RESPONSE_SECRET_91ac"
+  },
+  "duration_ms": 125.5
+}

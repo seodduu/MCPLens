@@ -1,0 +1,13 @@
+{
+  "session_id": "claude-session-anon-001",
+  "transcript_path": "/tmp/claude/session-anon-001.jsonl",
+  "hook_event_name": "PostToolUseFailure",
+  "tool_name": "mcp__postgres__query",
+  "tool_use_id": "toolu_anon_failure_001",
+  "tool_input": {
+    "sql": "SELECT * FROM anonymized_records"
+  },
+  "error": "connection unavailable",
+  "is_interrupt": false,
+  "duration_ms": 42
+}
