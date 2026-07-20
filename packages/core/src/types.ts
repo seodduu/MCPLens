@@ -109,8 +109,14 @@ export type RecommendationConfidence = 'high' | 'medium' | 'low';
 
 /** 권고의 관찰 근거 — 모든 action에 균일하게 채운다 (keep에서도 lastCalledAt은 유용) */
 export interface RecommendationEvidence {
-  /** 이 툴을 관찰한 것으로 인정되는 세션 수 */
+  /** 이 툴을 관찰한 것으로 인정되는 세션 수 (startedAt 미상 세션 포함 — 과소평가 방지) */
   observedSessions: number;
+  /**
+   * observedSessions 중 startedAt이 유효해 실제로 창 안임이 확인된 세션 수.
+   * startedAt이 null인 세션은 시간 창 제약을 받지 않고 전 기간이 딸려 오므로,
+   * high 확신은 이 값만 근거로 삼는다 (observedSessions는 그대로 두고 등급만 정직하게).
+   */
+  datedObservedSessions: number;
   /** 관찰 창 길이 (일). 산정 불가 시 null */
   observedDays: number | null;
   /** 마지막 호출 시각 (ISO). 호출 이력 전무면 null */

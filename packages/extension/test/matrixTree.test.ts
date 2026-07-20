@@ -193,4 +193,18 @@ describe('확신 등급 렌더링', () => {
     expect(node.confidence).toBe('low');
     expect(node.description).toContain('후보');
   });
+
+  // splitByClient가 lastCallByTool을 버리면 이 툴은 "한 번도 안 쓴 툴"로 둔갑해 high가 난다.
+  it('창 밖 과거 호출 이력이 있으면 medium (high 아님) — lastCallByTool이 엔진까지 도달한다', () => {
+    const [client] = buildTree({
+      definitions: [unusedDef], calls: [], loads: [], sessions: sess(12),
+      lastCallByTool: new Map([['github unused', '2026-03-14T09:00:00Z']]),
+    });
+    const node = client.children[0].children[0];
+    expect(node.action).toBe('remove');
+    expect(node.confidence).toBe('medium');
+    expect(node.confidence).not.toBe('high');
+    expect(node.description).not.toContain('후보'); // 표시 강등은 low만
+    expect(node.tooltip).toContain('2026-03-14');
+  });
 });

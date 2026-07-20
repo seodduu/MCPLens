@@ -197,6 +197,23 @@ describe('splitByClient', () => {
     expect(codex.loads).toHaveLength(0);
     expect(claude.definitions).toEqual(codex.definitions); // 공유
   });
+
+  it('lastCallByTool은 전 클라이언트 공통이므로 각 분할에 그대로 보존된다', () => {
+    const lastCallByTool = new Map([['github a', '2026-03-14T09:00:00Z']]);
+    const input: EngineInput = {
+      definitions: [def('a', 100)],
+      calls: [{ ...call('a'), sessionId: 'c1' }, { ...call('b'), sessionId: 'x1' }],
+      loads: [],
+      sessions: [
+        { ...session('DEFERRED_MEASURABLE'), sessionId: 'c1', client: 'claude-code' },
+        { ...session('UPFRONT'), sessionId: 'x1', client: 'codex' },
+      ],
+      lastCallByTool,
+    };
+    const parts = splitByClient(input);
+    expect(parts).toHaveLength(2);
+    for (const p of parts) expect(p.input.lastCallByTool).toBe(lastCallByTool);
+  });
 });
 
 describe('M4: 로드만 되고 정의·호출이 없는 툴도 행이 생긴다', () => {
@@ -302,6 +319,27 @@ describe('확신 등급 (evidence 축)', () => {
     expect(row.recommendation.confidence).toBe('medium');
     expect(row.recommendation.evidence.lastCalledAt).toBe('2026-03-14T09:00:00Z');
     expect(row.recommendation.reason).toContain('2026-03-14');
+  });
+
+  it('startedAt 미상 세션이 다수여도 high가 되지 않는다 (창 안 확인 세션 2개)', () => {
+    const undatedSessions = Array.from({ length: 15 }, (_, i) => ({
+      sessionId: `u${i}`, client: 'claude-code' as const, filePath: `/u/${i}`,
+      startedAt: null, mode: 'UPFRONT' as const }));
+    const datedSessions = [
+      { sessionId: 'd0', client: 'claude-code' as const, filePath: '/d/0',
+        startedAt: at(8), mode: 'UPFRONT' as const },
+      { sessionId: 'd1', client: 'claude-code' as const, filePath: '/d/1',
+        startedAt: at(16), mode: 'UPFRONT' as const },
+    ];
+    const input: EngineInput = {
+      definitions: [scanned(at(8))], calls: [], loads: [],
+      sessions: [...undatedSessions, ...datedSessions],
+    };
+    const [row] = buildMatrix(input);
+    expect(row.recommendation.evidence.observedSessions).toBe(17); // 계상은 그대로
+    expect(row.recommendation.evidence.datedObservedSessions).toBe(2);
+    expect(row.recommendation.evidence.observedDays).toBe(8);
+    expect(row.recommendation.confidence).toBe('medium'); // high 아님
   });
 
   it('keep은 high 고정, evidence도 채워진다', () => {

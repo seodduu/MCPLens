@@ -80,7 +80,7 @@ describe('관찰 창 산정', () => {
 describe('확신 등급 규칙', () => {
   const ev = (observedSessions: number, observedDays: number | null,
     lastCalledAt: string | null = null) => ({
-    observedSessions, observedDays, lastCalledAt,
+    observedSessions, datedObservedSessions: observedSessions, observedDays, lastCalledAt,
     costPerSession: 800, totalObservedCost: 800 * observedSessions });
 
   it('10세션·7일·호출 이력 없음 → high', () => {
@@ -116,7 +116,7 @@ describe('확신 등급 규칙', () => {
 describe('reason 꼬리말', () => {
   const ev = (observedSessions: number, observedDays: number | null,
     lastCalledAt: string | null = null) => ({
-    observedSessions, observedDays, lastCalledAt,
+    observedSessions, datedObservedSessions: observedSessions, observedDays, lastCalledAt,
     costPerSession: 800, totalObservedCost: 800 * observedSessions });
 
   it('low는 관찰 부족과 확정 아님을 명시한다', () => {
@@ -155,7 +155,7 @@ describe('reason 꼬리말', () => {
 describe('확신 등급 경계값', () => {
   const ev = (observedSessions: number, observedDays: number | null,
     lastCalledAt: string | null = null) => ({
-    observedSessions, observedDays, lastCalledAt,
+    observedSessions, datedObservedSessions: observedSessions, observedDays, lastCalledAt,
     costPerSession: 800, totalObservedCost: 800 * observedSessions });
 
   // observedSessions 경계: <5 low, 5~9 medium, >=10 high (days 충분·호출 없음일 때)
@@ -167,6 +167,16 @@ describe('확신 등급 경계값', () => {
   it('observedSessions 9 → medium, 10 → high (high 게이트는 >= 10)', () => {
     expect(removeConfidence(ev(9, 20))).toBe('medium');
     expect(removeConfidence(ev(10, 20))).toBe('high');
+  });
+
+  // datedObservedSessions 경계: startedAt 미상 세션만으로는 high를 만들 수 없다
+  const dated = (observedSessions: number, datedObservedSessions: number) => ({
+    observedSessions, datedObservedSessions, observedDays: 20, lastCalledAt: null,
+    costPerSession: 800, totalObservedCost: 800 * observedSessions });
+
+  it('datedObservedSessions 9 → medium, 10 → high (observedSessions는 둘 다 20)', () => {
+    expect(removeConfidence(dated(20, 9))).toBe('medium');
+    expect(removeConfidence(dated(20, 10))).toBe('high');
   });
 
   // observedDays 경계: <3 low, 3~6 medium, >=7 high

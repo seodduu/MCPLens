@@ -203,6 +203,10 @@ function recommend(
 /**
  * EngineInput을 클라이언트별로 분할한다 (클라이언트별 매트릭스 표시용).
  * definitions는 클라이언트 무관 공유 자원이므로 각 분할에 그대로 포함된다.
+ * lastCallByTool도 같은 이유로 전 클라이언트 공통 맵을 각 분할에 그대로 넘긴다 —
+ * 다른 클라이언트에서의 호출 이력은 "예전엔 쓰던 툴"의 증거이므로 확신을 낮추는
+ * 쪽으로만 작용한다(high → medium). 보수적 방향이라 그대로 넘기는 것이 맞다.
+ * 넘기지 않으면 "창 밖 과거 사용"이 보이지 않아 미사용 툴로 둔갑, 거짓 high가 난다.
  */
 export function splitByClient(
   input: EngineInput,
@@ -218,6 +222,7 @@ export function splitByClient(
         calls: input.calls.filter((c) => ids.has(c.sessionId)),
         loads: input.loads.filter((l) => ids.has(l.sessionId)),
         sessions: input.sessions.filter((s) => s.client === client),
+        lastCallByTool: input.lastCallByTool,
       },
     };
   });

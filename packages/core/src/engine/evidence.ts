@@ -14,7 +14,7 @@ const INSPECT_HIGH_CALLS = 10;
 const MS_PER_DAY = 86_400_000;
 
 export const EMPTY_EVIDENCE: RecommendationEvidence = {
-  observedSessions: 0, observedDays: null, lastCalledAt: null,
+  observedSessions: 0, datedObservedSessions: 0, observedDays: null, lastCalledAt: null,
   costPerSession: null, totalObservedCost: null,
 };
 
@@ -149,6 +149,10 @@ export function toolEvidence(
   // startedAt이 null인 세션을 포함하는 규칙(아래)도 이 경우엔 적용하지 않는다 —
   // 그 규칙은 "유효한 창 안에서의 과소평가 방지"이지 창 자체를 만들어내는 근거가 아니다.
   let observedSessions = 0;
+  // startedAt이 유효해 실제로 창 안임이 확인된 세션만 따로 센다.
+  // startedAt이 null인 세션은 store.sessionsSince가 창 제약 없이 전 기간을 반환하므로
+  // 이들만으로 high가 나면 "언제 것인지도 모르는 세션 N개"가 확신의 근거가 된다.
+  let datedObservedSessions = 0;
   if (windowStart != null) {
     for (const s of ctx.sessions) {
       const at = ms(s.startedAt);
@@ -157,6 +161,7 @@ export function toolEvidence(
       if (at < windowStart) continue;
       if (windowEnd != null && at > windowEnd) continue;
       observedSessions++;
+      datedObservedSessions++;
     }
   }
 
@@ -177,6 +182,7 @@ export function toolEvidence(
   const costPerSession = definitionTokens;
   return {
     observedSessions,
+    datedObservedSessions,
     observedDays,
     lastCalledAt,
     costPerSession,
@@ -194,7 +200,10 @@ export function toolEvidence(
 export function removeConfidence(ev: RecommendationEvidence): RecommendationConfidence {
   if (ev.observedSessions < LOW_CONFIDENCE_SESSIONS) return 'low';
   if (ev.observedDays == null || ev.observedDays < LOW_CONFIDENCE_DAYS) return 'low';
+  // high는 startedAt이 확인된 세션만으로도 임계를 넘어야 한다 —
+  // 시각 미상 세션이 쌓여 만든 observedSessions는 창 안 관찰의 증거가 아니다.
   if (ev.observedSessions >= HIGH_CONFIDENCE_SESSIONS
+    && ev.datedObservedSessions >= HIGH_CONFIDENCE_SESSIONS
     && ev.observedDays >= HIGH_CONFIDENCE_DAYS
     && ev.lastCalledAt == null) return 'high';
   return 'medium';
