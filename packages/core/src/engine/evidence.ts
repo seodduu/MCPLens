@@ -45,6 +45,12 @@ export interface EvidenceContext {
   lastCallAllTime: Map<string, string>;
   /** "server tool" → firstScannedAt */
   firstScanned: Map<string, string>;
+  /**
+   * "server tool" → 그 툴 자신의 활동(호출·로드)이 있는 가장 이른 세션 startedAt.
+   * 정의를 못 잡은 툴(load-only)의 firstScannedAt 대체물 — 서버 단위 활동을 그대로 쓰면
+   * 오래된 서버에 어제 처음 로드된 툴이 서버 전체 이력을 물려받아 거짓 확신을 만든다.
+   */
+  toolFirstActivity: Map<string, string>;
 }
 
 export function buildEvidenceContext(
@@ -58,16 +64,20 @@ export function buildEvidenceContext(
 
   // 스캔 전 세션이라도 그 서버의 호출·로드가 있으면 "서버가 구성돼 있었다"는 증거 → 창을 확장한다.
   const serverFirstActivity = new Map<string, string>();
-  const noteActivity = (server: string | null, sessionId: string) => {
+  const toolFirstActivity = new Map<string, string>();
+  const earliest = (map: Map<string, string>, k: string, at: string) => {
+    const prev = map.get(k);
+    if (prev === undefined || (ms(at) ?? Infinity) < (ms(prev) ?? Infinity)) map.set(k, at);
+  };
+  const noteActivity = (server: string | null, tool: string, sessionId: string) => {
     if (server == null) return;
     const at = startedAt.get(sessionId) ?? null;
     if (at == null) return;
-    const prev = serverFirstActivity.get(server);
-    if (prev === undefined || (ms(at) ?? Infinity) < (ms(prev) ?? Infinity))
-      serverFirstActivity.set(server, at);
+    earliest(serverFirstActivity, server, at);
+    earliest(toolFirstActivity, key(server, tool), at);
   };
-  for (const c of calls) noteActivity(c.serverName, c.sessionId);
-  for (const l of loads) noteActivity(l.serverName, l.sessionId);
+  for (const c of calls) noteActivity(c.serverName, c.toolName, c.sessionId);
+  for (const l of loads) noteActivity(l.serverName, l.toolName, l.sessionId);
 
   let windowEnd: string | null = null;
   for (const s of sessions) {
@@ -99,7 +109,7 @@ export function buildEvidenceContext(
   }
 
   return { sessions, serverFirstActivity, serverScanEpoch, windowEnd, lastCallInScope,
-    lastCallAllTime, firstScanned };
+    lastCallAllTime, firstScanned, toolFirstActivity };
 }
 
 export function toolEvidence(
@@ -119,10 +129,12 @@ export function toolEvidence(
   //    (확장하면 하루 된 툴이 "47세션 관찰"로 둔갑해 거짓 확신을 만든다.)
   //  - 툴 정의가 서버 최초 스캔과 같으면 = 첫 스캔. 어댑터가 과거 세션을 백필하므로
   //    실제로 보유한 서버 활동 이력까지 창을 넓히는 것이 맞다.
-  //  - 툴 정의가 없으면(load-only) 툴 단위 하한이 없다 → 서버 활동만이 유일한 하한.
+  //  - 툴 정의가 없으면(load-only) 그 툴 자신의 최초 활동이 firstScannedAt의 대체물이다.
+  //    서버 활동으로 확장하면 3주 된 서버에 어제 처음 로드된 툴이 "21세션 관찰"로 둔갑한다.
+  //    (이름 조인 실패·스캐너 미커버 서버에서 상시 발생하는 경로다.)
   let windowStart: number | null;
   if (toolFirstScanned == null) {
-    windowStart = serverActivity;
+    windowStart = ms(ctx.toolFirstActivity.get(k));
   } else if (scanEpoch != null && toolFirstScanned > scanEpoch) {
     windowStart = toolFirstScanned;
   } else {
@@ -168,7 +180,10 @@ export function toolEvidence(
     observedDays,
     lastCalledAt,
     costPerSession,
-    totalObservedCost: costPerSession == null ? null : costPerSession * observedSessions,
+    // 창 하한 자체가 없으면 관찰량 미상 → 누적 부담도 "모름"(null).
+    // 0을 내보내면 UI에서 "부담 0토큰"으로 읽혀 EMPTY_EVIDENCE와 구분되지 않는다.
+    totalObservedCost:
+      costPerSession == null || windowStart == null ? null : costPerSession * observedSessions,
   };
 }
 

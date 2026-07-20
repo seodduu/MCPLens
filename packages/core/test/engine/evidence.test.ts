@@ -321,7 +321,8 @@ describe('수정 3 — 창 하한이 없으면 관찰량을 주장하지 않는�
     const ev = toolEvidence('ghost', 't', 800, ctx);
     expect(ev.observedSessions).toBe(0);
     expect(ev.observedDays).toBeNull();
-    expect(ev.totalObservedCost).toBe(0);
+    // 관찰량 미상 → 누적 부담도 null ("0토큰"과 "모름"을 UI에서 구분해야 한다)
+    expect(ev.totalObservedCost).toBeNull();
     expect(removeConfidence(ev)).toBe('low');
   });
 
@@ -336,11 +337,65 @@ describe('수정 3 — 창 하한이 없으면 관찰량을 주장하지 않는�
     expect(toolEvidence('github', 't', 800, ctx).observedSessions).toBe(4);
   });
 
-  it('정의는 없어도 서버 활동이 있으면 그 시점부터 창이 생긴다 (load-only 툴)', () => {
+  it('정의는 없어도 그 툴 자신의 활동이 있으면 그 시점부터 창이 생긴다 (load-only 툴)', () => {
     const ctx = buildEvidenceContext([], [], [load('s5', 'github', 't')], sessions(10));
     const ev = toolEvidence('github', 't', null, ctx);
     expect(ev.observedSessions).toBe(5);   // day5 ~ day9
     expect(ev.observedDays).toBe(4);
+  });
+});
+
+describe('수정 4 — 정의 없는 툴은 서버 이력이 아니라 자기 최초 활동을 하한으로 쓴다', () => {
+  it('회귀: 오래된 서버에 어제 처음 로드된 정의 미확보 툴은 high가 되지 않는다', () => {
+    // github은 day0부터 활동 중이고 정의는 a@day0만 잡혀 있다.
+    // 툴 t는 day19에 처음 로드됐고 정의를 못 잡았다 → t의 창은 day19부터여야 한다.
+    const ctx = buildEvidenceContext(
+      [defOf('github', 'a', iso(0))],
+      [call('s0', 'github', 'a', iso(0))],
+      [load('s19', 'github', 't')],
+      sessions(21));
+    const ev = toolEvidence('github', 't', 800, ctx);
+    expect(ev.observedSessions).toBe(2);    // day19, day20
+    expect(ev.observedDays).toBe(1);
+    expect(removeConfidence(ev)).toBe('low');
+    // 같은 컨텍스트에서 정의가 있는 고참 툴은 여전히 서버 활동으로 확장된다
+    const veteran = toolEvidence('github', 'a', 800, ctx);
+    expect(veteran.observedSessions).toBe(21);
+    expect(removeConfidence(veteran)).toBe('medium');   // 호출 이력 있음
+  });
+
+  it('정의 없는 툴의 최초 활동은 호출로도 잡힌다', () => {
+    const ctx = buildEvidenceContext([], [call('s6', 'github', 't', iso(6))],
+      [load('s3', 'github', 'other')], sessions(10));
+    // 같은 서버의 other가 day3에 로드됐지만 t 자신의 최초 활동은 day6
+    expect(toolEvidence('github', 't', 800, ctx).observedSessions).toBe(4);   // day6~day9
+  });
+
+  it('serverName이 null인 로드는 툴 단위 활동으로도 치지 않는다', () => {
+    const ctx = buildEvidenceContext([], [], [load('s2', null, 't')], sessions(10));
+    const ev = toolEvidence('github', 't', 800, ctx);
+    expect(ev.observedSessions).toBe(0);
+    expect(ev.totalObservedCost).toBeNull();
+  });
+});
+
+describe('수정 5 — 세션이 하나도 없을 때', () => {
+  it('sessions가 비면 관찰량 0·일수 null·등급 low', () => {
+    const ctx = buildEvidenceContext([def(iso(0))], [], [], []);
+    const ev = toolEvidence('github', 't', 800, ctx);
+    expect(ev.observedSessions).toBe(0);
+    expect(ev.observedDays).toBeNull();
+    expect(ev.lastCalledAt).toBeNull();
+    expect(removeConfidence(ev)).toBe('low');
+  });
+
+  it('sessions가 비고 정의도 없으면 누적 부담은 null', () => {
+    const ctx = buildEvidenceContext([], [], [], []);
+    const ev = toolEvidence('ghost', 't', 800, ctx);
+    expect(ev.observedSessions).toBe(0);
+    expect(ev.observedDays).toBeNull();
+    expect(ev.totalObservedCost).toBeNull();
+    expect(removeConfidence(ev)).toBe('low');
   });
 });
 
