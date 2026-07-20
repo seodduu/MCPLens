@@ -67,6 +67,7 @@ describe('geminiAdapter.parseFile — 픽스처 chat-upfront.jsonl', () => {
     expect(tc.isError).toBe(false);
     expect(tc.calledAt).toBe('2026-07-18T17:16:49.857Z');
     expect(tc.responseTokens).toBe(0);
+    expect(tc.externalCallId).toBe('mcp_lenstest_lens_get_weather__1jlcieln');
   });
 
   it('responseText에 untrusted_context 래퍼 포함', () => {
@@ -88,6 +89,22 @@ describe('geminiAdapter.parseFile — 픽스처 chat-upfront.jsonl', () => {
       .digest('hex')
       .slice(0, 16);
     expect(result.session.sessionId).toBe(expectedId);
+    expect(result.session.externalSessionId).toBe('b0b95759-2271-4ec1-a4ef-88a649c60ba5');
+  });
+
+  it('공백 native session/call ID를 null로 정규화한다', () => {
+    const content = [
+      JSON.stringify({ sessionId: '  ', startTime: '2026-07-20T00:00:00.000Z' }),
+      JSON.stringify({
+        type: 'gemini', timestamp: '2026-07-20T00:00:01.000Z',
+        toolCalls: [{ id: '\t', name: 'mcp_server_tool', status: 'success' }],
+      }),
+    ].join('\n');
+
+    const parsed = geminiAdapter.parseFile('/fake/blank.jsonl', content);
+
+    expect(parsed.session.externalSessionId).toBeNull();
+    expect(parsed.toolCalls[0].externalCallId).toBeNull();
   });
 
   it('usage는 고유 gemini 레코드 수(2)만큼 — 스트리밍 중복 이중계상 방지', () => {

@@ -22,8 +22,41 @@ describe('CodexAdapter', () => {
     const r = a.parseFile('/fake/r.jsonl', fx);
     expect(r.toolCalls.length).toBeGreaterThan(0);
     expect(r.toolCalls[0].serverName).toBeTruthy();
+    expect(r.toolCalls[0].externalCallId).toBe('exec-1ae8218a-500d-48b9-9a3f-eb2d5a858173');
     expect(r.toolCalls[0].durationMs === null ||
            r.toolCalls[0].durationMs! >= 0).toBe(true);
+  });
+
+  it('session_meta의 native session ID를 externalSessionId로 보존한다', () => {
+    const r = a.parseFile('/fake/r.jsonl', fx);
+
+    expect(r.session.externalSessionId).toBe('019f762f-611f-73d3-9acb-d4875d9e42a7');
+  });
+
+  it('실제 task_started/turn_context payload의 turn_id를 호출 순서에 맞춰 보존한다', () => {
+    const r = a.parseFile('/fake/r.jsonl', fx) as ReturnType<CodexAdapter['parseFile']> & {
+      toolCallTurnIds?: readonly (string | null)[];
+    };
+
+    expect(r.toolCallTurnIds).toEqual(['019f762f-617e-78f0-94e3-cde547506bf3']);
+  });
+
+  it('공백 native session/call ID를 null로 정규화한다', () => {
+    const content = [
+      JSON.stringify({ type: 'session_meta', payload: { type: 'session_meta', session_id: '  ', id: '\t' } }),
+      JSON.stringify({
+        timestamp: '2026-07-20T00:00:00.000Z', type: 'event_msg',
+        payload: {
+          type: 'mcp_tool_call_end', call_id: ' ',
+          invocation: { server: 'server', tool: 'tool' }, result: { Ok: {} },
+        },
+      }),
+    ].join('\n');
+
+    const r = a.parseFile('/fake/blank.jsonl', content);
+
+    expect(r.session.externalSessionId).toBeNull();
+    expect(r.toolCalls[0].externalCallId).toBeNull();
   });
 
   it('Rust 스타일 result의 Err는 isError=true', () => {

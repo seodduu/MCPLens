@@ -1,9 +1,10 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
-import type { AdapterResult, LogAdapter, SessionMeta, ToolCallEvent,
+import type { LogAdapter, SessionMeta, ToolCallEvent,
   ToolLoadEvent, TokenUsageEvent } from '../../types.js';
 import { clientLogRoots } from '../../paths.js';
 import { countTokens } from '../../tokenize.js';
+import type { TurnAwareAdapterResult } from '../../ingest/log-bridge.js';
 
 export class CodexAdapter implements LogAdapter {
   readonly client = 'codex' as const;
@@ -16,18 +17,21 @@ export class CodexAdapter implements LogAdapter {
     return /\/\.codex\/sessions\/.+\/rollout-[^/]+\.jsonl$/.test(p);
   }
 
-  parseFile(filePath: string, content: string): AdapterResult {
+  parseFile(filePath: string, content: string): TurnAwareAdapterResult {
     const sessionId = crypto.createHash('sha256').update(filePath).digest('hex').slice(0, 16);
     const toolCalls: ToolCallEvent[] = [];
     const toolLoads: ToolLoadEvent[] = [];
     const usage: TokenUsageEvent[] = [];
     let parseErrors = 0;
     let startedAt: string | null = null;
+    let externalSessionId: string | null = null;
+    let activeTurnId: string | null = null;
     let sawCodeModeSearch = false;
 
     // call_id → toolLoads index, for correlating custom_tool_call (ALL_TOOLS search
     // script) with its later custom_tool_call_output that carries the loaded text.
     const codeModeCallIds = new Map<string, number>();
+    const toolCallTurnIds: (string | null)[] = [];
 
     for (const line of content.split('\n')) {
       if (!line.trim()) continue;
@@ -38,7 +42,11 @@ export class CodexAdapter implements LogAdapter {
       const p = rec.payload ?? {};
       const t = p.type ?? rec.type;
 
-      if (t === 'mcp_tool_call_end') {
+      if (t === 'session_meta') {
+        externalSessionId ??= nativeId(p.session_id ?? p.id ?? rec.session_id ?? rec.id);
+      } else if (t === 'task_started' || t === 'turn_context') {
+        activeTurnId = nativeId(p.turn_id ?? rec.turn_id);
+      } else if (t === 'mcp_tool_call_end') {
         const inv = p.invocation ?? rec.invocation ?? {};
         const result = p.result ?? rec.result;
         toolCalls.push({
@@ -51,7 +59,9 @@ export class CodexAdapter implements LogAdapter {
           isError: isRustErr(result),
           responseTokens: null,
           responseText: stringifyOrNull(result),
+          externalCallId: nativeId(p.call_id ?? rec.call_id),
         });
+        toolCallTurnIds.push(activeTurnId);
       } else if (t === 'custom_tool_call') {
         const input = p.input ?? rec.input ?? '';
         const inputText = typeof input === 'string' ? input : JSON.stringify(input);
@@ -91,12 +101,16 @@ export class CodexAdapter implements LogAdapter {
     }
 
     const session: SessionMeta = {
-      sessionId, client: this.client, filePath, startedAt,
+      sessionId, client: this.client, filePath, externalSessionId, startedAt,
       mode: sawCodeModeSearch ? 'DEFERRED_MEASURABLE'
           : toolCalls.length > 0 ? 'UPFRONT' : 'DEFERRED_OPAQUE',
     };
-    return { session, toolCalls, toolLoads, usage, parseErrors };
+    return { session, toolCalls, toolLoads, usage, parseErrors, toolCallTurnIds };
   }
+}
+
+function nativeId(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
 }
 
 /** payload.duration = {secs, nanos} (Rust Duration) → 밀리초. 숫자면 그대로 사용. */
