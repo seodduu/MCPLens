@@ -1,14 +1,16 @@
 import * as vscode from 'vscode';
 import * as path from 'node:path';
-import { LensStore, LogWatcher, buildMatrix, splitByClient, visibleMatrixRows, sessionSavings, dbPath,
+import { LensStore, LogWatcher, sessionSavings, dbPath,
   detectClients, ClaudeAdapter, CodexAdapter, GeminiAdapter,
   claudeSettingsPath, readDeniedMcpTools, denyMcpTool, allowMcpTool,
-  defaultClaudeConfigPaths, listManagedServers, disableServer, enableServer, type ManagedServer } from '@mcp-lens/core';
+  defaultClaudeConfigPaths, listManagedServers, disableServer, enableServer, type ManagedServer,
+  buildReport, renderReport } from '@mcp-lens/core';
 import { formatStatus } from './statusBar.js';
 import { buildTree } from './matrixTree.js';
 import type { LensNode } from './matrixTree.js';
 import { LensTreeProvider } from './lensTreeProvider.js';
 import { maybeAutoScan, watchConfigSources } from './autoScan.js';
+import { reportOptions } from './reportCommand.js';
 
 let watcher: LogWatcher | undefined;
 let store: LensStore | undefined;
@@ -132,17 +134,11 @@ export async function activate(ctx: vscode.ExtensionContext) {
       const input = { definitions: store!.allDefinitions(), calls: store!.callsSince(since),
         loads: store!.loadsSince(since), sessions: store!.sessionsSince(since),
         lastCallByTool: store!.lastCallByTool() };
-      const sections = splitByClient(input).map(({ client, input: sub }) => {
-        const all = buildMatrix(sub);
-        const rows = visibleMatrixRows(all, sub.sessions);
-        const hidden = all.length - rows.length;
-        const lines = rows.map((r) =>
-          `- ${r.serverName}/${r.toolName}: ${r.callCount}회, 응답 ${r.responseTokens}tok, 정의 ${r.definitionTokens ?? '?'}tok → ${r.recommendation.action} (${r.recommendation.reason})`);
-        const hiddenNote = hidden > 0
-          ? `\n- _(지연 로딩 — 로드·호출 0회라 실비용 없는 툴 ${hidden}개 표시 생략)_` : '';
-        return `## ${client} (세션 ${sub.sessions.length}개)\n${lines.length ? lines.join('\n') : '- MCP 호출 없음'}${hiddenNote}`;
+      const opts = reportOptions({
+        reportDays: vscode.workspace.getConfiguration('mcpLens').get<number>('reportDays', 30),
+        reportDetail: vscode.workspace.getConfiguration('mcpLens').get<'summary' | 'full'>('reportDetail'),
       });
-      const doc = `# MCP Lens Report (최근 ${reportDays()}일)\n\n${sections.join('\n\n')}`;
+      const doc = renderReport(buildReport(input, opts), opts);
       vscode.workspace.openTextDocument({ content: doc, language: 'markdown' })
         .then((d) => vscode.window.showTextDocument(d));
     }));
