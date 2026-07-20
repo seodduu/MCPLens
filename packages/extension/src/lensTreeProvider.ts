@@ -31,7 +31,9 @@ export class LensTreeProvider implements vscode.TreeDataProvider<LensNode> {
       item.iconPath = new vscode.ThemeIcon('close');
       item.contextValue = 'mcpTool-disabled';
     } else {
-      if (n.action) item.iconPath = new vscode.ThemeIcon(ACTION_ICON[n.action] ?? 'circle-outline');
+      // 확신 낮은 권고는 아이콘으로 강조하지 않는다 (후보일 뿐 확정 아님)
+      if (n.action && n.confidence !== 'low')
+        item.iconPath = new vscode.ThemeIcon(ACTION_ICON[n.action] ?? 'circle-outline');
       if (n.enabled === true) item.contextValue = 'mcpTool-enabled';
     }
     return item;

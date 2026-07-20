@@ -1,5 +1,5 @@
 // packages/extension/src/matrixTree.ts — vscode import 금지 (테스트 가능성)
-import type { EngineInput, ManagedServer, MatrixRow } from '@mcp-lens/core';
+import type { EngineInput, ManagedServer, MatrixRow, RecommendationConfidence } from '@mcp-lens/core';
 import { buildMatrix, mcpDenyRule, splitByClient, visibleMatrixRows } from '@mcp-lens/core';
 
 export interface LensNode {
@@ -10,6 +10,8 @@ export interface LensNode {
   tooltip?: string;
   /** 'inspect'|'remove' 등 — 래퍼가 아이콘 선택에 사용 */
   action?: MatrixRow['recommendation']['action'];
+  /** 확신 등급 — low는 아이콘 강조에서 제외한다 */
+  confidence?: RecommendationConfidence;
   /** deny/서버 토글용 — 서버·툴 노드에 채움 */
   client?: string;
   serverName?: string;
@@ -63,14 +65,20 @@ export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set
           // 서버가 꺼져 있으면 툴 단위 토글은 무의미 — 메뉴 숨김(enabled 미부여)
           const enabled = client === 'claude-code' && serverEnabled !== false
             ? !deniedRules.has(mcpDenyRule(server, r.toolName)) : undefined;
-          const toolDesc = `${fmtCalls(r.callCount, r.reliability.errorCount)} · ${r.responseTokens}tok · ${r.recommendation.action}`;
+          // 확신 낮은 삭제 권고는 확정이 아니라 후보 — 판정이 아니라 표시만 강등한다
+          const { action, confidence } = r.recommendation;
+          const actionLabel =
+            confidence === 'low' && (action === 'remove' || action === 'filter-server')
+              ? `${action}?(후보)` : action;
+          const toolDesc = `${fmtCalls(r.callCount, r.reliability.errorCount)} · ${r.responseTokens}tok · ${actionLabel}`;
           return {
             kind: 'tool',
             id: `${client}/${server}/${r.toolName}`,
             label: r.toolName,
             description: enabled === false ? `${toolDesc} · 차단됨` : toolDesc,
             tooltip: r.recommendation.reason,
-            action: r.recommendation.action,
+            action,
+            confidence,
             client, serverName: server, toolName: r.toolName,
             enabled,
             children: [],

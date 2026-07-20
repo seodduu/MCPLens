@@ -164,3 +164,33 @@ describe('서버 단위 토글 표시', () => {
     expect(claude.children.map((s) => s.label)).toEqual(['lenstest']);
   });
 });
+
+describe('확신 등급 렌더링', () => {
+  const DAY = 86_400_000;
+  const at = (d: number) => new Date(Date.parse('2026-06-01T00:00:00Z') + d * DAY).toISOString();
+  const sess = (n: number) => Array.from({ length: n }, (_, i) => ({
+    sessionId: `s${i}`, client: 'claude-code' as const, filePath: `/f/${i}`,
+    startedAt: at(i), mode: 'UPFRONT' as const }));
+  const unusedDef = {
+    serverName: 'github', toolName: 'unused', definitionTokens: 800,
+    scannedAt: at(0), firstScannedAt: at(0) };
+
+  const toolNode = (sessionCount: number) => {
+    const [client] = buildTree({
+      definitions: [unusedDef], calls: [], loads: [], sessions: sess(sessionCount) });
+    return client.children[0].children[0];
+  };
+
+  it('확신 높은 remove는 action 그대로 표시된다', () => {
+    const node = toolNode(12);
+    expect(node.confidence).toBe('high');
+    expect(node.description).toContain('remove');
+    expect(node.description).not.toContain('후보');
+  });
+
+  it('확신 낮은 remove는 "후보" 라벨로 표시된다', () => {
+    const node = toolNode(2);
+    expect(node.confidence).toBe('low');
+    expect(node.description).toContain('후보');
+  });
+});
