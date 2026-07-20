@@ -41,8 +41,8 @@ describe('dashboard HTTP contract', () => {
   beforeAll(async () => {
     store = await LensStore.open(':memory:');
     store.upsertDefinitions([
-      { serverName: 'github', toolName: 'search_issues', definitionTokens: 500, scannedAt: FIXED_ISO },
-      { serverName: 'github', toolName: 'create_issue', definitionTokens: 300, scannedAt: FIXED_ISO },
+      { serverName: 'github', toolName: 'search_issues', definitionTokens: 500, scannedAt: FIXED_ISO, firstScannedAt: FIXED_ISO },
+      { serverName: 'github', toolName: 'create_issue', definitionTokens: 300, scannedAt: FIXED_ISO, firstScannedAt: FIXED_ISO },
     ]);
     store.ingest(fakeResult());
 
@@ -123,7 +123,7 @@ describe('dashboard with :memory: store (no watchFile → no reload path)', () =
   it('API 는 정상 동작하고 파일 재로딩을 시도하지 않는다', async () => {
     const memStore = await LensStore.open(':memory:');
     memStore.upsertDefinitions([
-      { serverName: 'github', toolName: 'search_issues', definitionTokens: 500, scannedAt: FIXED_ISO },
+      { serverName: 'github', toolName: 'search_issues', definitionTokens: 500, scannedAt: FIXED_ISO, firstScannedAt: FIXED_ISO },
     ]);
     memStore.ingest(fakeResult());
     // watchFile 미지정 → 파일 stat/재오픈 경로를 타지 않음

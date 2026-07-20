@@ -3,6 +3,7 @@ export * from './types.js';
 export * from './paths.js';
 export { countTokens } from './tokenize.js';
 export * from './engine/engine.js';
+export * from './engine/evidence.js';
 export { ClaudeAdapter } from './adapters/claude/adapter.js';
 export { CodexAdapter } from './adapters/codex/adapter.js';
 export { GeminiAdapter, splitFlattenedName } from './adapters/gemini/adapter.js';

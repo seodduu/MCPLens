@@ -72,6 +72,8 @@ export interface ToolDefinition {
   toolName: string;
   definitionTokens: number;
   scannedAt: string;
+  /** 이 정의를 처음 관찰한 시각 (ISO). 관찰 창의 시작점 후보 — upsert로 덮이지 않는다 */
+  firstScannedAt: string;
 }
 
 /** 신뢰도 축 (설계문서 7장 기능 1 개정) — 수집 비용 0: 기존 is_error/response_tokens 재활용 */
@@ -103,9 +105,34 @@ export interface MatrixRow {
   loadPattern: LoadPattern;
 }
 
+export type RecommendationConfidence = 'high' | 'medium' | 'low';
+
+/** 권고의 관찰 근거 — 모든 action에 균일하게 채운다 (keep에서도 lastCalledAt은 유용) */
+export interface RecommendationEvidence {
+  /** 이 툴을 관찰한 것으로 인정되는 세션 수 (startedAt 미상 세션 포함 — 과소평가 방지) */
+  observedSessions: number;
+  /**
+   * observedSessions 중 startedAt이 유효해 실제로 창 안임이 확인된 세션 수.
+   * startedAt이 null인 세션은 시간 창 제약을 받지 않고 전 기간이 딸려 오므로,
+   * high 확신은 이 값만 근거로 삼는다 (observedSessions는 그대로 두고 등급만 정직하게).
+   */
+  datedObservedSessions: number;
+  /** 관찰 창 길이 (일). 산정 불가 시 null */
+  observedDays: number | null;
+  /** 마지막 호출 시각 (ISO). 호출 이력 전무면 null */
+  lastCalledAt: string | null;
+  /** 세션당 부담 토큰 (= definitionTokens, 미확보 시 null) */
+  costPerSession: number | null;
+  /** 관찰 기간 누적 부담 (= costPerSession × observedSessions) */
+  totalObservedCost: number | null;
+}
+
 export interface Recommendation {
   action: 'remove' | 'filter-server' | 'keep' | 'unknown' | 'inspect';
+  /** action과 직교하는 축 — action="무엇을 하라", confidence="얼마나 믿을 수 있나" */
+  confidence: RecommendationConfidence;
   /** 모드 인지 표기: 업프론트면 "매 세션 N토큰 절약", 지연이면 "검색 공간 정리" */
   reason: string;
   evidenceLabel: '실측' | '하한 추정' | '전량 가정' | '측정 불가';
+  evidence: RecommendationEvidence;
 }

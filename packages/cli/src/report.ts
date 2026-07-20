@@ -24,7 +24,7 @@ function formatJson(rows: MatrixRow[], savings: Savings): string {
   return JSON.stringify({ rows, savings }, null, 2);
 }
 
-const COLUMNS = ['server', 'tool', 'defTokens', 'calls', 'respTokens', 'loaded/sessions', '실패율', '실패토큰', 'action', 'reason'] as const;
+const COLUMNS = ['server', 'tool', 'defTokens', 'calls', 'respTokens', 'loaded/sessions', '실패율', '실패토큰', 'action', '확신', 'reason'] as const;
 
 function rowCells(row: MatrixRow): string[] {
   return [
@@ -37,6 +37,7 @@ function rowCells(row: MatrixRow): string[] {
     row.reliability.errorRate == null ? '-' : `${Math.round(row.reliability.errorRate * 100)}%`,
     String(row.reliability.failedResponseTokens),
     row.recommendation.action,
+    row.recommendation.confidence,
     row.recommendation.reason,
   ];
 }
@@ -61,22 +62,35 @@ function formatAi(rows: MatrixRow[], savings: Savings): string {
     `잠재 토큰 ${savings.potentialTokens} / 실제 사용 토큰 ${savings.actualTokens} / 절약 가능 토큰 ${savings.savedTokens}`,
   );
   lines.push('');
-  lines.push('| server | tool | defTokens | calls | respTokens | loaded/sessions | 실패율 | 실패토큰 | action | reason |');
-  lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |');
+  lines.push('| server | tool | defTokens | calls | respTokens | loaded/sessions | 실패율 | 실패토큰 | action | 확신 | reason |');
+  lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |');
   for (const row of rows) {
     lines.push(`| ${rowCells(row).join(' | ')} |`);
   }
   lines.push('');
   lines.push('## 권고');
-  const actionable = rows.filter((r) => r.recommendation.action !== 'keep' && r.recommendation.action !== 'unknown');
+  const RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
+  const actionable = rows
+    .filter((r) => r.recommendation.action !== 'keep' && r.recommendation.action !== 'unknown')
+    .sort((a, b) => RANK[a.recommendation.confidence] - RANK[b.recommendation.confidence]);
+  const bullet = (row: MatrixRow) =>
+    `- [${row.recommendation.action}·${row.recommendation.confidence}] ${row.serverName}/${row.toolName}: ${row.recommendation.reason} (${row.recommendation.evidenceLabel})`;
+
+  const confirmed = actionable.filter((r) => r.recommendation.confidence !== 'low');
+  const candidates = actionable.filter((r) => r.recommendation.confidence === 'low');
+
   if (actionable.length === 0) {
     lines.push('- 특별한 권고 사항 없음');
+  } else if (confirmed.length === 0) {
+    lines.push('- 확정 권고 없음 — 관찰량이 쌓이면 아래 후보가 확정된다');
   } else {
-    for (const row of actionable) {
-      lines.push(
-        `- [${row.recommendation.action}] ${row.serverName}/${row.toolName}: ${row.recommendation.reason} (${row.recommendation.evidenceLabel})`,
-      );
-    }
+    for (const row of confirmed) lines.push(bullet(row));
+  }
+
+  if (candidates.length > 0) {
+    lines.push('');
+    lines.push('### 후보 (관찰 부족)');
+    for (const row of candidates) lines.push(bullet(row));
   }
 
   const inspects = rows.filter((r) => r.recommendation.action === 'inspect');

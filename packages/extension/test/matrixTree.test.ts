@@ -164,3 +164,47 @@ describe('서버 단위 토글 표시', () => {
     expect(claude.children.map((s) => s.label)).toEqual(['lenstest']);
   });
 });
+
+describe('확신 등급 렌더링', () => {
+  const DAY = 86_400_000;
+  const at = (d: number) => new Date(Date.parse('2026-06-01T00:00:00Z') + d * DAY).toISOString();
+  const sess = (n: number) => Array.from({ length: n }, (_, i) => ({
+    sessionId: `s${i}`, client: 'claude-code' as const, filePath: `/f/${i}`,
+    startedAt: at(i), mode: 'UPFRONT' as const }));
+  const unusedDef = {
+    serverName: 'github', toolName: 'unused', definitionTokens: 800,
+    scannedAt: at(0), firstScannedAt: at(0) };
+
+  const toolNode = (sessionCount: number) => {
+    const [client] = buildTree({
+      definitions: [unusedDef], calls: [], loads: [], sessions: sess(sessionCount) });
+    return client.children[0].children[0];
+  };
+
+  it('확신 높은 remove는 action 그대로 표시된다', () => {
+    const node = toolNode(12);
+    expect(node.confidence).toBe('high');
+    expect(node.description).toContain('remove');
+    expect(node.description).not.toContain('후보');
+  });
+
+  it('확신 낮은 remove는 "후보" 라벨로 표시된다', () => {
+    const node = toolNode(2);
+    expect(node.confidence).toBe('low');
+    expect(node.description).toContain('후보');
+  });
+
+  // splitByClient가 lastCallByTool을 버리면 이 툴은 "한 번도 안 쓴 툴"로 둔갑해 high가 난다.
+  it('창 밖 과거 호출 이력이 있으면 medium (high 아님) — lastCallByTool이 엔진까지 도달한다', () => {
+    const [client] = buildTree({
+      definitions: [unusedDef], calls: [], loads: [], sessions: sess(12),
+      lastCallByTool: new Map([['github unused', '2026-03-14T09:00:00Z']]),
+    });
+    const node = client.children[0].children[0];
+    expect(node.action).toBe('remove');
+    expect(node.confidence).toBe('medium');
+    expect(node.confidence).not.toBe('high');
+    expect(node.description).not.toContain('후보'); // 표시 강등은 low만
+    expect(node.tooltip).toContain('2026-03-14');
+  });
+});

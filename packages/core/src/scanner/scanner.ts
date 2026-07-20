@@ -64,6 +64,7 @@ export async function scanServer(
         JSON.stringify({ name: t.name, description: t.description, inputSchema: t.inputSchema }),
       ),
       scannedAt: now,
+      firstScannedAt: now, // 저장 시 COALESCE가 기존 최초값을 지켜준다
     }));
   } catch (err) {
     // 인증 요구는 정상 실패 — 표면이 "인증 필요 — 스킵"으로 안내하도록 신호를 담는다.

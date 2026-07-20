@@ -5,7 +5,7 @@ import type { EngineInput } from '../../src/engine/engine.js';
 
 const def = (tool: string, tokens: number) => ({
   serverName: 'github', toolName: tool, definitionTokens: tokens,
-  scannedAt: '2026-07-19T00:00:00Z' });
+  scannedAt: '2026-07-19T00:00:00Z', firstScannedAt: '2026-07-19T00:00:00Z' });
 const call = (tool: string) => ({
   sessionId: 's1', serverName: 'github', toolName: tool,
   calledAt: '2026-07-10T00:00:00Z', durationMs: 10, isError: false,
@@ -197,6 +197,23 @@ describe('splitByClient', () => {
     expect(codex.loads).toHaveLength(0);
     expect(claude.definitions).toEqual(codex.definitions); // 공유
   });
+
+  it('lastCallByTool은 전 클라이언트 공통이므로 각 분할에 그대로 보존된다', () => {
+    const lastCallByTool = new Map([['github a', '2026-03-14T09:00:00Z']]);
+    const input: EngineInput = {
+      definitions: [def('a', 100)],
+      calls: [{ ...call('a'), sessionId: 'c1' }, { ...call('b'), sessionId: 'x1' }],
+      loads: [],
+      sessions: [
+        { ...session('DEFERRED_MEASURABLE'), sessionId: 'c1', client: 'claude-code' },
+        { ...session('UPFRONT'), sessionId: 'x1', client: 'codex' },
+      ],
+      lastCallByTool,
+    };
+    const parts = splitByClient(input);
+    expect(parts).toHaveLength(2);
+    for (const p of parts) expect(p.input.lastCallByTool).toBe(lastCallByTool);
+  });
 });
 
 describe('M4: 로드만 되고 정의·호출이 없는 툴도 행이 생긴다', () => {
@@ -258,5 +275,107 @@ describe('visibleMatrixRows: 모드 인지 표시 필터', () => {
   it('업프론트: 전부 표시 (미사용도 매 세션 실비용)', () => {
     const visible = visibleMatrixRows(rows('UPFRONT'), [session('UPFRONT')]);
     expect(visible).toHaveLength(3);
+  });
+});
+
+describe('확신 등급 (evidence 축)', () => {
+  const DAY = 86_400_000;
+  const at = (d: number) => new Date(Date.parse('2026-06-01T00:00:00Z') + d * DAY).toISOString();
+  const sess = (n: number) => Array.from({ length: n }, (_, i) => ({
+    sessionId: `s${i}`, client: 'claude-code' as const, filePath: `/f/${i}`,
+    startedAt: at(i), mode: 'UPFRONT' as const }));
+  const scanned = (first: string) => ({
+    serverName: 'github', toolName: 'unused', definitionTokens: 800,
+    scannedAt: at(0), firstScannedAt: first });
+
+  it('충분히 관찰한 미사용 툴 → remove high + 누적 부담 표기', () => {
+    const input: EngineInput = {
+      definitions: [scanned(at(0))], calls: [], loads: [], sessions: sess(12),
+    };
+    const [row] = buildMatrix(input);
+    expect(row.recommendation.action).toBe('remove');
+    expect(row.recommendation.confidence).toBe('high');
+    expect(row.recommendation.evidence.observedSessions).toBe(12);
+    expect(row.recommendation.evidence.totalObservedCost).toBe(9600);
+    expect(row.recommendation.reason).toContain('복구');
+  });
+
+  it('관찰 2세션뿐이면 → remove low + 확정 아님 문구', () => {
+    const input: EngineInput = {
+      definitions: [scanned(at(0))], calls: [], loads: [], sessions: sess(2),
+    };
+    const [row] = buildMatrix(input);
+    expect(row.recommendation.action).toBe('remove');   // 판정은 강등되지 않는다
+    expect(row.recommendation.confidence).toBe('low');  // 표시만 강등
+    expect(row.recommendation.reason).toContain('확정 권고 아님');
+  });
+
+  it('창 밖 과거 호출 이력이 있으면 → remove medium + 마지막 호출일', () => {
+    const input: EngineInput = {
+      definitions: [scanned(at(0))], calls: [], loads: [], sessions: sess(12),
+      lastCallByTool: new Map([['github unused', '2026-03-14T09:00:00Z']]),
+    };
+    const [row] = buildMatrix(input);
+    expect(row.recommendation.confidence).toBe('medium');
+    expect(row.recommendation.evidence.lastCalledAt).toBe('2026-03-14T09:00:00Z');
+    expect(row.recommendation.reason).toContain('2026-03-14');
+  });
+
+  it('startedAt 미상 세션이 다수여도 high가 되지 않는다 (창 안 확인 세션 2개)', () => {
+    const undatedSessions = Array.from({ length: 15 }, (_, i) => ({
+      sessionId: `u${i}`, client: 'claude-code' as const, filePath: `/u/${i}`,
+      startedAt: null, mode: 'UPFRONT' as const }));
+    const datedSessions = [
+      { sessionId: 'd0', client: 'claude-code' as const, filePath: '/d/0',
+        startedAt: at(8), mode: 'UPFRONT' as const },
+      { sessionId: 'd1', client: 'claude-code' as const, filePath: '/d/1',
+        startedAt: at(16), mode: 'UPFRONT' as const },
+    ];
+    const input: EngineInput = {
+      definitions: [scanned(at(8))], calls: [], loads: [],
+      sessions: [...undatedSessions, ...datedSessions],
+    };
+    const [row] = buildMatrix(input);
+    expect(row.recommendation.evidence.observedSessions).toBe(17); // 계상은 그대로
+    expect(row.recommendation.evidence.datedObservedSessions).toBe(2);
+    expect(row.recommendation.evidence.observedDays).toBe(8);
+    expect(row.recommendation.confidence).toBe('medium'); // high 아님
+  });
+
+  it('keep은 high 고정, evidence도 채워진다', () => {
+    const input: EngineInput = {
+      definitions: [def('used', 300)], calls: [call('used')],
+      loads: [], sessions: [session('UPFRONT')],
+    };
+    const [row] = buildMatrix(input);
+    expect(row.recommendation.action).toBe('keep');
+    expect(row.recommendation.confidence).toBe('high');
+    expect(row.recommendation.evidence.lastCalledAt).toBe('2026-07-10T00:00:00Z');
+  });
+
+  it('unknown은 low 고정', () => {
+    const input: EngineInput = {
+      definitions: [], calls: [],
+      loads: [{ sessionId: 's1', serverName: 'unscanned', toolName: 'ghost', loadedTokens: 10 }],
+      sessions: [session('DEFERRED_MEASURABLE')],
+    };
+    const [row] = buildMatrix(input);
+    expect(row.recommendation.action).toBe('unknown');
+    expect(row.recommendation.confidence).toBe('low');
+  });
+
+  it('inspect는 표본 크기로 등급이 갈린다', () => {
+    const errCall = (i: number) => ({
+      sessionId: 's1', serverName: 'github', toolName: 'flaky',
+      calledAt: '2026-07-10T00:00:00Z', durationMs: 10, isError: i % 2 === 0,
+      responseTokens: 100, responseText: null });
+    const many: EngineInput = {
+      definitions: [def('flaky', 500)],
+      calls: Array.from({ length: 12 }, (_, i) => errCall(i)),
+      loads: [], sessions: [session('UPFRONT')],
+    };
+    const [row] = buildMatrix(many);
+    expect(row.recommendation.action).toBe('inspect');
+    expect(row.recommendation.confidence).toBe('high');
   });
 });

@@ -43,7 +43,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
   const refresh = () => {
     const since = sinceIso();
     const input = { definitions: store!.allDefinitions(), calls: store!.callsSince(since),
-      loads: store!.loadsSince(since), sessions: store!.sessionsSince(since) };
+      loads: store!.loadsSince(since), sessions: store!.sessionsSince(since),
+      lastCallByTool: store!.lastCallByTool() };
     item.text = formatStatus(input.calls.length, sessionSavings(input).savedTokens);
     treeProvider.setRoots(buildTree(input, readDeniedSafe(), listManagedSafe()));
   };
@@ -129,7 +130,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
     vscode.commands.registerCommand('mcp-lens.showReport', () => {
       const since = sinceIso();
       const input = { definitions: store!.allDefinitions(), calls: store!.callsSince(since),
-        loads: store!.loadsSince(since), sessions: store!.sessionsSince(since) };
+        loads: store!.loadsSince(since), sessions: store!.sessionsSince(since),
+        lastCallByTool: store!.lastCallByTool() };
       const sections = splitByClient(input).map(({ client, input: sub }) => {
         const all = buildMatrix(sub);
         const rows = visibleMatrixRows(all, sub.sessions);

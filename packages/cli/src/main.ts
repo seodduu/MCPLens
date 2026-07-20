@@ -37,6 +37,7 @@ async function runReport(args: string[]) {
     calls: store.callsSince(since),
     loads: store.loadsSince(since),
     sessions: store.sessionsSince(since),
+    lastCallByTool: store.lastCallByTool(),
   };
   console.log(formatReport(buildMatrix(input), sessionSavings(input), format));
   console.error(`(${files} session files backfilled)`);
