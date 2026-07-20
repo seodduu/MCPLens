@@ -31,6 +31,12 @@ export interface EvidenceContext {
   sessions: SessionMeta[];
   /** 서버명 → 그 서버의 활동(호출·로드)이 있는 가장 이른 세션 startedAt */
   serverFirstActivity: Map<string, string>;
+  /**
+   * 서버명 → 그 서버에 정의가 있는 모든 툴의 firstScannedAt 중 최소값 (= 서버 최초 스캔 시각).
+   * 툴의 firstScannedAt이 이 값보다 나중이면 "기존 서버에 나중에 추가된 툴"이므로
+   * 서버의 오래된 활동 이력을 물려받지 못하게 한다.
+   */
+  serverScanEpoch: Map<string, string>;
   /** 스코프 내 최대 세션 startedAt — 창의 끝 */
   windowEnd: string | null;
   /** "server tool" → 창 안 마지막 호출 시각 */
@@ -82,7 +88,17 @@ export function buildEvidenceContext(
   const firstScanned = new Map(
     definitions.map((d) => [key(d.serverName, d.toolName), d.firstScannedAt]));
 
-  return { sessions, serverFirstActivity, windowEnd, lastCallInScope,
+  // 서버별 최초 스캔 시각 = 그 서버 툴들의 firstScannedAt 최소값
+  const serverScanEpoch = new Map<string, string>();
+  for (const d of definitions) {
+    const at = ms(d.firstScannedAt);
+    if (at == null) continue;
+    const prev = serverScanEpoch.get(d.serverName);
+    if (prev === undefined || at < (ms(prev) ?? Infinity))
+      serverScanEpoch.set(d.serverName, d.firstScannedAt);
+  }
+
+  return { sessions, serverFirstActivity, serverScanEpoch, windowEnd, lastCallInScope,
     lastCallAllTime, firstScanned };
 }
 
@@ -93,27 +109,50 @@ export function toolEvidence(
   ctx: EvidenceContext,
 ): RecommendationEvidence {
   const k = key(serverName, toolName);
-  // 창 시작 = min(정의 최초 관찰, 서버 최초 활동).
-  // 둘 다 없으면(정의 미확보 + 활동 세션 startedAt 없음) 창 하한이 없다.
-  const bounds = [ms(ctx.firstScanned.get(k)), ms(ctx.serverFirstActivity.get(serverName))]
-    .filter((v): v is number => v != null);
-  const windowStart = bounds.length ? Math.min(...bounds) : null;
+  const toolFirstScanned = ms(ctx.firstScanned.get(k));
+  const scanEpoch = ms(ctx.serverScanEpoch.get(serverName));
+  const serverActivity = ms(ctx.serverFirstActivity.get(serverName));
+
+  // 창 시작:
+  //  - 툴 정의가 서버 최초 스캔보다 나중이면 = 기존 서버에 나중에 추가된 툴.
+  //    이 툴에 대한 관찰은 추가 시점부터만 존재하므로 서버 활동으로 확장하지 않는다.
+  //    (확장하면 하루 된 툴이 "47세션 관찰"로 둔갑해 거짓 확신을 만든다.)
+  //  - 툴 정의가 서버 최초 스캔과 같으면 = 첫 스캔. 어댑터가 과거 세션을 백필하므로
+  //    실제로 보유한 서버 활동 이력까지 창을 넓히는 것이 맞다.
+  //  - 툴 정의가 없으면(load-only) 툴 단위 하한이 없다 → 서버 활동만이 유일한 하한.
+  let windowStart: number | null;
+  if (toolFirstScanned == null) {
+    windowStart = serverActivity;
+  } else if (scanEpoch != null && toolFirstScanned > scanEpoch) {
+    windowStart = toolFirstScanned;
+  } else {
+    windowStart = serverActivity == null
+      ? toolFirstScanned
+      : Math.min(toolFirstScanned, serverActivity);
+  }
   const windowEnd = ms(ctx.windowEnd);
 
+  // 창 하한을 특정할 수 없으면(정의 미확보 + 서버 활동 증거 없음) 관찰량을 주장하지 않는다.
+  // 전 세션을 계상하면 observedSessions·totalObservedCost가 근거 없이 부풀려진다.
+  // startedAt이 null인 세션을 포함하는 규칙(아래)도 이 경우엔 적용하지 않는다 —
+  // 그 규칙은 "유효한 창 안에서의 과소평가 방지"이지 창 자체를 만들어내는 근거가 아니다.
   let observedSessions = 0;
-  for (const s of ctx.sessions) {
-    const at = ms(s.startedAt);
-    // startedAt 없는 세션은 창 판정 불가 → 포함 (과소평가 방지, 문서화된 한계)
-    if (at == null) { observedSessions++; continue; }
-    if (windowStart != null && at < windowStart) continue;
-    if (windowEnd != null && at > windowEnd) continue;
-    observedSessions++;
+  if (windowStart != null) {
+    for (const s of ctx.sessions) {
+      const at = ms(s.startedAt);
+      // startedAt 없는 세션은 창 판정 불가 → 포함 (과소평가 방지, 문서화된 한계)
+      if (at == null) { observedSessions++; continue; }
+      if (at < windowStart) continue;
+      if (windowEnd != null && at > windowEnd) continue;
+      observedSessions++;
+    }
   }
 
+  // 내림(floor): 채우지 못한 하루가 등급을 한 단계 올리면 안 된다 ("낮은 쪽이 이긴다")
   const observedDays =
     observedSessions === 0 || windowStart == null || windowEnd == null
       ? null
-      : Math.max(0, Math.round((windowEnd - windowStart) / MS_PER_DAY));
+      : Math.max(0, Math.floor((windowEnd - windowStart) / MS_PER_DAY));
 
   // 창 안 호출과 전 기간 이력 중 더 나중 — 전 기간 맵이 없으면 창 안 값으로 자연 열화
   const inScope = ctx.lastCallInScope.get(k) ?? null;
