@@ -12,7 +12,8 @@ export interface SessionMeta {
   /** 파일 절대경로의 sha256 앞 16자리 — 재파싱해도 동일해야 함 */
   sessionId: string;
   client: ClientId;
-  filePath: string;
+  filePath: string | null;
+  externalSessionId?: string | null;
   startedAt: string | null; // ISO 8601
   mode: AccountingMode;
 }
@@ -27,6 +28,7 @@ export interface ToolCallEvent {
   /** 클라이언트가 기록한 실측 응답 토큰. 없으면 responseText를 tiktoken */
   responseTokens: number | null;
   responseText: string | null;
+  externalCallId?: string | null;
 }
 
 /** 지연 로딩 세션에서 "이 정의가 컨텍스트에 로드됐다"는 증거 */

@@ -13,6 +13,8 @@ const SCHEMA = readFileSync(
  * 열 때마다 실제 컬럼 목록을 보고 없으면 추가·백필한다 (멱등).
  */
 function migrate(db: Database): void {
+  const s = db.prepare('PRAGMA table_info(sessions)'); const sr: any[] = []; while (s.step()) sr.push(s.getAsObject()); s.free();
+  if (sr.find((r) => r.name === 'file_path')?.notnull === 1) { db.exec("CREATE TABLE sessions_v2 (session_id TEXT PRIMARY KEY, client TEXT NOT NULL, file_path TEXT, external_session_id TEXT, started_at TEXT, mode TEXT NOT NULL DEFAULT 'DEFERRED_OPAQUE')"); db.exec('INSERT INTO sessions_v2(session_id,client,file_path,started_at,mode) SELECT session_id,client,file_path,started_at,mode FROM sessions'); db.exec('DROP TABLE sessions'); db.exec('ALTER TABLE sessions_v2 RENAME TO sessions'); }
   const cols = new Set<string>();
   const st = db.prepare('PRAGMA table_info(tool_definitions)');
   while (st.step()) cols.add(st.getAsObject().name as string);
@@ -21,10 +23,12 @@ function migrate(db: Database): void {
     db.exec('ALTER TABLE tool_definitions ADD COLUMN first_scanned_at TEXT');
     db.exec('UPDATE tool_definitions SET first_scanned_at = scanned_at');
   }
+
 }
 
 export class LensStore {
   private constructor(private db: Database, private filePath: string) {}
+  observationCount(): number { const r = this.select('SELECT COUNT(*) AS count FROM ingest_observations', []); return Number(r[0]?.count ?? 0); }
 
   static async open(filePath: string): Promise<LensStore> {
     const SQL = await initSqlJs();
@@ -129,7 +133,7 @@ export class LensStore {
       `SELECT * FROM sessions WHERE started_at IS NULL OR started_at >= ?`, [iso]
     ).map((r) => ({
       sessionId: r.session_id as string, client: r.client as SessionMeta['client'],
-      filePath: r.file_path as string, startedAt: r.started_at as string | null,
+      filePath: r.file_path as string | null, externalSessionId: r.external_session_id as string | null, startedAt: r.started_at as string | null,
       mode: r.mode as SessionMeta['mode'],
     }));
   }

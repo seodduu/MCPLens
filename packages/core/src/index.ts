@@ -1,5 +1,7 @@
 // packages/core/src/index.ts
 export * from './types.js';
+export * from './ingest/contracts.js';
+export * from './ingest/identity.js';
 export * from './paths.js';
 export { countTokens } from './tokenize.js';
 export * from './engine/engine.js';

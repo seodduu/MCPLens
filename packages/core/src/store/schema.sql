@@ -1,7 +1,8 @@
 CREATE TABLE IF NOT EXISTS sessions (
   session_id  TEXT PRIMARY KEY,
   client      TEXT NOT NULL,
-  file_path   TEXT NOT NULL,
+  file_path   TEXT,
+  external_session_id TEXT,
   started_at  TEXT,
   mode        TEXT NOT NULL DEFAULT 'DEFERRED_OPAQUE'
 );
@@ -48,3 +49,8 @@ CREATE TABLE IF NOT EXISTS file_cursors (
 CREATE INDEX IF NOT EXISTS idx_calls_session ON tool_calls(session_id);
 CREATE INDEX IF NOT EXISTS idx_calls_tool ON tool_calls(server_name, tool_name);
 CREATE INDEX IF NOT EXISTS idx_loads_session ON tool_loads(session_id);
+CREATE TABLE IF NOT EXISTS ingest_observations (observation_id TEXT PRIMARY KEY, correlation_key TEXT NOT NULL, correlation_confidence TEXT NOT NULL, source TEXT NOT NULL, client TEXT NOT NULL, phase TEXT NOT NULL, external_session_id TEXT NOT NULL, external_turn_id TEXT, external_call_id TEXT, transcript_path TEXT, server_name TEXT, tool_name TEXT, observed_at TEXT NOT NULL, received_at TEXT NOT NULL, duration_ms INTEGER, is_error INTEGER, response_tokens INTEGER, loaded_tokens INTEGER, input_fingerprint TEXT);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_observation_delivery ON ingest_observations(observation_id);
+CREATE INDEX IF NOT EXISTS idx_observation_correlation ON ingest_observations(correlation_key);
+CREATE TABLE IF NOT EXISTS session_aliases (client TEXT NOT NULL, external_session_id TEXT NOT NULL, session_id TEXT NOT NULL, transcript_path TEXT, PRIMARY KEY(client, external_session_id));
+CREATE TABLE IF NOT EXISTS collector_receipts (receipt_id TEXT PRIMARY KEY, client TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, observed_at TEXT NOT NULL, error_code TEXT);
