@@ -1,12 +1,19 @@
 // packages/core/src/engine/engine.ts
 import type { ClientId, LoadPattern, MatrixRow, Recommendation, SessionMeta,
   ToolCallEvent, ToolDefinition, ToolLoadEvent } from '../types.js';
+import { buildEvidenceContext, confidencePhrase, EMPTY_EVIDENCE, inspectConfidence,
+  removeConfidence, toolEvidence, type EvidenceContext } from './evidence.js';
 
 export interface EngineInput {
   definitions: ToolDefinition[];
   calls: ToolCallEvent[];
   loads: ToolLoadEvent[];
   sessions: SessionMeta[];
+  /**
+   * "server tool" → 전 기간 마지막 호출 시각 (store.lastCallByTool()).
+   * 선택 — 없으면 분석 창 안의 호출만으로 판정하며, 창 밖 과거 사용은 보이지 않는다.
+   */
+  lastCallByTool?: Map<string, string>;
 }
 
 // 판정 임계값 (설계문서 7장 기능 1 개정)
@@ -42,6 +49,8 @@ export function buildMatrix(input: EngineInput): MatrixRow[] {
   }
 
   const dominantMode = pickDominantMode(sessions);
+  const evidenceCtx = buildEvidenceContext(
+    definitions, calls, loads, sessions, input.lastCallByTool);
 
   // 정의된 툴 + 호출만 된 툴 + 로드만 된 툴의 합집합 (M4)
   // 로드만 된 툴을 빼면 "로드됐는데 호출 0회"(검색 공간 오염)가 표면화되지 않는다.
@@ -69,7 +78,7 @@ export function buildMatrix(input: EngineInput): MatrixRow[] {
       failedResponseTokens: a?.errTokens ?? 0,
     };
     row.loadPattern = pickLoadPattern(row);
-    row.recommendation = recommend(row, byServer.get(row.serverName), dominantMode);
+    row.recommendation = recommend(row, byServer.get(row.serverName), dominantMode, evidenceCtx);
   }
   return [...rows.values()].sort(
     (x, y) => (y.definitionTokens ?? 0) - (x.definitionTokens ?? 0));
@@ -99,7 +108,8 @@ export function sessionSavings(input: EngineInput) {
 function baseRow(serverName: string, toolName: string, definitionTokens: number | null): MatrixRow {
   return { serverName, toolName, definitionTokens, callCount: 0, responseTokens: 0,
     loadedSessionCount: 0, sessionCount: 0,
-    recommendation: { action: 'unknown', reason: '', evidenceLabel: '측정 불가' },
+    recommendation: { action: 'unknown', confidence: 'low', reason: '',
+      evidenceLabel: '측정 불가', evidence: EMPTY_EVIDENCE },
     reliability: { errorCount: 0, errorRate: null, failedResponseTokens: 0 },
     loadPattern: null };
 }
@@ -146,7 +156,9 @@ function recommend(
   row: MatrixRow,
   server: { total: number; used: number } | undefined,
   mode: SessionMeta['mode'],
+  ctx: EvidenceContext,
 ): Recommendation {
+  const evidence = toolEvidence(row.serverName, row.toolName, row.definitionTokens, ctx);
   const evidenceLabel =
     mode === 'DEFERRED_MEASURABLE' ? '실측' :
     mode === 'DEFERRED_ESTIMATED' ? '하한 추정' :
@@ -159,13 +171,16 @@ function recommend(
   const pollutionSuffix = row.loadPattern === 'search-pollution' ? ' (로드는 되나 호출 0회 — 검색 공간 오염)' : '';
 
   if (row.callCount === 0 && row.definitionTokens != null) {
+    // 확신이 낮아도 판정은 강등하지 않는다 — 표면이 "후보"로 렌더링한다 (스펙 결정사항 2)
+    const confidence = removeConfidence(evidence);
+    const tail = confidencePhrase(confidence, evidence);
     if (server && server.total >= 10 && server.used > 0 && server.used / server.total < 0.2)
-      return { action: 'filter-server',
-        reason: `서버 ${row.serverName}의 ${server.total}툴 중 ${server.used}개만 사용 — 툴 필터링 권장. ${sizePhrase(row.definitionTokens)}${pollutionSuffix}`,
-        evidenceLabel };
-    return { action: 'remove',
-      reason: `정의 ${row.definitionTokens}토큰, 호출 0회 — ${sizePhrase(row.definitionTokens)}${pollutionSuffix}`,
-      evidenceLabel };
+      return { action: 'filter-server', confidence,
+        reason: `서버 ${row.serverName}의 ${server.total}툴 중 ${server.used}개만 사용 — 툴 필터링 권장. ${sizePhrase(row.definitionTokens)}${pollutionSuffix}${tail}`,
+        evidenceLabel, evidence };
+    return { action: 'remove', confidence,
+      reason: `정의 ${row.definitionTokens}토큰, 호출 0회 — ${sizePhrase(row.definitionTokens)}${pollutionSuffix}${tail}`,
+      evidenceLabel, evidence };
   }
   if (
     row.callCount >= INSPECT_MIN_CALLS &&
@@ -173,12 +188,16 @@ function recommend(
     row.reliability.errorRate >= INSPECT_ERROR_RATE
   ) {
     const rate = Math.round(row.reliability.errorRate * 100);
-    return { action: 'inspect',
+    return { action: 'inspect', confidence: inspectConfidence(row.callCount),
       reason: `${row.callCount}회 중 ${row.reliability.errorCount}회 실패(${rate}%), 실패 응답 ${row.reliability.failedResponseTokens}토큰 낭비 — 점검·대체 권장`,
-      evidenceLabel };
+      evidenceLabel, evidence };
   }
-  if (row.callCount > 0) return { action: 'keep', reason: `${row.callCount}회 호출됨`, evidenceLabel };
-  return { action: 'unknown', reason: '정의 토큰 미확보 (스캐너 미커버)', evidenceLabel: '측정 불가' };
+  // 호출됨 = 자기 증명 → high 고정
+  if (row.callCount > 0)
+    return { action: 'keep', confidence: 'high',
+      reason: `${row.callCount}회 호출됨`, evidenceLabel, evidence };
+  return { action: 'unknown', confidence: 'low',
+    reason: '정의 토큰 미확보 (스캐너 미커버)', evidenceLabel: '측정 불가', evidence };
 }
 
 /**
