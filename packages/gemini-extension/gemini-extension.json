@@ -1,0 +1,5 @@
+{
+  "name": "mcp-lens",
+  "version": "1.0.0",
+  "description": "Capture Gemini CLI MCP accounting metadata locally"
+}
