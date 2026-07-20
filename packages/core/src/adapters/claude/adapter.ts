@@ -31,9 +31,10 @@ export class ClaudeAdapter implements LogAdapter {
     const toolCalls: ToolCallEvent[] = [];
     const toolLoads: ToolLoadEvent[] = [];
     const usage: TokenUsageEvent[] = [];
-    const pendingUse = new Map<string, { server: string; tool: string; at: string | null }>();
+    const pendingUse = new Map<string, { server: string; tool: string; at: string | null; externalCallId: string | null }>();
     let parseErrors = 0;
     let startedAt: string | null = null;
+    let externalSessionId: string | null = null;
     let sawLoadSignal = false;
 
     for (const line of content.split('\n')) {
@@ -46,6 +47,7 @@ export class ClaudeAdapter implements LogAdapter {
         continue;
       }
       startedAt ??= rec.timestamp ?? null;
+      externalSessionId ??= nativeId(rec.sessionId);
 
       const msg = rec.message;
       if (!msg || typeof msg !== 'object') continue;
@@ -70,8 +72,12 @@ export class ClaudeAdapter implements LogAdapter {
           // ToolSearch 호출 자체도 로드 신호(설계문서: 지연 세션 확정) → 모드 판별에만 사용
           if (part.name === 'ToolSearch') sawLoadSignal = true;
           const m = MCP_NAME.exec(part.name ?? '');
-          if (m) {
-            pendingUse.set(part.id, { server: m[1], tool: m[2], at: rec.timestamp ?? null });
+          const pendingKey = typeof part.id === 'string' ? part.id : null;
+          if (m && pendingKey !== null) {
+            pendingUse.set(pendingKey, {
+              server: m[1], tool: m[2], at: rec.timestamp ?? null,
+              externalCallId: nativeId(part.id),
+            });
           }
         } else if (part.type === 'tool_result') {
           // 로드 신호(핵심): tool_result content[]의 {type:'tool_reference', tool_name:'mcp__...'}
@@ -105,6 +111,7 @@ export class ClaudeAdapter implements LogAdapter {
               // Claude는 툴 응답 토큰을 분리 실측하지 않음 → 본문 tiktoken 추정 (설계문서 8장 원칙)
               responseTokens: responseText ? countTokens(responseText) : null,
               responseText,
+              externalCallId: u.externalCallId,
             });
           }
         }
@@ -116,11 +123,16 @@ export class ClaudeAdapter implements LogAdapter {
       sessionId,
       client: this.client,
       filePath,
+      externalSessionId,
       startedAt,
       mode: sawLoadSignal ? 'DEFERRED_MEASURABLE' : hasMcp ? 'UPFRONT' : 'DEFERRED_OPAQUE',
     };
     return { session, toolCalls, toolLoads, usage, parseErrors };
   }
+}
+
+function nativeId(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
 }
 
 /** mcp__<server>__<tool> 을 분해. 매칭 안 되면 server=null, tool=원본 이름. */

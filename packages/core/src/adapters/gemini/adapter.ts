@@ -28,6 +28,10 @@ function sessionIdFromPath(filePath: string): string {
   return crypto.createHash('sha256').update(filePath).digest('hex').slice(0, 16);
 }
 
+function nativeId(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
 /** functionResponse.response.output → responseText (문자열이면 그대로, 아니면 JSON.stringify) */
 function outputToText(response: unknown): string | null {
   if (response == null || typeof response !== 'object') return null;
@@ -68,6 +72,7 @@ export const geminiAdapter: LogAdapter = {
     const sessionId = sessionIdFromPath(filePath);
     let parseErrors = 0;
     let startedAt: string | null = null;
+    let externalSessionId: string | null = null;
 
     const usage: TokenUsageEvent[] = [];
     const seenGeminiIds = new Set<string>();
@@ -98,6 +103,7 @@ export const geminiAdapter: LogAdapter = {
       if (startedAt == null && typeof rec.startTime === 'string' && 'sessionId' in rec) {
         startedAt = rec.startTime;
       }
+      if ('sessionId' in rec) externalSessionId ??= nativeId(rec.sessionId);
 
       const type = rec.type;
 
@@ -129,7 +135,7 @@ export const geminiAdapter: LogAdapter = {
           if (typeof tc.name !== 'string') continue;
           const split = splitFlattenedName(tc.name);
           if (split == null) continue; // 내장 툴 → 무시
-          const tcId = typeof tc.id === 'string' ? tc.id : null;
+          const tcId = nativeId(tc.id);
           // toolCall id 기준 dedup (중복 레코드 방지)
           if (tcId != null && toolCallById.has(tcId)) continue;
 
@@ -142,6 +148,7 @@ export const geminiAdapter: LogAdapter = {
             isError: tc.status !== 'success',
             responseTokens,
             responseText: null,
+            externalCallId: tcId,
           };
           const key = tcId ?? `__noid_${toolCallOrder.length}`;
           toolCallById.set(key, event);
@@ -176,6 +183,7 @@ export const geminiAdapter: LogAdapter = {
         sessionId,
         client: 'gemini-cli',
         filePath,
+        externalSessionId,
         startedAt,
         mode,
       },

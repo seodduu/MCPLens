@@ -29,6 +29,12 @@ describe('ClaudeAdapter', () => {
     expect(r1.toolCalls[0].sessionId).toBe(r1.session.sessionId);
   });
 
+  it('픽스처의 native sessionId를 externalSessionId로 보존한다', () => {
+    const r = a.parseFile('/fake/s.jsonl', fx('session-toolsearch.jsonl'));
+
+    expect(r.session.externalSessionId).toBe('cdef9879-14b5-4044-a9ea-31f0986cfc48');
+  });
+
   it('tool_use/tool_result 쌍을 ToolCallEvent로 뽑고 서버/툴 이름을 분해한다', () => {
     const r = a.parseFile('/fake/s.jsonl', fx('session-toolsearch.jsonl'));
     expect(r.toolCalls.length).toBeGreaterThan(0);
@@ -36,6 +42,7 @@ describe('ClaudeAdapter', () => {
     expect(c.serverName).not.toContain('mcp__');
     expect(c.toolName).not.toContain('__');
     expect(c.serverName).toBe('claude_ai_PlayMCP');
+    expect(c.externalCallId).toBe('toolu_01XpoajJqCnxc7TBh4SJFjjG');
     expect(c.responseText === null || typeof c.responseText === 'string').toBe(true);
     // 응답 본문이 있으면 tiktoken 추정치, 없으면 null
     if (c.responseText) expect(c.responseTokens).toBeGreaterThan(0);
@@ -85,6 +92,24 @@ describe('ClaudeAdapter', () => {
     expect(r.parseErrors).toBe(0);
     expect(r.toolCalls).toEqual([]);
     expect(r.session.mode).toBe('DEFERRED_OPAQUE');
+  });
+
+  it('공백 native session/call ID를 null로 정규화한다', () => {
+    const content = [
+      JSON.stringify({
+        sessionId: '   ', timestamp: '2026-07-20T00:00:00.000Z',
+        message: { content: [{ type: 'tool_use', id: '\t', name: 'mcp__server__tool' }] },
+      }),
+      JSON.stringify({
+        sessionId: ' ', timestamp: '2026-07-20T00:00:01.000Z',
+        message: { content: [{ type: 'tool_result', tool_use_id: '\t', content: 'ok' }] },
+      }),
+    ].join('\n');
+
+    const r = a.parseFile('/fake/blank.jsonl', content);
+
+    expect(r.session.externalSessionId).toBeNull();
+    expect(r.toolCalls[0].externalCallId).toBeNull();
   });
 });
 
