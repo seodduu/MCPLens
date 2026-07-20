@@ -1,0 +1,21 @@
+{
+  "session_id": "gemini-session-123",
+  "transcript_path": "/tmp/gemini/session-123.json",
+  "cwd": "/tmp/project",
+  "hook_event_name": "AfterTool",
+  "timestamp": "2026-07-20T01:24:45.678Z",
+  "tool_name": "mcp_wrong_wrong",
+  "tool_input": {
+    "apiKey": "fixture-tool-input-secret"
+  },
+  "tool_response": {
+    "llmContent": "fixture-llm-content-secret",
+    "returnDisplay": {
+      "message": "fixture-return-display-secret"
+    }
+  },
+  "mcp_context": {
+    "server_name": "official-server",
+    "tool_name": "official-tool"
+  }
+}
