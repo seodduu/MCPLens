@@ -287,6 +287,54 @@ describe('renderReport — candidate 버킷', () => {
     );
     expect(out).toContain('### ⏳ 관찰 더 필요 — 10세션 누적 시 확정 (지금은 조치 권고 아님)');
   });
+
+  it('perSessionTokens가 null인 단일 후보 툴은 0tok이 아니라 미측정으로 표시된다', () => {
+    const g = group({
+      serverName: 'demo-github',
+      headline: null,
+      tools: [tool({ toolName: 'unscanned_tool', perSessionTokens: null })],
+      perSessionTokens: 0,
+    });
+    const out = renderReport(
+      model({ clients: [client({ buckets: { ...emptyBuckets(), candidate: [g] } })] }),
+      OPTS,
+    );
+    expect(out).toContain('demo-github/unscanned_tool** · 미측정');
+    expect(out).not.toContain('unscanned_tool** · 0tok');
+  });
+
+  it('perSessionTokens가 null인 툴이 섞인 다중 후보 그룹도 0tok이 아니라 미측정으로 표시된다', () => {
+    const g = group({
+      serverName: 'notion',
+      headline: '20툴 중 2개만 사용',
+      hasUnmeasured: true,
+      tools: [
+        tool({ toolName: 'measured', perSessionTokens: 300 }),
+        tool({ toolName: 'unscanned', perSessionTokens: null }),
+      ],
+      perSessionTokens: 300,
+    });
+    const out = renderReport(
+      model({ clients: [client({ buckets: { ...emptyBuckets(), candidate: [g] } })] }),
+      OPTS,
+    );
+    expect(out).toContain('unscanned 미측정');
+    expect(out).not.toMatch(/unscanned 0tok/);
+  });
+
+  it('hasUnmeasured=true인 후보 그룹은 "일부 미측정"을 표시한다', () => {
+    const g = group({
+      serverName: 'notion',
+      headline: '20툴 중 2개만 사용',
+      hasUnmeasured: true,
+      tools: [tool({ toolName: 'a', perSessionTokens: 100 }), tool({ toolName: 'b', perSessionTokens: null })],
+    });
+    const out = renderReport(
+      model({ clients: [client({ buckets: { ...emptyBuckets(), candidate: [g] } })] }),
+      OPTS,
+    );
+    expect(out).toContain('일부 미측정');
+  });
 });
 
 describe('renderReport — inspect / healthy 버킷', () => {
@@ -320,6 +368,19 @@ describe('renderReport — inspect / healthy 버킷', () => {
     );
     expect(out).toContain('### 👍 정상 사용 중 — 1툴 · 응답 500tok');
     expect(out).toContain('demo-github/get_file 30회');
+  });
+
+  it('summary 모드는 healthy 그룹이 6개 초과면 5개로 절단하고 …을 붙인다', () => {
+    const manyTools = Array.from({ length: 9 }, (_, i) => tool({ toolName: `h${i}`, callCount: 1 }));
+    const g = group({ serverName: 'demo-github', action: 'keep', tools: manyTools });
+    const out = renderReport(
+      model({ clients: [client({ buckets: { ...emptyBuckets(), healthy: [g] } })] }),
+      { ...OPTS, detail: 'summary' },
+    );
+    expect(out).toContain('h0');
+    expect(out).toContain('h4');
+    expect(out).not.toContain('h5');
+    expect(out).toContain('…');
   });
 });
 
@@ -361,6 +422,31 @@ describe('renderReport — 각주', () => {
       OPTS,
     );
     expect(out).not.toContain('지연 로딩');
+  });
+
+  it('unmeasuredToolCount>0이면 미확보 각주를 낸다', () => {
+    const out = renderReport(
+      model({
+        clients: [
+          client({ unmeasuredToolCount: 4, buckets: { ...emptyBuckets(), healthy: [group()] } }),
+        ],
+      }),
+      OPTS,
+    );
+    expect(out).toContain('4개');
+    expect(out).toMatch(/미확보|미측정/);
+  });
+
+  it('unmeasuredToolCount=0이면 미확보 각주를 내지 않는다', () => {
+    const out = renderReport(
+      model({
+        clients: [
+          client({ unmeasuredToolCount: 0, buckets: { ...emptyBuckets(), healthy: [group()] } }),
+        ],
+      }),
+      OPTS,
+    );
+    expect(out).not.toContain('미확보');
   });
 });
 

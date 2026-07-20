@@ -77,8 +77,9 @@ function toolDetailTable(tools: readonly ReportTool[], c: ClientReport, opts: Re
 
 function renderActGroup(g: ReportGroup, c: ClientReport, opts: ReportOptions): string[] {
   const lines: string[] = [];
+  const unmeasuredNote = g.hasUnmeasured ? ' · 일부 미측정' : '';
   if (g.headline) {
-    lines.push(`**${g.serverName} — ${g.headline}** → ${actEffect(g)}`);
+    lines.push(`**${g.serverName} — ${g.headline}** → ${actEffect(g)}${unmeasuredNote}`);
     if (g.caveat) lines.push(g.caveat);
     if (isHomogeneous(g.tools)) {
       lines.push(homogeneousLine(g.tools));
@@ -86,7 +87,7 @@ function renderActGroup(g: ReportGroup, c: ClientReport, opts: ReportOptions): s
       lines.push(...toolDetailTable(g.tools, c, opts));
     }
   } else {
-    lines.push(`**${g.serverName} — 미사용 툴 ${g.tools.length}개** → 세션당 ${tok(g.perSessionTokens)}`);
+    lines.push(`**${g.serverName} — 미사용 툴 ${g.tools.length}개** → 세션당 ${tok(g.perSessionTokens)}${unmeasuredNote}`);
     if (g.caveat) lines.push(g.caveat);
     lines.push(...toolDetailTable(g.tools, c, opts));
   }
@@ -94,19 +95,25 @@ function renderActGroup(g: ReportGroup, c: ClientReport, opts: ReportOptions): s
   return lines;
 }
 
+/** perSessionTokens가 null(미측정)이면 0tok으로 뭉개지 않고 "미측정"으로 표시한다. */
+function perSessionLabel(n: number | null): string {
+  return n != null ? tok(n) : '미측정';
+}
+
 function renderCandidateGroup(g: ReportGroup, c: ClientReport, opts: ReportOptions): string[] {
   const lines: string[] = [];
   if (g.tools.length === 1 && !g.headline) {
     const t = g.tools[0];
     const observed = t.note ?? `${c.sessionCount}세션 관찰 (관찰 일수 부족)`;
-    lines.push(`**${g.serverName}/${t.toolName}** · ${tok(t.perSessionTokens ?? 0)} · ${observed}`);
+    lines.push(`**${g.serverName}/${t.toolName}** · ${perSessionLabel(t.perSessionTokens)} · ${observed}`);
   } else {
     const headline = g.headline ?? `${g.tools.length}툴 미사용`;
+    const unmeasuredNote = g.hasUnmeasured ? ' · 일부 미측정' : '';
     lines.push(
-      `**${g.serverName} — ${headline}** · ${c.sessionCount}세션 관찰 (10세션 필요) · 확정 시 세션당 ${tok(g.perSessionTokens)}`,
+      `**${g.serverName} — ${headline}**${unmeasuredNote} · ${c.sessionCount}세션 관찰 (10세션 필요) · 확정 시 세션당 ${tok(g.perSessionTokens)}`,
     );
     const { shown, restCount, restTokens } = truncateTools(g.tools, 'candidate', opts);
-    const parts = shown.map((t) => `${t.toolName} ${tok(t.perSessionTokens ?? 0)}`);
+    const parts = shown.map((t) => `${t.toolName} ${perSessionLabel(t.perSessionTokens)}`);
     if (restCount > 0) parts.push(`그 외 ${restCount}개 ${tok(restTokens)}`);
     lines.push(`> ${parts.join(' · ')}`);
   }
@@ -204,6 +211,12 @@ function renderClient(c: ClientReport, opts: ReportOptions): string[] {
   if (c.hiddenToolCount > 0) {
     lines.push(
       `_지연 로딩 — 로드·호출 0회로 실비용이 없는 툴 ${c.hiddenToolCount}개는 계산·표시에서 제외_`,
+    );
+  }
+
+  if (c.unmeasuredToolCount > 0) {
+    lines.push(
+      `_정의 토큰 미확보(스캐너 미커버) 툴 ${c.unmeasuredToolCount}개는 판정 보류 — 위 집계에서 제외_`,
     );
   }
 
