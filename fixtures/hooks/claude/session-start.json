@@ -1,0 +1,6 @@
+{
+  "session_id": "claude-session-anon-001",
+  "transcript_path": "/tmp/claude/session-anon-001.jsonl",
+  "hook_event_name": "SessionStart",
+  "source": "startup"
+}
