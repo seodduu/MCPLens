@@ -143,6 +143,8 @@ describe('decodeClaudeHook', () => {
     'mcp__github',
     'mcp____search',
     'mcp__github__',
+    'mcp__   __query',
+    'mcp__github__   ',
   ])('ignores non-MCP or malformed tool name %s', (toolName) => {
     expect(decodeClaudeHook({
       session_id: 'session-ignored-tool',

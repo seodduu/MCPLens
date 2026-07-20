@@ -38,7 +38,9 @@ const parseMcpToolName = (value: unknown): { serverName: string; toolName: strin
 
   const serverName = value.slice(serverStart, toolSeparator);
   const toolName = value.slice(toolSeparator + 2);
-  return serverName.length > 0 && toolName.length > 0 ? { serverName, toolName } : null;
+  return serverName.trim().length > 0 && toolName.trim().length > 0
+    ? { serverName, toolName }
+    : null;
 };
 
 export const decodeClaudeHook: HookDecoder = (input, receivedAt): HookNormalizationResult => {
