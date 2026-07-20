@@ -1,0 +1,27 @@
+{
+  "name": "mcp-lens",
+  "version": "0.1.0",
+  "description": "Local MCP context accounting for Codex lifecycle hooks",
+  "author": {
+    "name": "MCP Lens"
+  },
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "hooks",
+    "observability"
+  ],
+  "interface": {
+    "displayName": "MCP Lens",
+    "shortDescription": "Measure MCP tool usage locally",
+    "longDescription": "Collects minimal Codex lifecycle-hook metadata for local MCP context accounting without retaining tool inputs or responses.",
+    "developerName": "MCP Lens",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Hooks"
+    ],
+    "defaultPrompt": [
+      "Show my MCP context usage and hook collection status."
+    ]
+  }
+}

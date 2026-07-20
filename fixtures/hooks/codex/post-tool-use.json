@@ -1,0 +1,20 @@
+{
+  "session_id": "session-codex-1",
+  "transcript_path": null,
+  "cwd": "/Users/example/project",
+  "hook_event_name": "PostToolUse",
+  "model": "gpt-5.6-sol",
+  "permission_mode": "default",
+  "turn_id": "turn-codex-1",
+  "tool_name": "mcp__github__get_issue",
+  "tool_use_id": "tool-codex-1",
+  "tool_input": {
+    "issue": "sensitive-input-must-not-survive"
+  },
+  "tool_response": {
+    "content": "sensitive-response-must-not-survive"
+  },
+  "future_field": {
+    "nested": true
+  }
+}
