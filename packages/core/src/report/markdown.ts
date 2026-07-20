@@ -104,13 +104,13 @@ function renderCandidateGroup(g: ReportGroup, c: ClientReport, opts: ReportOptio
   const lines: string[] = [];
   if (g.tools.length === 1 && !g.headline) {
     const t = g.tools[0];
-    const observed = t.note ?? `${c.sessionCount}세션 관찰 (관찰 일수 부족)`;
+    const observed = t.note ?? `${c.sessionCount}세션 관찰`;
     lines.push(`**${g.serverName}/${t.toolName}** · ${perSessionLabel(t.perSessionTokens)} · ${observed}`);
   } else {
     const headline = g.headline ?? `${g.tools.length}툴 미사용`;
     const unmeasuredNote = g.hasUnmeasured ? ' · 일부 미측정' : '';
     lines.push(
-      `**${g.serverName} — ${headline}**${unmeasuredNote} · ${c.sessionCount}세션 관찰 (10세션 필요) · 확정 시 세션당 ${tok(g.perSessionTokens)}`,
+      `**${g.serverName} — ${headline}**${unmeasuredNote} · ${c.sessionCount}세션 관찰 · 확정 시 세션당 ${tok(g.perSessionTokens)}`,
     );
     const { shown, restCount, restTokens } = truncateTools(g.tools, 'candidate', opts);
     const parts = shown.map((t) => `${t.toolName} ${perSessionLabel(t.perSessionTokens)}`);
@@ -149,7 +149,7 @@ function bucketTitle(bucket: ReportBucket, groups: readonly ReportGroup[]): stri
     case 'act':
       return `### ✅ 지금 조치 — 세션당 ${tok(sumPerSessionTokens(groups))}`;
     case 'candidate':
-      return '### ⏳ 관찰 더 필요 — 10세션 누적 시 확정 (지금은 조치 권고 아님)';
+      return '### ⏳ 관찰 더 필요 — 아직 조치 권고 아님';
     case 'inspect':
       return '### 🔧 점검 필요 — 실패가 잦은 툴';
     case 'healthy': {
@@ -184,16 +184,20 @@ function renderBucketBody(
 function renderCollapsedClient(c: ClientReport): string[] {
   const toolCount = c.collapsedSummary?.toolCount ?? 0;
   const tokens = c.collapsedSummary?.perSessionTokens ?? 0;
+  // 확신을 막는 조건은 세션 수·관찰 일수·과거 호출 이력 중 무엇이든 될 수 있고,
+  // ReportModel은 그 축을 담지 않는다. 특정 임계값을 주장하면 148세션에 대고
+  // "10세션 이상 쓰면"이라 말하는 자기모순이 난다 — 조건을 특정하지 않는다.
   return [
-    '**관찰 부족 — 판단 보류.** 이 클라이언트로 10세션 이상 사용하면 권고가 나옵니다.',
-    `현재 미사용 정의 ${toolCount}개 · 세션당 ${tok(tokens)}이 잡히지만 ${c.sessionCount}세션 근거로는 확정할 수 없습니다.`,
+    '**확정 권고 없음 — 관찰 근거 부족.** 계속 쓰면 후보가 확정됩니다.',
+    `미사용 정의 ${toolCount}개 · 세션당 ${tok(tokens)} (${c.sessionCount}세션 관찰, 아직 확정 조건 미달) — 목록은 \`--full\``,
   ];
 }
 
 function renderClient(c: ClientReport, opts: ReportOptions): string[] {
   const lines: string[] = ['', '---', '', `## ${c.client} · 세션 ${c.sessionCount}개`];
 
-  if (c.collapsed) {
+  // full은 "전량 보기"의 탈출구다 — 절단뿐 아니라 접기도 풀어야 일관된다.
+  if (c.collapsed && opts.detail === 'summary') {
     lines.push('');
     lines.push(...renderCollapsedClient(c));
     return lines;
@@ -231,8 +235,15 @@ export function renderReport(model: ReportModel, opts: ReportOptions): string {
 
   const lines: string[] = [];
   lines.push(`# MCP Lens — 최근 ${opts.days}일 (${date} 기준)`, '');
-  lines.push(`지금 조치하면 **세션당 ${tok(t.actPerSessionTokens)}**을 줄일 수 있습니다.`);
-  lines.push(`관찰이 더 쌓이면 후보 ${tok(t.candidatePerSessionTokens)}이 추가로 확정됩니다.`, '');
+  // 리드 문장은 실제 상태를 반영한다 — 조치 대상이 없는데 "0tok 줄일 수 있습니다"로
+  // 시작하면 리포트의 첫 줄이 아무 정보도 주지 못한다.
+  if (t.actPerSessionTokens > 0) {
+    lines.push(`지금 조치하면 **세션당 ${tok(t.actPerSessionTokens)}**을 줄일 수 있습니다.`);
+    lines.push(`관찰이 더 쌓이면 후보 ${tok(t.candidatePerSessionTokens)}이 추가로 확정됩니다.`, '');
+  } else {
+    lines.push('**지금 확정된 조치는 없습니다.**');
+    lines.push(`관찰이 더 쌓이면 후보 ${tok(t.candidatePerSessionTokens)}이 확정 대상이 됩니다.`, '');
+  }
   lines.push('| 구분 | 대상 | 세션당 |');
   lines.push('|---|---|---|');
   lines.push(`| ✅ 지금 조치 | 서버 ${t.actServerCount} · 툴 ${t.actToolCount} | **${tok(t.actPerSessionTokens)}** |`);

@@ -14,6 +14,7 @@ import type {
 } from '../../src/report/model.js';
 
 const OPTS: ReportOptions = { detail: 'full', days: 30, now: '2026-07-20T00:00:00.000Z' };
+const SUMMARY_OPTS: ReportOptions = { ...OPTS, detail: 'summary' };
 
 function tool(over: Partial<ReportTool> = {}): ReportTool {
   return {
@@ -285,7 +286,10 @@ describe('renderReport — candidate 버킷', () => {
       model({ clients: [client({ buckets: { ...emptyBuckets(), candidate: [group()] } })] }),
       OPTS,
     );
-    expect(out).toContain('### ⏳ 관찰 더 필요 — 10세션 누적 시 확정 (지금은 조치 권고 아님)');
+    expect(out).toContain('### ⏳ 관찰 더 필요 — 아직 조치 권고 아님');
+    // 확신을 막는 축은 세션 수가 아닐 수 있다 (관찰 일수·과거 호출 이력).
+    // 특정 임계값을 주장하면 148세션 클라이언트에 "10세션 필요"를 찍는 모순이 난다.
+    expect(out).not.toContain('10세션');
   });
 
   it('perSessionTokens가 null인 단일 후보 툴은 0tok이 아니라 미측정으로 표시된다', () => {
@@ -397,12 +401,36 @@ describe('renderReport — 접힌 클라이언트', () => {
           }),
         ],
       }),
-      OPTS,
+      SUMMARY_OPTS,
     );
     const section = out.split('## gemini-cli')[1];
     expect(section.trim().split('\n').filter(Boolean).length).toBeLessThanOrEqual(3);
-    expect(section).toContain('관찰 부족');
-    expect(section).toContain('10세션 이상');
+    expect(section).toContain('관찰 근거 부족');
+    expect(section).toContain('7개');
+    expect(section).toContain('3세션 관찰');
+    // 세션 임계값을 주장하지 않는다 — 실제 미충족 조건은 관찰 일수일 수도 있다
+    expect(section).not.toContain('10세션');
+  });
+
+  it('세션이 많은데 접힌 클라이언트에도 세션 임계값을 주장하지 않는다', () => {
+    // 실데이터 회귀: claude-code 148세션이 observedDays=0 때문에 전부 low로 접혔는데
+    // "10세션 이상 사용하면"이라고 안내해 자기모순이 났다.
+    const out = renderReport(
+      model({
+        clients: [
+          client({
+            client: 'claude-code',
+            sessionCount: 148,
+            collapsed: true,
+            collapsedSummary: { toolCount: 10, perSessionTokens: 15267 },
+          }),
+        ],
+      }),
+      SUMMARY_OPTS,
+    );
+    const section = out.split('## claude-code')[1];
+    expect(section).not.toContain('10세션');
+    expect(section).toContain('148세션 관찰');
   });
 });
 
