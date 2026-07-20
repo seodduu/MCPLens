@@ -6,10 +6,4 @@ export * from './model.js';
 
 export { buildReport } from './rollup.js';
 
-/**
- * ReportModel → 마크다운 문자열.
- * 구현: Task 36 — `./markdown.js`로 교체된다.
- */
-export function renderReport(_model: ReportModel, _opts: ReportOptions): string {
-  throw new Error('renderReport: not implemented (Task 36)');
-}
+export { renderReport } from './markdown.js';
