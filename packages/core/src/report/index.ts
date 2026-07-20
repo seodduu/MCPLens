@@ -13,10 +13,4 @@ export function buildReport(_input: EngineInput, _opts: ReportOptions): ReportMo
   throw new Error('buildReport: not implemented (Task 35)');
 }
 
-/**
- * ReportModel → 마크다운 문자열.
- * 구현: Task 36 — `./markdown.js`로 교체된다.
- */
-export function renderReport(_model: ReportModel, _opts: ReportOptions): string {
-  throw new Error('renderReport: not implemented (Task 36)');
-}
+export { renderReport } from './markdown.js';
