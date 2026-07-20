@@ -211,7 +211,7 @@ describe('Gemini extension assets', () => {
       expect(groups[0]?.hooks).toHaveLength(1);
       expect(groups[0]?.hooks[0]).toMatchObject({
         type: 'command',
-        command: 'node ${extensionPath}/scripts/capture.js',
+        command: 'node "${extensionPath}/scripts/hook-runner.mjs"',
         timeout: 2000,
         description: expect.stringMatching(/\{\}.*stdout.*stderr/i),
       });
