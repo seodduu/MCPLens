@@ -1,7 +1,7 @@
 {
   "name": "mcp-lens",
   "version": "0.1.0",
-  "description": "Local MCP context accounting for Codex lifecycle hooks",
+  "description": "Local MCP context accounting with a self-contained Codex hook runtime",
   "author": {
     "name": "MCP Lens"
   },
