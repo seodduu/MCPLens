@@ -1,6 +1,6 @@
 // packages/core/test/engine/engine.test.ts
 import { describe, it, expect } from 'vitest';
-import { buildMatrix, sessionSavings, splitByClient, dominantMode, visibleMatrixRows } from '../../src/engine/engine.js';
+import { buildMatrix, sessionSavings, splitByClient, dominantMode, visibleMatrixRows, joinReason } from '../../src/engine/engine.js';
 import type { EngineInput } from '../../src/engine/engine.js';
 
 const def = (tool: string, tokens: number) => ({
@@ -275,6 +275,120 @@ describe('visibleMatrixRows: 모드 인지 표시 필터', () => {
   it('업프론트: 전부 표시 (미사용도 매 세션 실비용)', () => {
     const visible = visibleMatrixRows(rows('UPFRONT'), [session('UPFRONT')]);
     expect(visible).toHaveLength(3);
+  });
+});
+
+describe('joinReason: reasonParts → reason 바이트 동일성 (Task 34 회귀)', () => {
+  const RDAY = 86_400_000;
+  const rat = (d: number) => new Date(Date.parse('2026-06-01T00:00:00Z') + d * RDAY).toISOString();
+
+  // 12세션(day0~day11) — notion 계열 툴에겐 high 확신을 줄 만큼 충분한 관찰창
+  const rsessions = Array.from({ length: 12 }, (_, i) => ({
+    sessionId: `r${i}`, client: 'claude-code' as const, filePath: `/r/${i}`,
+    startedAt: rat(i), mode: 'UPFRONT' as const }));
+
+  // notion: 10툴 중 1개(t0)만 사용 → t1(오염 없음)·t2(오염 있음)는 filter-server, high 확신
+  const notionDefs = Array.from({ length: 10 }, (_, i) => ({
+    serverName: 'notion', toolName: `t${i}`, definitionTokens: 100,
+    scannedAt: rat(0), firstScannedAt: rat(0) }));
+  const notionCalls = [{
+    sessionId: 'r0', serverName: 'notion', toolName: 't0',
+    calledAt: rat(0), durationMs: 5, isError: false, responseTokens: 50, responseText: null }];
+  const notionLoads = [{ sessionId: 'r0', serverName: 'notion', toolName: 't2', loadedTokens: null }];
+
+  // small: 2툴 중 1개(friend) 사용, lonely는 미사용 & 늦게(day11) 스캔 → remove, low 확신
+  const smallDefs = [
+    { serverName: 'small', toolName: 'friend', definitionTokens: 80,
+      scannedAt: rat(0), firstScannedAt: rat(0) },
+    { serverName: 'small', toolName: 'lonely', definitionTokens: 80,
+      scannedAt: rat(11), firstScannedAt: rat(11) },
+  ];
+  const smallCalls = [{
+    sessionId: 'r11', serverName: 'small', toolName: 'friend',
+    calledAt: rat(11), durationMs: 5, isError: false, responseTokens: 50, responseText: null }];
+
+  // medserver: 2툴 중 1개(used) 사용, unused는 day5 스캔 → remove, medium 확신
+  const medDefs = [
+    { serverName: 'medserver', toolName: 'used', definitionTokens: 90,
+      scannedAt: rat(0), firstScannedAt: rat(0) },
+    { serverName: 'medserver', toolName: 'unused', definitionTokens: 90,
+      scannedAt: rat(5), firstScannedAt: rat(5) },
+  ];
+  const medCalls = [{
+    sessionId: 'r0', serverName: 'medserver', toolName: 'used',
+    calledAt: rat(0), durationMs: 5, isError: false, responseTokens: 50, responseText: null }];
+
+  // apis: flaky 3회 호출, 2회 실패 → inspect
+  const apiDefs = [{ serverName: 'apis', toolName: 'flaky', definitionTokens: 60,
+    scannedAt: rat(0), firstScannedAt: rat(0) }];
+  const apiCalls = [
+    { sessionId: 'r0', serverName: 'apis', toolName: 'flaky',
+      calledAt: rat(0), durationMs: 5, isError: true, responseTokens: 30, responseText: null },
+    { sessionId: 'r0', serverName: 'apis', toolName: 'flaky',
+      calledAt: rat(0), durationMs: 5, isError: true, responseTokens: 30, responseText: null },
+    { sessionId: 'r0', serverName: 'apis', toolName: 'flaky',
+      calledAt: rat(0), durationMs: 5, isError: false, responseTokens: 30, responseText: null },
+  ];
+
+  const input: EngineInput = {
+    definitions: [...notionDefs, ...smallDefs, ...medDefs, ...apiDefs],
+    calls: [...notionCalls, ...smallCalls, ...medCalls, ...apiCalls],
+    loads: notionLoads,
+    sessions: rsessions,
+  };
+  const rows = buildMatrix(input);
+
+  it('4종 action이 모두 등장한다', () => {
+    const actions = new Set(rows.map((r) => r.recommendation.action));
+    expect(actions).toEqual(new Set(['filter-server', 'remove', 'inspect', 'keep']));
+  });
+
+  it('모든 행에서 joinReason(reasonParts) === reason (바이트 동일)', () => {
+    for (const r of rows) {
+      expect(joinReason(r.recommendation.reasonParts)).toBe(r.recommendation.reason);
+    }
+  });
+
+  it('filter-server: serverBasis가 서버 공통 근거를 담고, basis엔 새지 않는다', () => {
+    const t1 = rows.find((r) => r.serverName === 'notion' && r.toolName === 't1')!;
+    expect(t1.recommendation.action).toBe('filter-server');
+    expect(t1.recommendation.reasonParts.serverBasis).toContain('10툴 중 1개만 사용');
+    expect(t1.recommendation.reasonParts.basis).not.toContain('10툴 중');
+  });
+
+  it('filter-server + 오염: pollutionSuffix가 effect에 접혀 들어간다', () => {
+    const t2 = rows.find((r) => r.serverName === 'notion' && r.toolName === 't2')!;
+    expect(t2.recommendation.action).toBe('filter-server');
+    expect(t2.recommendation.reasonParts.effect).toContain('검색 공간 오염');
+  });
+
+  it('remove: serverBasis는 null', () => {
+    const lonely = rows.find((r) => r.serverName === 'small' && r.toolName === 'lonely')!;
+    expect(lonely.recommendation.action).toBe('remove');
+    expect(lonely.recommendation.reasonParts.serverBasis).toBeNull();
+    const unused = rows.find((r) => r.serverName === 'medserver' && r.toolName === 'unused')!;
+    expect(unused.recommendation.action).toBe('remove');
+    expect(unused.recommendation.reasonParts.serverBasis).toBeNull();
+  });
+
+  it('remove 행끼리 확신 등급이 갈린다 (low vs medium)', () => {
+    const lonely = rows.find((r) => r.serverName === 'small' && r.toolName === 'lonely')!;
+    const unused = rows.find((r) => r.serverName === 'medserver' && r.toolName === 'unused')!;
+    expect(lonely.recommendation.confidence).toBe('low');
+    expect(unused.recommendation.confidence).toBe('medium');
+  });
+
+  it('inspect: caveat는 null, basis에 실패 정보가 담긴다', () => {
+    const flaky = rows.find((r) => r.serverName === 'apis' && r.toolName === 'flaky')!;
+    expect(flaky.recommendation.action).toBe('inspect');
+    expect(flaky.recommendation.reasonParts.caveat).toBeNull();
+    expect(flaky.recommendation.reasonParts.basis).toContain('실패');
+  });
+
+  it('keep: caveat는 null', () => {
+    const t0 = rows.find((r) => r.serverName === 'notion' && r.toolName === 't0')!;
+    expect(t0.recommendation.action).toBe('keep');
+    expect(t0.recommendation.reasonParts.caveat).toBeNull();
   });
 });
 

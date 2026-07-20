@@ -1,7 +1,7 @@
 // packages/core/src/engine/engine.ts
 import type { ClientId, LoadPattern, MatrixRow, Recommendation, RecommendationReason,
   SessionMeta, ToolCallEvent, ToolDefinition, ToolLoadEvent } from '../types.js';
-import { buildEvidenceContext, confidencePhrase, EMPTY_EVIDENCE, inspectConfidence,
+import { buildEvidenceContext, confidenceCaveat, EMPTY_EVIDENCE, inspectConfidence,
   removeConfidence, toolEvidence, type EvidenceContext } from './evidence.js';
 
 export interface EngineInput {
@@ -106,10 +106,11 @@ export function sessionSavings(input: EngineInput) {
 }
 
 function baseRow(serverName: string, toolName: string, definitionTokens: number | null): MatrixRow {
+  const reasonParts: RecommendationReason = { basis: '', serverBasis: null, effect: null, caveat: null };
   return { serverName, toolName, definitionTokens, callCount: 0, responseTokens: 0,
     loadedSessionCount: 0, sessionCount: 0,
-    recommendation: { action: 'unknown', confidence: 'low', reason: '',
-      reasonParts: flatParts(''), evidenceLabel: '측정 불가', evidence: EMPTY_EVIDENCE },
+    recommendation: { action: 'unknown', confidence: 'low', reason: joinReason(reasonParts),
+      reasonParts, evidenceLabel: '측정 불가', evidence: EMPTY_EVIDENCE },
     reliability: { errorCount: 0, errorRate: null, failedResponseTokens: 0 },
     loadPattern: null };
 }
@@ -173,14 +174,24 @@ function recommend(
   if (row.callCount === 0 && row.definitionTokens != null) {
     // 확신이 낮아도 판정은 강등하지 않는다 — 표면이 "후보"로 렌더링한다 (스펙 결정사항 2)
     const confidence = removeConfidence(evidence);
-    const tail = confidencePhrase(confidence, evidence);
+    const caveat = confidenceCaveat(confidence, evidence);
     if (server && server.total >= 10 && server.used > 0 && server.used / server.total < 0.2) {
-      const reason = `서버 ${row.serverName}의 ${server.total}툴 중 ${server.used}개만 사용 — 툴 필터링 권장. ${sizePhrase(row.definitionTokens)}${pollutionSuffix}${tail}`;
-      return { action: 'filter-server', confidence, reason, reasonParts: flatParts(reason),
+      const reasonParts: RecommendationReason = {
+        basis: '',
+        serverBasis: `서버 ${row.serverName}의 ${server.total}툴 중 ${server.used}개만 사용 — 툴 필터링 권장.`,
+        effect: `${sizePhrase(row.definitionTokens)}${pollutionSuffix}`,
+        caveat,
+      };
+      return { action: 'filter-server', confidence, reason: joinReason(reasonParts), reasonParts,
         evidenceLabel, evidence };
     }
-    const reason = `정의 ${row.definitionTokens}토큰, 호출 0회 — ${sizePhrase(row.definitionTokens)}${pollutionSuffix}${tail}`;
-    return { action: 'remove', confidence, reason, reasonParts: flatParts(reason),
+    const reasonParts: RecommendationReason = {
+      basis: `정의 ${row.definitionTokens}토큰, 호출 0회`,
+      serverBasis: null,
+      effect: `${sizePhrase(row.definitionTokens)}${pollutionSuffix}`,
+      caveat,
+    };
+    return { action: 'remove', confidence, reason: joinReason(reasonParts), reasonParts,
       evidenceLabel, evidence };
   }
   if (
@@ -189,27 +200,39 @@ function recommend(
     row.reliability.errorRate >= INSPECT_ERROR_RATE
   ) {
     const rate = Math.round(row.reliability.errorRate * 100);
-    const reason = `${row.callCount}회 중 ${row.reliability.errorCount}회 실패(${rate}%), 실패 응답 ${row.reliability.failedResponseTokens}토큰 낭비 — 점검·대체 권장`;
+    const reasonParts: RecommendationReason = {
+      basis: `${row.callCount}회 중 ${row.reliability.errorCount}회 실패(${rate}%), 실패 응답 ${row.reliability.failedResponseTokens}토큰 낭비`,
+      serverBasis: null, effect: '점검·대체 권장', caveat: null,
+    };
     return { action: 'inspect', confidence: inspectConfidence(row.callCount),
-      reason, reasonParts: flatParts(reason), evidenceLabel, evidence };
+      reason: joinReason(reasonParts), reasonParts, evidenceLabel, evidence };
   }
   // 호출됨 = 자기 증명 → high 고정
   if (row.callCount > 0) {
-    const reason = `${row.callCount}회 호출됨`;
-    return { action: 'keep', confidence: 'high', reason, reasonParts: flatParts(reason),
+    const reasonParts: RecommendationReason = {
+      basis: `${row.callCount}회 호출됨`, serverBasis: null, effect: null, caveat: null };
+    return { action: 'keep', confidence: 'high', reason: joinReason(reasonParts), reasonParts,
       evidenceLabel, evidence };
   }
-  const reason = '정의 토큰 미확보 (스캐너 미커버)';
-  return { action: 'unknown', confidence: 'low', reason, reasonParts: flatParts(reason),
+  const reasonParts: RecommendationReason = {
+    basis: '정의 토큰 미확보 (스캐너 미커버)', serverBasis: null, effect: null, caveat: null };
+  return { action: 'unknown', confidence: 'low', reason: joinReason(reasonParts), reasonParts,
     evidenceLabel: '측정 불가', evidence };
 }
 
-/**
- * Wave 0 임시 충전 — reason 전체를 basis에 담아 동치를 구성상 자명하게 만든다.
- * Task 34가 이것을 실제 분해(serverBasis/effect/caveat 분리)로 교체한다.
- */
-function flatParts(reason: string): RecommendationReason {
-  return { basis: reason, serverBasis: null, effect: null, caveat: null };
+/** parts → 현행 reason 문자열. 구분자 규칙이 여기 한 곳에만 있다 */
+export function joinReason(p: RecommendationReason): string {
+  // lead: serverBasis가 있으면 그것, 없으면 basis. 그 뒤 effect와의 구분자가 다르다:
+  //   serverBasis 뒤엔 공백(' '), basis 뒤엔 ' — '. 원문 filter-server/remove의 차이 그대로.
+  const lead = p.serverBasis ?? p.basis;
+  let s = lead;
+  if (p.effect != null) {
+    s += p.serverBasis != null ? ` ${p.effect}` : ` — ${p.effect}`;
+  }
+  if (p.caveat != null) {
+    s += ` — ${p.caveat}`;
+  }
+  return s;
 }
 
 /**

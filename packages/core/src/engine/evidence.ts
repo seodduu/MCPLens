@@ -214,20 +214,28 @@ export function inspectConfidence(callCount: number): RecommendationConfidence {
   return callCount >= INSPECT_HIGH_CALLS ? 'high' : 'medium';
 }
 
-/** remove/filter-server reason에 붙는 확신 꼬리말 */
-export function confidencePhrase(
+/** remove/filter-server 확신 꼬리말의 알맹이 (구분자 없음). 리포트 렌더러는 이걸 쓴다 */
+export function confidenceCaveat(
   confidence: RecommendationConfidence,
   ev: RecommendationEvidence,
 ): string {
   const days = ev.observedDays == null ? '' : `/${ev.observedDays}일`;
   if (confidence === 'low')
-    return ` — 관찰 부족(${ev.observedSessions}세션${days}), `
+    return `관찰 부족(${ev.observedSessions}세션${days}), `
       + `${HIGH_CONFIDENCE_SESSIONS}세션 누적 시 확정. 아직 확정 권고 아님`;
   if (confidence === 'medium' && ev.lastCalledAt != null)
-    return ` — 마지막 호출 ${ev.lastCalledAt.slice(0, 10)}, 저빈도 툴일 수 있음. `
+    return `마지막 호출 ${ev.lastCalledAt.slice(0, 10)}, 저빈도 툴일 수 있음. `
       + `삭제보다 지연 로딩 유지 검토`;
   if (confidence === 'medium')
-    return ` — ${ev.observedSessions}세션${days} 관찰, 추가 관찰 시 확정`;
-  return ` — ${ev.observedSessions}세션${days} 관찰, `
+    return `${ev.observedSessions}세션${days} 관찰, 추가 관찰 시 확정`;
+  return `${ev.observedSessions}세션${days} 관찰, `
     + `누적 부담 ${ev.totalObservedCost ?? 0}토큰. 설정 한 줄로 복구 가능`;
+}
+
+/** @deprecated 리포트 렌더러는 confidenceCaveat를 쓴다. reason 결합 호환용 */
+export function confidencePhrase(
+  confidence: RecommendationConfidence,
+  ev: RecommendationEvidence,
+): string {
+  return ` — ${confidenceCaveat(confidence, ev)}`;
 }
