@@ -127,12 +127,30 @@ export interface RecommendationEvidence {
   totalObservedCost: number | null;
 }
 
+/**
+ * reason 산문의 구성 요소. 리포트 렌더러가 계층별로 재배치·중복 제거할 수 있게 분해해 둔다.
+ * 서버 공통 근거를 툴마다 복제하지 않으려면(리포트 가독성 설계 §1 P2) 산문 하나로는 부족하다.
+ * reason은 이 조각들의 결합이며 항상 동치다.
+ */
+export interface RecommendationReason {
+  /** 이 툴만의 근거. 예: "정의 900토큰, 호출 0회" */
+  basis: string;
+  /** 서버 단위 공통 근거 — filter-server에서만 채워진다. 예: "서버 notion의 20툴 중 2개만 사용 — 툴 필터링 권장." */
+  serverBasis: string | null;
+  /** 조치 효과. 예: "제거 시 매 세션 약 900토큰 절약" | "절약은 작지만 검색 공간 정리 효과" */
+  effect: string | null;
+  /** 확신 꼬리말의 알맹이 (구분자 없음). 예: "관찰 부족(3세션/0일), 10세션 누적 시 확정" */
+  caveat: string | null;
+}
+
 export interface Recommendation {
   action: 'remove' | 'filter-server' | 'keep' | 'unknown' | 'inspect';
   /** action과 직교하는 축 — action="무엇을 하라", confidence="얼마나 믿을 수 있나" */
   confidence: RecommendationConfidence;
   /** 모드 인지 표기: 업프론트면 "매 세션 N토큰 절약", 지연이면 "검색 공간 정리" */
   reason: string;
+  /** reason의 구조화 분해 — 리포트 렌더러 전용. reason과 항상 동치 */
+  reasonParts: RecommendationReason;
   evidenceLabel: '실측' | '하한 추정' | '전량 가정' | '측정 불가';
   evidence: RecommendationEvidence;
 }
