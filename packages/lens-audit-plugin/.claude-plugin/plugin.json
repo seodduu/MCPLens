@@ -1,1 +1,5 @@
-{ "name": "mcp-lens", "version": "0.1.0", "description": "MCP context accounting audit" }
+{
+  "name": "mcp-lens",
+  "version": "0.1.0",
+  "description": "Local MCP context accounting with self-contained lifecycle hooks"
+}

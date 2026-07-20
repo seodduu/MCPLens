@@ -1,6 +1,19 @@
-# MCP Lens `/lens-audit` 플러그인
+# MCP Lens Claude Code 플러그인
 
-Claude Code에서 `/lens-audit` 슬래시 커맨드로 MCP 툴 컨텍스트 낭비 감사를 실행하는 플러그인.
+Claude Code의 공식 lifecycle hook으로 MCP 호출 메타데이터를 로컬 수집하고,
+`/lens-audit` 슬래시 커맨드로 MCP 툴 컨텍스트 낭비 감사를 실행하는 플러그인입니다.
+
+## 로컬 hook 수집
+
+플러그인에 포함된 `scripts/hook-runner.mjs`와 `runtime/`만 사용합니다. Hook은
+stdin payload를 읽고 MCP 호출의 클라이언트·세션·서버·툴·시각 같은 최소 메타데이터만
+`~/.mcplens/inbox`에 원자적으로 기록합니다. `tool_input`, `tool_response`, 프롬프트와
+응답 본문은 저장하지 않으며 네트워크나 MCP Lens DB를 열지 않습니다. 정상 stdout은
+항상 `{}`뿐이고 차단 결정을 반환하지 않습니다.
+
+설치 또는 업데이트 뒤에는 Claude Code 플러그인을 reload하고 새 세션을 시작해야 hook
+정의가 적용됩니다. 수집을 끄려면 플러그인을 disable하거나 uninstall한 뒤 새 세션을
+시작하십시오. MCP Lens는 Claude의 원본 transcript/log를 수정하거나 이동하지 않습니다.
 
 ## 동작
 
@@ -32,6 +45,9 @@ claude plugin add /path/to/MCPLens/packages/lens-audit-plugin
 packages/lens-audit-plugin/
 ├── .claude-plugin/plugin.json   # 플러그인 매니페스트
 ├── commands/lens-audit.md       # /lens-audit 커맨드 정의
+├── hooks/hooks.json             # lifecycle hook 등록
+├── scripts/hook-runner.mjs      # 번들 진입점
+├── runtime/                     # dependency-free 로컬 capture runtime
 └── README.md
 ```
 

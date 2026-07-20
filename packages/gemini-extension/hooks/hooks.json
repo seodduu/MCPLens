@@ -6,7 +6,7 @@
           {
             "type": "command",
             "name": "mcp-lens-session-start",
-            "command": "node ${extensionPath}/scripts/capture.js",
+            "command": "node \"${extensionPath}/scripts/hook-runner.mjs\"",
             "timeout": 2000,
             "description": "Passive capture: writes only {} to stdout and diagnostics to stderr"
           }
@@ -19,7 +19,7 @@
           {
             "type": "command",
             "name": "mcp-lens-before-tool",
-            "command": "node ${extensionPath}/scripts/capture.js",
+            "command": "node \"${extensionPath}/scripts/hook-runner.mjs\"",
             "timeout": 2000,
             "description": "Passive capture: writes only {} to stdout and diagnostics to stderr"
           }
@@ -32,7 +32,7 @@
           {
             "type": "command",
             "name": "mcp-lens-after-tool",
-            "command": "node ${extensionPath}/scripts/capture.js",
+            "command": "node \"${extensionPath}/scripts/hook-runner.mjs\"",
             "timeout": 2000,
             "description": "Passive capture: writes only {} to stdout and diagnostics to stderr"
           }
@@ -45,7 +45,7 @@
           {
             "type": "command",
             "name": "mcp-lens-session-end",
-            "command": "node ${extensionPath}/scripts/capture.js",
+            "command": "node \"${extensionPath}/scripts/hook-runner.mjs\"",
             "timeout": 2000,
             "description": "Passive capture: writes only {} to stdout and diagnostics to stderr"
           }
