@@ -4,6 +4,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AdapterResult, SessionMeta, ToolCallEvent, ToolDefinition,
   ToolLoadEvent } from '../types.js';
+import type { ToolObservation } from '../ingest/contracts.js';
+import { adapterResultToObservations } from '../ingest/log-bridge.js';
+import { makeCorrelationKey } from '../ingest/identity.js';
+import { deriveCollectionHealth, type CollectionHealthSnapshot } from '../health/collectionHealth.js';
+import { materializeSession, sessionIdFor } from './observations.js';
 
 const SCHEMA = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), 'schema.sql'), 'utf8');
@@ -27,6 +32,7 @@ function migrate(db: Database): void {
 }
 
 export class LensStore {
+  private transactionDepth = 0;
   private constructor(private db: Database, private filePath: string) {}
   observationCount(): number { const r = this.select('SELECT COUNT(*) AS count FROM ingest_observations', []); return Number(r[0]?.count ?? 0); }
 
@@ -41,35 +47,105 @@ export class LensStore {
   }
 
   ingest(r: AdapterResult): void {
-    const { session: s } = r;
-    this.db.exec('BEGIN');
-    try {
+    this.transaction(() => {
+      const { session: s } = r;
+      const externalSessionId = s.externalSessionId ?? s.sessionId;
+      if (externalSessionId !== s.sessionId) {
+        this.promoteFallbackAlias(s.client, s.sessionId, externalSessionId, s.sessionId);
+      }
+      const prior = this.aliasSessionId(s.client, externalSessionId);
       this.run(
-        `INSERT INTO sessions(session_id, client, file_path, started_at, mode)
-         VALUES(?,?,?,?,?)
-         ON CONFLICT(session_id) DO UPDATE SET mode=excluded.mode, started_at=excluded.started_at`,
-        [s.sessionId, s.client, s.filePath, s.startedAt, s.mode]);
-      for (const t of ['tool_calls', 'tool_loads', 'token_usage'])
-        this.run(`DELETE FROM ${t} WHERE session_id = ?`, [s.sessionId]);
-      for (const c of r.toolCalls)
-        this.run(
-          `INSERT INTO tool_calls(session_id, server_name, tool_name, called_at,
-             duration_ms, is_error, response_tokens) VALUES(?,?,?,?,?,?,?)`,
-          [c.sessionId, c.serverName, c.toolName, c.calledAt, c.durationMs,
-           c.isError ? 1 : 0, c.responseTokens]);
-      for (const l of r.toolLoads)
-        this.run(
-          `INSERT INTO tool_loads(session_id, server_name, tool_name, loaded_tokens)
-           VALUES(?,?,?,?)`,
-          [l.sessionId, l.serverName, l.toolName, l.loadedTokens]);
+        `INSERT INTO sessions(session_id, client, file_path, external_session_id, started_at, mode)
+         VALUES(?,?,?,?,?,?) ON CONFLICT(session_id) DO UPDATE SET
+           client=excluded.client, file_path=excluded.file_path,
+           external_session_id=excluded.external_session_id, started_at=excluded.started_at,
+           mode=excluded.mode`,
+        [s.sessionId, s.client, s.filePath, externalSessionId, s.startedAt, s.mode]);
+      this.run(
+        `INSERT INTO session_aliases(client, external_session_id, session_id, transcript_path)
+         VALUES(?,?,?,?) ON CONFLICT(client, external_session_id) DO UPDATE SET
+           session_id=excluded.session_id, transcript_path=excluded.transcript_path`,
+        [s.client, externalSessionId, s.sessionId, s.filePath]);
+      this.run(
+        `DELETE FROM ingest_observations
+         WHERE source='log' AND client=? AND external_session_id=?`,
+        [s.client, externalSessionId]);
+      for (const [index, observation] of adapterResultToObservations(r, []).entries()) {
+        // A hook and its transcript record can share native identity. Delivery
+        // idempotency is source-local, while the ordinal preserves occurrences
+        // whose fallback correlation identities are intentionally identical.
+        this.insertObservation({
+          ...observation,
+          deliveryId: `log:${index}:${observation.deliveryId}`,
+        });
+      }
+      this.rebuildSession(s.sessionId);
+      if (prior !== null && prior !== s.sessionId) this.refreshDisplacedSession(prior);
+      this.run('DELETE FROM token_usage WHERE session_id = ?', [s.sessionId]);
       for (const u of r.usage)
         this.run(
           `INSERT INTO token_usage(session_id, at, input_tokens, output_tokens,
              cache_read_tokens, cache_creation_tokens) VALUES(?,?,?,?,?,?)`,
           [u.sessionId, u.at, u.inputTokens, u.outputTokens,
            u.cacheReadTokens, u.cacheCreationTokens]);
-      this.db.exec('COMMIT');
-    } catch (e) { this.db.exec('ROLLBACK'); throw e; }
+    });
+  }
+
+  begin(): void {
+    if (this.transactionDepth > 0) {
+      this.transactionDepth += 1;
+      return;
+    }
+    this.db.exec('BEGIN');
+    this.transactionDepth = 1;
+  }
+  commit(): void {
+    if (this.transactionDepth === 0) throw new Error('No transaction to commit');
+    if (this.transactionDepth > 1) {
+      this.transactionDepth -= 1;
+      return;
+    }
+    this.db.exec('COMMIT');
+    this.transactionDepth = 0;
+    this.save();
+  }
+  rollback(): void {
+    if (this.transactionDepth === 0) throw new Error('No transaction to roll back');
+    this.db.exec('ROLLBACK');
+    this.transactionDepth = 0;
+  }
+
+  upsertObservation(observation: ToolObservation): void {
+    this.transaction(() => {
+      this.insertObservation(observation);
+      this.rebuildSession(this.ensureAlias(observation));
+    });
+  }
+
+  observationsForSession(sessionId: string): ToolObservation[] {
+    return this.select(
+      `SELECT o.* FROM ingest_observations o JOIN session_aliases a
+       ON a.client=o.client AND a.external_session_id=o.external_session_id
+       WHERE a.session_id=? ORDER BY o.observed_at, o.observation_id`, [sessionId],
+    ).map(rowToObservation);
+  }
+
+  recordReceipt(receipt: CollectorReceipt): void {
+    this.run(
+      `INSERT INTO collector_receipts(receipt_id, client, kind, status, observed_at, error_code)
+       VALUES(?,?,?,?,?,?) ON CONFLICT(receipt_id) DO NOTHING`,
+      [receipt.receiptId, receipt.client, receipt.kind, receipt.status, receipt.observedAt, receipt.errorCode],
+    );
+  }
+
+  collectionHealth(now = new Date().toISOString()): CollectionHealthSnapshot {
+    const observations = this.select(
+      'SELECT source, phase, correlation_key, observed_at FROM ingest_observations ORDER BY observed_at, observation_id', [],
+    ).map((row) => ({
+      source: row.source as 'hook' | 'log', phase: row.phase as ToolObservation['phase'],
+      correlationKey: row.correlation_key as string, observedAt: row.observed_at as string,
+    }));
+    return deriveCollectionHealth({ now, observations });
   }
 
   upsertDefinitions(defs: ToolDefinition[]): void {
@@ -163,6 +239,186 @@ export class LensStore {
   }
   close(): void { this.db.close(); }
 
+  private transaction(action: () => void): void {
+    const outer = this.transactionDepth === 0;
+    if (outer) this.begin();
+    try { action(); if (outer) this.commit(); }
+    catch (error) { if (outer && this.transactionDepth > 0) this.rollback(); throw error; }
+  }
+  private insertObservation(observation: ToolObservation): void {
+    this.run(
+      `INSERT INTO ingest_observations(observation_id, correlation_key, correlation_confidence,
+       source, client, phase, external_session_id, external_turn_id, external_call_id,
+       transcript_path, server_name, tool_name, observed_at, received_at, duration_ms,
+       is_error, response_tokens, loaded_tokens, input_fingerprint)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(observation_id) DO NOTHING`,
+      [observation.deliveryId, observation.correlationKey, observation.correlationConfidence,
+        observation.source, observation.client, observation.phase, observation.externalSessionId,
+        observation.externalTurnId, observation.externalCallId, observation.transcriptPath,
+        observation.serverName, observation.toolName, observation.observedAt, observation.receivedAt,
+        observation.durationMs, observation.isError === null ? null : Number(observation.isError),
+        observation.responseTokens, observation.loadedTokens, observation.inputFingerprint],
+    );
+  }
+  private ensureAlias(observation: ToolObservation): string {
+    const existing = this.aliasSessionId(observation.client, observation.externalSessionId);
+    if (existing !== null) return existing;
+    const legacySessionId = observation.transcriptPath === null
+      ? null
+      : this.sessionIdByTranscriptPath(observation.client, observation.transcriptPath);
+    const sessionId = legacySessionId ?? sessionIdFor(observation);
+    if (legacySessionId !== null) {
+      this.backfillLegacyObservations(legacySessionId, observation);
+    }
+    this.run(
+      `INSERT INTO session_aliases(client, external_session_id, session_id, transcript_path)
+       VALUES(?,?,?,?)`, [observation.client, observation.externalSessionId, sessionId, observation.transcriptPath]);
+    return sessionId;
+  }
+  private aliasSessionId(client: string, externalSessionId: string): string | null {
+    const row = this.select('SELECT session_id FROM session_aliases WHERE client=? AND external_session_id=?', [client, externalSessionId])[0];
+    return (row?.session_id as string | undefined) ?? null;
+  }
+  private sessionIdByTranscriptPath(
+    client: ToolObservation['client'],
+    transcriptPath: string,
+  ): string | null {
+    const row = this.select(
+      `SELECT session_id FROM sessions
+       WHERE client=? AND file_path=? ORDER BY session_id LIMIT 1`,
+      [client, transcriptPath],
+    )[0];
+    return (row?.session_id as string | undefined) ?? null;
+  }
+  private backfillLegacyObservations(
+    sessionId: string,
+    observation: ToolObservation,
+  ): void {
+    const existingObservation = this.select(
+      `SELECT 1 FROM ingest_observations o JOIN session_aliases a
+       ON a.client=o.client AND a.external_session_id=o.external_session_id
+       WHERE a.session_id=? LIMIT 1`,
+      [sessionId],
+    )[0];
+    if (existingObservation !== undefined) return;
+
+    const session = this.select('SELECT * FROM sessions WHERE session_id=?', [sessionId])[0];
+    if (session === undefined) return;
+    const legacy: AdapterResult = {
+      session: {
+        sessionId,
+        client: session.client as SessionMeta['client'],
+        filePath: session.file_path as string | null,
+        externalSessionId: observation.externalSessionId,
+        startedAt: session.started_at as string | null,
+        mode: session.mode as SessionMeta['mode'],
+      },
+      toolCalls: this.select(
+        'SELECT * FROM tool_calls WHERE session_id=? ORDER BY id',
+        [sessionId],
+      ).map((call) => ({
+        sessionId,
+        serverName: call.server_name as string,
+        toolName: call.tool_name as string,
+        calledAt: call.called_at as string | null,
+        durationMs: call.duration_ms as number | null,
+        isError: call.is_error === 1,
+        responseTokens: call.response_tokens as number | null,
+        responseText: null,
+        externalCallId: null,
+      })),
+      toolLoads: this.select(
+        'SELECT * FROM tool_loads WHERE session_id=? ORDER BY id',
+        [sessionId],
+      ).map((load) => ({
+        sessionId,
+        serverName: load.server_name as string | null,
+        toolName: load.tool_name as string,
+        loadedTokens: load.loaded_tokens as number | null,
+      })),
+      usage: [],
+      parseErrors: 0,
+    };
+    for (const [index, logObservation] of adapterResultToObservations(legacy, []).entries()) {
+      this.insertObservation({
+        ...logObservation,
+        deliveryId: `log:${index}:legacy:${logObservation.deliveryId}`,
+      });
+    }
+  }
+  private promoteFallbackAlias(
+    client: ToolObservation['client'],
+    fallbackExternalSessionId: string,
+    nativeExternalSessionId: string,
+    sessionId: string,
+  ): void {
+    if (this.aliasSessionId(client, fallbackExternalSessionId) !== sessionId) return;
+    const hooks = this.select(
+      `SELECT * FROM ingest_observations
+       WHERE source='hook' AND client=? AND external_session_id=?`,
+      [client, fallbackExternalSessionId],
+    ).map(rowToObservation);
+    for (const hook of hooks) {
+      const promoted = { ...hook, externalSessionId: nativeExternalSessionId };
+      this.run(
+        `UPDATE ingest_observations
+         SET external_session_id=?, correlation_key=?
+         WHERE observation_id=?`,
+        [nativeExternalSessionId, makeCorrelationKey(promoted), hook.deliveryId],
+      );
+    }
+    this.run(
+      `DELETE FROM ingest_observations
+       WHERE source='log' AND client=? AND external_session_id=?`,
+      [client, fallbackExternalSessionId],
+    );
+    this.run(
+      `DELETE FROM session_aliases
+       WHERE client=? AND external_session_id=? AND session_id=?`,
+      [client, fallbackExternalSessionId, sessionId],
+    );
+  }
+  private rebuildSession(sessionId: string): void {
+    const observations = this.observationsForSession(sessionId);
+    for (const table of ['tool_calls', 'tool_loads']) {
+      this.run(`DELETE FROM ${table} WHERE session_id=?`, [sessionId]);
+    }
+    if (observations.length === 0) return;
+    const materialized = materializeSession(observations);
+    const session = materialized.session;
+    this.run(
+      `INSERT INTO sessions(session_id, client, file_path, external_session_id, started_at, mode)
+       VALUES(?,?,?,?,?,?) ON CONFLICT(session_id) DO UPDATE SET client=excluded.client,
+       file_path=excluded.file_path, external_session_id=excluded.external_session_id,
+       started_at=excluded.started_at`,
+      [sessionId, session.client, session.filePath, session.externalSessionId, session.startedAt, session.mode]);
+    for (const call of materialized.toolCalls) this.run(
+      `INSERT INTO tool_calls(session_id, server_name, tool_name, called_at, duration_ms, is_error, response_tokens)
+       VALUES(?,?,?,?,?,?,?)`, [sessionId, call.serverName, call.toolName, call.calledAt,
+        call.durationMs, Number(call.isError), call.responseTokens]);
+    for (const load of materialized.toolLoads) this.run(
+      `INSERT INTO tool_loads(session_id, server_name, tool_name, loaded_tokens) VALUES(?,?,?,?)`,
+      [sessionId, load.serverName, load.toolName, load.loadedTokens]);
+  }
+  private refreshDisplacedSession(sessionId: string): void {
+    const aliases = this.select(
+      'SELECT COUNT(*) AS count FROM session_aliases WHERE session_id=?',
+      [sessionId],
+    );
+    if (Number(aliases[0]?.count ?? 0) > 0) this.rebuildSession(sessionId);
+    else this.deleteCanonicalSession(sessionId);
+  }
+  private deleteCanonicalSession(sessionId: string): void {
+    const aliases = this.select(
+      'SELECT COUNT(*) AS count FROM session_aliases WHERE session_id=?',
+      [sessionId],
+    );
+    if (Number(aliases[0]?.count ?? 0) > 0) return;
+    for (const table of ['tool_calls', 'tool_loads', 'token_usage']) this.run(`DELETE FROM ${table} WHERE session_id=?`, [sessionId]);
+    this.run('DELETE FROM sessions WHERE session_id=?', [sessionId]);
+  }
+
   private run(sql: string, params: unknown[]): void {
     const st = this.db.prepare(sql); st.run(params as any); st.free();
   }
@@ -172,4 +428,30 @@ export class LensStore {
     while (st.step()) out.push(st.getAsObject());
     st.free(); return out;
   }
+}
+
+export interface CollectorReceipt {
+  receiptId: string;
+  client: ToolObservation['client'];
+  kind: string;
+  status: string;
+  observedAt: string;
+  errorCode: string | null;
+}
+
+function rowToObservation(row: Record<string, unknown>): ToolObservation {
+  return {
+    schemaVersion: 1, deliveryId: row.observation_id as string,
+    correlationKey: row.correlation_key as string,
+    correlationConfidence: row.correlation_confidence as ToolObservation['correlationConfidence'],
+    source: row.source as ToolObservation['source'], client: row.client as ToolObservation['client'],
+    phase: row.phase as ToolObservation['phase'], externalSessionId: row.external_session_id as string,
+    externalTurnId: row.external_turn_id as string | null, externalCallId: row.external_call_id as string | null,
+    transcriptPath: row.transcript_path as string | null, serverName: row.server_name as string | null,
+    toolName: row.tool_name as string | null, observedAt: row.observed_at as string,
+    receivedAt: row.received_at as string, durationMs: row.duration_ms as number | null,
+    isError: row.is_error === null ? null : row.is_error === 1,
+    inputFingerprint: row.input_fingerprint as string | null,
+    responseTokens: row.response_tokens as number | null, loadedTokens: row.loaded_tokens as number | null,
+  };
 }

@@ -2,6 +2,8 @@
 export * from './types.js';
 export * from './ingest/contracts.js';
 export * from './ingest/identity.js';
+export * from './ingest/coordinator.js';
+export * from './health/collectionHealth.js';
 export * from './paths.js';
 export { countTokens } from './tokenize.js';
 export * from './engine/engine.js';
@@ -11,6 +13,8 @@ export { ClaudeAdapter } from './adapters/claude/adapter.js';
 export { CodexAdapter } from './adapters/codex/adapter.js';
 export { GeminiAdapter, splitFlattenedName } from './adapters/gemini/adapter.js';
 export { LensStore } from './store/store.js';
+export { materializeSession } from './store/observations.js';
+export type { CollectorReceipt } from './store/store.js';
 export { scanServer } from './scanner/scanner.js';
 export {
   loadStoredOAuth,
