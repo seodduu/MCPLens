@@ -32,6 +32,24 @@ Claude Code는 실기기(실 MCP 호출)까지 완주했다. Codex·Gemini 실�
 
 미완: 실 `echo`/`fail` 더미 서버 대신 실 notion MCP로 검증(성공 경로만; 실패 receipt는 fixture E2E로 대체). 실 inbox pending 5건은 확장/CLI drain 시 실 DB 반영 예정.
 
+### 확장 자동 설치 검증 (통과, 2026-07-21)
+
+VS Code 확장의 Claude 훅 자동 설치 기능(`hookInstall.ts`+`claudeCli.ts`+`extension.ts`)을
+실 `claude` CLI에 대해 검증. `tsx` 부재로, 확장 소스를 esbuild로 번들해 실행 — 즉 알림
+[설치] 클릭 시 도는 **실코드**를 그대로 구동.
+
+- **자동 설치**: `not-installed` 감지 → `installClaudeHooks` → `claude plugin marketplace add ~/.mcplens/claude-marketplace` + `claude plugin install mcp-lens@mcplens` → `claude plugin list`에 `mcp-lens@mcplens ✔ enabled` 노출. 설치 위치 `~/.claude/plugins/cache/mcplens/mcp-lens/0.1.0/`.
+- **멱등**: 재실행 시 `{ok, alreadyInstalled:true}`, install 명령 미호출.
+- **생명주기**: uninstall → `not-installed` → reinstall → `installed` 순환 정상.
+- **런너 실동작**: 새 설치본 런너에 fixture 주입 → exit 0·`{}`·inbox 봉투 기록·레댁션.
+- **non-blocking**: `findClaudeBinary`/`runClaude`가 startup에서 subprocess를 동기 실행하지 않도록 async spawn·PATH stat 스캔으로 하드닝(커밋 `perf(extension): make claude CLI calls non-blocking on startup`).
+
+**스모크 중 발견·수정한 버그 2건:**
+1. `claude plugin uninstall`이 캐시 디렉토리를 남겨, 성공한 `plugin list` 후에도 cache-glob 폴백이 제거된 플러그인을 `installed`로 오탐 → 성공한 `plugin list`를 authoritative로 처리(`fix(extension): trust successful plugin list over stale plugin cache`).
+2. 텍스트 `plugin list` 파싱이 실제 포맷(플러그인 id와 상태가 다른 줄)과 안 맞아 감지가 항상 cache-glob로 폴백 → `claude plugin list --json` 파싱으로 교체(`fix(extension): detect installed plugin via plugin list --json`).
+
+**미완(사용자 조작):** 실제 훅 발화는 새 Claude 세션에서 MCP 호출 시 시작(현 세션은 설치 이전 시작). 플러그인 installed·enabled·런너 검증 완료 상태이며, 동일 플러그인 소스로 앞선 "Claude Code 실기기 검증"에서 실발화·정준화는 이미 입증됨. VS Code 알림 [설치] 버튼 클릭 경로는 F5 dev 호스트에서 별도 확인 필요.
+
 ### 실클라이언트 직렬 스모크 잔여 (BLOCKED — 사용자 신뢰/크레덧 필요)
 
 1. **Codex**: `packages/codex-plugin` 등록 → `/hooks`로 해시 신뢰 승인 → Claude와 동일 검증. 실 `codex exec`는 크레덧 소비 → 사용자 요청 시에만 실행. → `BLOCKED: user trust/credential required`.
