@@ -1,4 +1,4 @@
-import initSqlJs, { type Database } from 'sql.js';
+import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
 import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,9 +31,17 @@ function migrate(db: Database): void {
 
 }
 
+export class StaleWriterError extends Error {
+  constructor() {
+    super('LensStore: writer lease lost; refusing to persist');
+    this.name = 'StaleWriterError';
+  }
+}
+
 export class LensStore {
   private transactionDepth = 0;
-  private constructor(private db: Database, private filePath: string) {}
+  private writeGuard: (() => boolean) | null = null;
+  private constructor(private db: Database, private filePath: string, private sql: SqlJsStatic) {}
   observationCount(): number { const r = this.select('SELECT COUNT(*) AS count FROM ingest_observations', []); return Number(r[0]?.count ?? 0); }
 
   static async open(filePath: string): Promise<LensStore> {
@@ -43,7 +51,19 @@ export class LensStore {
       : new SQL.Database();
     db.exec(SCHEMA);
     migrate(db);
-    return new LensStore(db, filePath);
+    return new LensStore(db, filePath, SQL);
+  }
+
+  setWriteGuard(fn: (() => boolean) | null): void {
+    this.writeGuard = fn;
+  }
+
+  reload(): void {
+    if (this.filePath === ':memory:' || !existsSync(this.filePath)) return;
+    this.db.close();
+    this.db = new this.sql.Database(readFileSync(this.filePath));
+    this.db.exec(SCHEMA);
+    migrate(this.db);
   }
 
   ingest(r: AdapterResult): void {
@@ -173,17 +193,19 @@ export class LensStore {
   }
 
   upsertDefinitions(defs: ToolDefinition[]): void {
-    for (const d of defs)
-      this.run(
-        `INSERT INTO tool_definitions(server_name, tool_name, definition_tokens,
-           scanned_at, first_scanned_at)
-         VALUES(?,?,?,?,?)
-         ON CONFLICT(server_name, tool_name) DO UPDATE
-           SET definition_tokens=excluded.definition_tokens,
-               scanned_at=excluded.scanned_at,
-               first_scanned_at=COALESCE(tool_definitions.first_scanned_at,
-                                         excluded.first_scanned_at)`,
-        [d.serverName, d.toolName, d.definitionTokens, d.scannedAt, d.firstScannedAt]);
+    this.transaction(() => {
+      for (const d of defs)
+        this.run(
+          `INSERT INTO tool_definitions(server_name, tool_name, definition_tokens,
+             scanned_at, first_scanned_at)
+           VALUES(?,?,?,?,?)
+           ON CONFLICT(server_name, tool_name) DO UPDATE
+             SET definition_tokens=excluded.definition_tokens,
+                 scanned_at=excluded.scanned_at,
+                 first_scanned_at=COALESCE(tool_definitions.first_scanned_at,
+                                           excluded.first_scanned_at)`,
+          [d.serverName, d.toolName, d.definitionTokens, d.scannedAt, d.firstScannedAt]);
+    });
   }
 
   getCursor(filePath: string): { byteOffset: number; mtimeMs: number } | null {
@@ -287,6 +309,7 @@ export class LensStore {
 
   save(): void {
     if (this.filePath === ':memory:') return;
+    if (this.writeGuard && !this.writeGuard()) throw new StaleWriterError();
     mkdirSync(dirname(this.filePath), { recursive: true });
     const tmp = this.filePath + '.tmp';
     writeFileSync(tmp, Buffer.from(this.db.export()));
