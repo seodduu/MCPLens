@@ -108,13 +108,15 @@ export function collectFromSource(kind: string, text: string): CollectResult {
   }
 }
 
-/** 모든 소스 파일을 읽어 병합 (읽기 전용, 없는 파일은 무시). 우선순위: claude-user > claude-project > codex > gemini (이름 충돌 시 먼저 온 것). */
-export function collectAllSpecs(): CollectResult & {
+/** 소스 목록과 파일 읽기 함수를 받아 병합한다. collectAllSpecs의 테스트 가능한 알맹이. */
+export function collectFromSources(
+  sources: ConfigSource[],
+  readFile: (filePath: string) => string,
+): CollectResult & {
   sources: ConfigSource[];
   attribution: Map<string, Set<ClientId>>;
   replaceable: Set<ClientId>;
 } {
-  const sources = configSources();
   const priority: Record<string, number> = {
     'claude-user': 0,
     'claude-project': 1,
@@ -130,7 +132,7 @@ export function collectAllSpecs(): CollectResult & {
   for (const source of ordered) {
     let text: string;
     try {
-      text = fs.readFileSync(source.filePath, 'utf-8');
+      text = readFile(source.filePath);
     } catch (err) {
       // 파일 부재는 정상(프로젝트별 .mcp.json은 대부분 없다) — 관찰 실패와 구분한다.
       const missing = (err as NodeJS.ErrnoException)?.code === 'ENOENT';
@@ -148,4 +150,13 @@ export function collectAllSpecs(): CollectResult & {
   const { attribution, replaceable } = attributeServers(reads);
   return { specs: [...byName.values()], skipped: [...skippedSet], sources,
     attribution, replaceable };
+}
+
+/** 모든 소스 파일을 읽어 병합 (읽기 전용, 없는 파일은 무시). 우선순위: claude-user > claude-project > codex > gemini (이름 충돌 시 먼저 온 것). */
+export function collectAllSpecs(): CollectResult & {
+  sources: ConfigSource[];
+  attribution: Map<string, Set<ClientId>>;
+  replaceable: Set<ClientId>;
+} {
+  return collectFromSources(configSources(), (p) => fs.readFileSync(p, 'utf-8'));
 }
