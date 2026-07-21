@@ -1,3 +1,5 @@
+import type { InstallState } from './hookInstall.js';
+
 export type CollectionHealth =
   | 'idle'
   | 'healthy'
@@ -51,6 +53,22 @@ export function formatCollectionHealth(
       return present('유휴', '최근 MCP 수집 이벤트 없음',
         '최근 MCP 실행 또는 로그 변화가 없어 수집 품질을 판단할 수 없습니다.', 'idle');
   }
+}
+
+export function clientRowPresentation(
+  install: InstallState,
+  snapshot: CollectionHealthSnapshot | undefined,
+): CollectionHealthPresentation {
+  if (install === 'not-installed') {
+    return present('미연결', '설치 필요',
+      '훅이 설치되지 않았습니다. 설치하면 이 클라이언트의 MCP 호출을 수집합니다.', 'warning');
+  }
+  // installed: 관측이 있으면 그 건강도, 없으면 idle(첫 이벤트 대기)
+  return formatCollectionHealth(
+    snapshot ?? { health: 'idle', hookObserved: false, logObserved: false,
+      consecutiveMisses: 0, consecutiveMatches: 0, waitingForCorrelation: 0, lastEventAt: null },
+    { hooksConfigured: true },
+  );
 }
 
 function present(

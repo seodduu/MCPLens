@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatCollectionHealth, type CollectionHealthSnapshot } from '../src/hookStatus.js';
+import { clientRowPresentation, formatCollectionHealth, type CollectionHealthSnapshot } from '../src/hookStatus.js';
 
 function snapshot(
   health: CollectionHealthSnapshot['health'],
@@ -56,5 +56,24 @@ describe('formatCollectionHealth', () => {
     expect(formatCollectionHealth(snapshot('idle'))).toMatchObject({
       label: '유휴', description: '최근 MCP 수집 이벤트 없음',
     });
+  });
+});
+
+const healthy = { health: 'healthy', hookObserved: true, logObserved: true,
+  consecutiveMisses: 0, consecutiveMatches: 1, waitingForCorrelation: 0, lastEventAt: null } as const;
+
+describe('clientRowPresentation', () => {
+  it('미설치는 미연결(설치 필요)로 표시', () => {
+    const p = clientRowPresentation('not-installed', undefined);
+    expect(p.label).toContain('미연결');
+    expect(p.severity).toBe('warning');
+  });
+  it('설치+정상은 formatCollectionHealth 결과', () => {
+    const p = clientRowPresentation('installed', healthy);
+    expect(p.label).toBe('정상');
+  });
+  it('설치됐지만 관측 없으면 첫 이벤트 대기', () => {
+    const p = clientRowPresentation('installed', undefined);
+    expect(p.label).toContain('대기');
   });
 });
