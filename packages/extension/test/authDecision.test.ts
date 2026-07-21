@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { decideAuthPrompt, friendlyAuthError } from '../src/authDecision.js';
+import { decideAuthPrompt, friendlyAuthError, isDcrRejected } from '../src/authDecision.js';
 import type { McpServerSpec } from '@mcp-lens/core';
 
 const spec = (name: string): McpServerSpec => ({ name, url: `https://${name}.example/mcp` });
@@ -51,22 +51,38 @@ describe('decideAuthPrompt', () => {
     });
     expect(d).toEqual({ kind: 'skip' });
   });
+
+  it('지원하지 않는(unsupported) 서버는 다시는 prompt하지 않는다', () => {
+    const d = decideAuthPrompt({
+      failedServers: [spec('vercel'), spec('figma')],
+      ignoreList: [],
+      unsupported: ['figma'],
+    });
+    expect(d).toEqual({ kind: 'prompt', targets: [spec('vercel')] });
+  });
+});
+
+describe('isDcrRejected', () => {
+  it('403 Forbidden(DCR 거부)이면 true', () => {
+    expect(isDcrRejected(new Error(
+      'HTTP 403: Invalid OAuth error response: ... Raw body: Forbidden'))).toBe(true);
+  });
+
+  it('dynamic client registration 실패 문구도 true', () => {
+    expect(isDcrRejected(new Error('dynamic client registration not supported'))).toBe(true);
+  });
+
+  it('그 외 에러(timeout 등)는 false', () => {
+    expect(isDcrRejected(new Error('oauth callback timeout'))).toBe(false);
+  });
+
+  it('Error가 아니어도 안전하게 판정한다', () => {
+    expect(isDcrRejected('boom')).toBe(false);
+  });
 });
 
 describe('friendlyAuthError', () => {
-  it('DCR 403 Forbidden은 자동 등록 미허용 안내로 바꾼다', () => {
-    const msg = friendlyAuthError(new Error(
-      'HTTP 403: Invalid OAuth error response: ... Raw body: Forbidden'));
-    expect(msg).toContain('자동 클라이언트 등록');
-    expect(msg).toContain('headers');
-  });
-
-  it('dynamic client registration 문구도 같은 안내로 바꾼다', () => {
-    const msg = friendlyAuthError(new Error('dynamic client registration not supported'));
-    expect(msg).toContain('자동 클라이언트 등록');
-  });
-
-  it('그 외 에러는 원문 메시지를 그대로 담는다', () => {
+  it('DCR 외 에러는 원문 메시지를 그대로 담는다', () => {
     expect(friendlyAuthError(new Error('oauth callback timeout'))).toContain('timeout');
   });
 

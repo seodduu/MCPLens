@@ -309,6 +309,37 @@ describe('낭비 개수 표시', () => {
   });
 });
 
+describe('지원하지 않는 서버 숨김 (excludeServers)', () => {
+  const m = (name: string, enabled: boolean): ManagedServer =>
+    ({ name, enabled, origins: ['user'] });
+
+  it('excludeServers에 든 서버는 사용 이력이 있어도 트리에서 빠진다', () => {
+    const input: EngineInput = {
+      definitions: [],
+      calls: [call('c1', 'github', 'search'), call('c1', 'figma', 'get_file')],
+      loads: [],
+      sessions: [session('c1', 'claude-code')],
+    };
+    const [claude] = buildTree(input, new Set(), [], new Set(['figma']));
+    expect(claude.children.map((s) => s.label)).toEqual(['github']);
+  });
+
+  it('excludeServers에 든 서버는 0회 managed 노드로도 나타나지 않는다', () => {
+    const input: EngineInput = { definitions: [], calls: [], loads: [], sessions: [] };
+    const roots = buildTree(input, new Set(), [m('figma', true), m('github', true)], new Set(['figma']));
+    const claude = roots.find((r) => r.id === 'claude-code')!;
+    expect(claude.children.map((s) => s.label)).toEqual(['github']);
+  });
+
+  it('excludeServers 생략 시 기존 동작 그대로', () => {
+    const input: EngineInput = {
+      definitions: [], calls: [call('c1', 'figma', 'x')], loads: [],
+      sessions: [session('c1', 'claude-code')] };
+    const [claude] = buildTree(input);
+    expect(claude.children.map((s) => s.label)).toEqual(['figma']);
+  });
+});
+
 describe('확신 등급 렌더링', () => {
   const DAY = 86_400_000;
   const at = (d: number) => new Date(Date.parse('2026-06-01T00:00:00Z') + d * DAY).toISOString();

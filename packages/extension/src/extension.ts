@@ -111,6 +111,9 @@ export async function activate(ctx: vscode.ExtensionContext) {
     try { return listManagedServers(configPaths); }
     catch { return []; } // 수집 실패 — 표시는 계속
   };
+  // Lens가 지원하지 않는 서버(DCR 거부 등) — 트리에서 숨긴다.
+  const unsupportedServers = (): Set<string> => new Set(
+    vscode.workspace.getConfiguration('mcpLens').get<string[]>('unsupportedServers', []));
   const refresh = () => {
     const since = sinceIso();
     const input = { definitions: store!.allDefinitions(), calls: store!.callsSince(since),
@@ -123,7 +126,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
     const wasteTokens = totals.actPerSessionTokens + totals.candidatePerSessionTokens;
     item.text = formatStatus(wasteToolCount, wasteTokens);
     item.tooltip = wasteTooltip(wasteToolCount, wasteTokens);
-    treeProvider.setRoots(buildTree(input, readDeniedSafe(), listManagedSafe()));
+    treeProvider.setRoots(buildTree(input, readDeniedSafe(), listManagedSafe(), unsupportedServers()));
     hookStatusProvider.setSnapshot(healthFor(store!), active.length > 0);
   };
   await coordinator?.drainInbox();
@@ -146,7 +149,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
   })();
 
   ctx.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
-    if (e.affectsConfiguration('mcpLens.reportDays')) refresh();
+    if (e.affectsConfiguration('mcpLens.reportDays') ||
+        e.affectsConfiguration('mcpLens.unsupportedServers')) refresh();
   }));
 
   void maybeAutoScan(store, refresh);                     // 시작 시 1회 판정

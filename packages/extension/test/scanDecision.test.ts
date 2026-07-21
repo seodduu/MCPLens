@@ -30,4 +30,16 @@ describe('decideScanAction', () => {
     expect(decideScanAction({ setting: 'prompt', specs: [spec('a')], knownServers: new Set(['a']) }))
       .toEqual({ kind: 'skip' });
   });
+  it('지원하지 않는(unsupported) 서버는 스캔 대상에서 제외한다', () => {
+    const d = decideScanAction({
+      setting: 'always', specs: [spec('a'), spec('figma')], knownServers: new Set(),
+      unsupported: new Set(['figma']) });
+    expect(d).toEqual({ kind: 'scan', targets: [spec('a')] });
+  });
+  it('미스캔 서버가 전부 unsupported면 skip', () => {
+    const d = decideScanAction({
+      setting: 'always', specs: [spec('figma')], knownServers: new Set(),
+      unsupported: new Set(['figma']) });
+    expect(d).toEqual({ kind: 'skip' });
+  });
 });

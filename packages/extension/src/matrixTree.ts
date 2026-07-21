@@ -82,11 +82,14 @@ function zeroUsageServerNodes(managed: ManagedServer[], usedNames: Set<string>):
 }
 
 export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set(),
-  managedServers: ManagedServer[] = []): LensNode[] {
+  managedServers: ManagedServer[] = [], excludeServers: Set<string> = new Set()): LensNode[] {
+  // Lens가 지원하지 않는 서버(DCR 거부 등)는 트리 어디에도 나타나지 않는다.
+  managedServers = managedServers.filter((s) => !excludeServers.has(s.name));
   const managed = new Map(managedServers.map((s) => [s.name, s]));
   const roots = splitByClient(input).map(({ client, input: sub }) => {
     // 모드 인지 표시: 지연 로딩 클라이언트에서는 실비용 0인 미사용 툴을 숨긴다
-    const rows = visibleMatrixRows(buildMatrix(sub), sub.sessions);
+    const rows = visibleMatrixRows(buildMatrix(sub), sub.sessions)
+      .filter((r) => !excludeServers.has(r.serverName));
     const callSessions = callSessionCounts(sub.calls);
     const byServer = new Map<string, MatrixRow[]>();
     for (const r of rows) {
