@@ -4,21 +4,27 @@ import { homedir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import type { RunResult } from './hookInstall.js';
 
-const CANDIDATES = (): string[] => [
-  join(homedir(), '.local', 'bin', 'claude'),
-  '/opt/homebrew/bin/claude',
-  '/usr/local/bin/claude',
+const BIN_CANDIDATES = (name: string): string[] => [
+  join(homedir(), '.local', 'bin', name),
+  join(homedir(), '.nvm', 'current', 'bin', name), // best-effort
+  `/opt/homebrew/bin/${name}`,
+  `/usr/local/bin/${name}`,
 ];
 
-// Locate the claude binary without spawning a subprocess: probe known install
+// Locate a client binary without spawning a subprocess: probe known install
 // locations, then scan PATH via stat only. Runs on the extension's startup
 // detection path, so it must not block the host with a child process.
-export function findClaudeBinary(): string | null {
-  for (const candidate of CANDIDATES()) if (existsSync(candidate)) return candidate;
+export function findBinary(name: string): string | null {
+  for (const candidate of BIN_CANDIDATES(name)) if (existsSync(candidate)) return candidate;
   for (const dir of (process.env.PATH ?? '').split(delimiter)) {
-    if (dir && existsSync(join(dir, 'claude'))) return join(dir, 'claude');
+    if (dir && existsSync(join(dir, name))) return join(dir, name);
   }
   return null;
+}
+
+// Claude-specific convenience wrapper, kept for existing callers.
+export function findClaudeBinary(): string | null {
+  return findBinary('claude');
 }
 
 // Async spawn (never spawnSync): the startup detection path awaits this, so it
@@ -41,6 +47,9 @@ export function runClaude(bin: string, args: string[]): Promise<RunResult> {
     child.on('close', (code) => resolve({ stdout, stderr, code: code ?? 1 }));
   });
 }
+
+// spawn(bin, args) is already client-agnostic — alias it for generic callers.
+export const runBin = runClaude;
 
 export const nodeFs = {
   copyDir: (from: string, to: string) => cpSync(from, to, { recursive: true }),
