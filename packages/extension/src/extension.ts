@@ -1,11 +1,11 @@
 import * as vscode from 'vscode';
 import * as path from 'node:path';
-import { LensStore, LogWatcher, sessionSavings, dbPath,
+import { LensStore, LogWatcher, dbPath,
   detectClients, ClaudeAdapter, CodexAdapter, GeminiAdapter,
   claudeSettingsPath, readDeniedMcpTools, denyMcpTool, allowMcpTool,
   defaultClaudeConfigPaths, listManagedServers, disableServer, enableServer, type ManagedServer,
   buildReport, renderReport } from '@mcp-lens/core';
-import { formatStatus } from './statusBar.js';
+import { formatStatus, wasteTooltip } from './statusBar.js';
 import { buildTree } from './matrixTree.js';
 import type { LensNode } from './matrixTree.js';
 import { LensTreeProvider } from './lensTreeProvider.js';
@@ -117,7 +117,12 @@ export async function activate(ctx: vscode.ExtensionContext) {
       loads: store!.loadsSince(since), sessions: store!.sessionsSince(since),
       lastCallByTool: store!.lastCallByTool(),
       serversByClient: serversByClientOrUndefined() };
-    item.text = formatStatus(input.calls.length, sessionSavings(input).savedTokens);
+    // totals는 detail(툴 목록 절단)에 영향받지 않으므로 최소 opts로 충분.
+    const totals = buildReport(input, { days: reportDays(), detail: 'summary' }).totals;
+    const wasteToolCount = totals.actToolCount + totals.candidateToolCount;
+    const wasteTokens = totals.actPerSessionTokens + totals.candidatePerSessionTokens;
+    item.text = formatStatus(wasteToolCount, wasteTokens);
+    item.tooltip = wasteTooltip(wasteToolCount, wasteTokens);
     treeProvider.setRoots(buildTree(input, readDeniedSafe(), listManagedSafe()));
     hookStatusProvider.setSnapshot(healthFor(store!), active.length > 0);
   };
