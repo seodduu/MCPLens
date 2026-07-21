@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { BaseHookInstaller, msg } from './installers/base.js';
 
 export interface RunResult { stdout: string; stderr: string; code: number; }
 
@@ -37,23 +38,11 @@ export function stableDir(home: string, sub: string): string {
 export const PLUGIN_ID = 'mcp-lens@mcplens';
 export const MARKETPLACE_NAME = 'mcplens';
 
-export class ClaudeHookInstaller implements ClientHookInstaller {
+export class ClaudeHookInstaller extends BaseHookInstaller {
   readonly client = 'claude-code' as const;
-  constructor(private deps: InstallerDeps) {}
-  /** findBinary는 절대 throw를 전파하지 않는다 — 던지면 client-missing으로 취급한다. */
-  private bin(): string | null {
-    try { return this.deps.findBinary('claude'); }
-    catch { return null; }
-  }
-
-  /** run은 절대 throw를 전파하지 않는다 — 실패를 non-zero RunResult로 정규화한다. */
-  private async run(bin: string, args: string[]): Promise<RunResult> {
-    try { return await this.deps.run(bin, args); }
-    catch (e) { return { stdout: '', stderr: msg(e), code: 1 }; }
-  }
 
   async detect(): Promise<InstallState> {
-    const bin = this.bin();
+    const bin = this.bin('claude');
     if (bin === null) return 'client-missing';
     const r = await this.run(bin, ['plugin', 'list', '--json']);
     if (r.code === 0) {
@@ -67,7 +56,7 @@ export class ClaudeHookInstaller implements ClientHookInstaller {
   }
 
   async install(): Promise<InstallResult> {
-    const bin = this.bin();
+    const bin = this.bin('claude');
     if (bin === null) return { kind: 'client-missing' };
     if (await this.detect() === 'installed') return { kind: 'ok', alreadyInstalled: true };
     const target = stableDir(this.deps.home, 'claude-marketplace');
@@ -81,7 +70,7 @@ export class ClaudeHookInstaller implements ClientHookInstaller {
   }
 
   async uninstall(): Promise<InstallResult> {
-    const bin = this.bin();
+    const bin = this.bin('claude');
     if (bin === null) return { kind: 'client-missing' };
     const un = await this.run(bin, ['plugin', 'uninstall', PLUGIN_ID]);
     if (un.code !== 0 && !/not installed|no such/i.test(un.stderr)) return { kind: 'failed', step: 'uninstall', stderr: un.stderr };
@@ -91,7 +80,6 @@ export class ClaudeHookInstaller implements ClientHookInstaller {
 }
 
 function alreadyPresent(s: string): boolean { return /already (exists|added|installed)/i.test(s); }
-function msg(e: unknown): string { return e instanceof Error ? e.message : String(e); }
 
 // ---- Legacy compatibility layer --------------------------------------------
 // `extension.ts` still calls the pre-refactor, Claude-only function API and

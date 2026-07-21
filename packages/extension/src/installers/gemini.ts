@@ -1,4 +1,5 @@
-import type { ClientHookInstaller, InstallerDeps, InstallResult, InstallState, RunResult } from '../hookInstall.js';
+import type { InstallResult, InstallState } from '../hookInstall.js';
+import { BaseHookInstaller } from './base.js';
 
 /** `packages/gemini-extension/gemini-extension.json`의 `name`과 일치해야 한다. */
 export const GEMINI_EXT_NAME = 'mcp-lens';
@@ -19,25 +20,11 @@ interface GeminiExtensionEntry { name?: string }
  * - 제거: `gemini extensions uninstall <name>` — 경로가 아니라 확장 이름을 받는다.
  *   미설치 상태면 exit 1 + stderr `Failed to uninstall "mcp-lens": Extension not found.`
  */
-export class GeminiHookInstaller implements ClientHookInstaller {
+export class GeminiHookInstaller extends BaseHookInstaller {
   readonly client = 'gemini-cli' as const;
 
-  constructor(private deps: InstallerDeps) {}
-
-  /** findBinary는 절대 throw를 전파하지 않는다 — 던지면 client-missing으로 취급한다. */
-  private bin(): string | null {
-    try { return this.deps.findBinary('gemini'); }
-    catch { return null; }
-  }
-
-  /** run은 절대 throw를 전파하지 않는다 — 실패를 non-zero RunResult로 정규화한다. */
-  private async run(bin: string, args: string[]): Promise<RunResult> {
-    try { return await this.deps.run(bin, args); }
-    catch (e) { return { stdout: '', stderr: msg(e), code: 1 }; }
-  }
-
   async detect(): Promise<InstallState> {
-    const bin = this.bin();
+    const bin = this.bin('gemini');
     if (bin === null) return 'client-missing';
     const r = await this.run(bin, ['extensions', 'list', '-o', 'json']);
     if (r.code !== 0) return 'not-installed';
@@ -50,7 +37,7 @@ export class GeminiHookInstaller implements ClientHookInstaller {
   }
 
   async install(): Promise<InstallResult> {
-    const bin = this.bin();
+    const bin = this.bin('gemini');
     if (bin === null) return { kind: 'client-missing' };
     if (await this.detect() === 'installed') return { kind: 'ok', alreadyInstalled: true };
 
@@ -72,7 +59,7 @@ export class GeminiHookInstaller implements ClientHookInstaller {
   }
 
   async uninstall(): Promise<InstallResult> {
-    const bin = this.bin();
+    const bin = this.bin('gemini');
     if (bin === null) return { kind: 'client-missing' };
     const un = await this.run(bin, ['extensions', 'uninstall', GEMINI_EXT_NAME]);
     if (un.code !== 0 && !absent(un.stderr)) {
@@ -84,4 +71,3 @@ export class GeminiHookInstaller implements ClientHookInstaller {
 
 function alreadyInstalled(s: string): boolean { return /already installed/i.test(s); }
 function absent(s: string): boolean { return /not installed|not found|no such/i.test(s); }
-function msg(e: unknown): string { return e instanceof Error ? e.message : String(e); }
