@@ -8,16 +8,24 @@ import {
   readFileSync,
   readdirSync,
   renameSync,
-  rmSync,
   statSync,
   unlinkSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { inboxPath } from '../paths.js';
 import type { HookEnvelope } from './contracts.js';
+import {
+  installLease,
+  isBusy,
+  isCode,
+  readLease,
+  reapingPath,
+  takeOverLease,
+  type Lease,
+} from './lease.js';
 
 const MAX_ENVELOPE_BYTES = 1024 * 1024;
 const STALE_PROCESSING_MS = 5 * 60 * 1000;
@@ -31,7 +39,6 @@ export interface ClaimedEnvelope { deliveryId: string; envelope: HookEnvelope; }
 /** Array-compatible drain result with per-batch invalid-file accounting. */
 export type ClaimBatch = ClaimedEnvelope[] & { readonly parseErrors: number };
 export interface InboxPaths { root: string; pending: string; processed: string; locks: string; }
-interface LockLease { token: string; expiresAt: number; }
 
 export class InboxLockBusyError extends Error {
   readonly code = 'INBOX_LOCK_BUSY';
@@ -130,7 +137,7 @@ function deliveryExists(paths: InboxPaths, deliveryId: string): boolean {
     || existsSync(join(paths.processed, `${deliveryId}.json`));
 }
 
-function acquireDeliveryLock(lockPath: string, opts: InboxOptions, wait = false): LockLease | null {
+function acquireDeliveryLock(lockPath: string, opts: InboxOptions, wait = false): Lease | null {
   const deadline = Date.now() + LOCK_WAIT_MS;
   while (true) {
     const now = (opts.now ?? (() => new Date()))().getTime();
@@ -140,62 +147,6 @@ function acquireDeliveryLock(lockPath: string, opts: InboxOptions, wait = false)
     if (current && current.expiresAt <= now && takeOverLease(lockPath, current.token)) continue;
     if (!wait || opts.now || Date.now() >= deadline) return null;
     Atomics.wait(WAIT_BUFFER, 0, 0, 5);
-  }
-}
-
-function installLease(lockPath: string, lease: LockLease): boolean {
-  const candidate = `${lockPath}.candidate-${lease.token}`;
-  mkdirSync(candidate, { mode: 0o700 });
-  writeFileSync(join(candidate, 'owner.json'), JSON.stringify(lease), { mode: 0o600 });
-  try {
-    renameSync(candidate, lockPath);
-    return true;
-  } catch (error) {
-    rmSync(candidate, { recursive: true, force: true });
-    if (isBusy(error)) return false;
-    throw error;
-  }
-}
-
-function readLease(lockPath: string): LockLease | null {
-  try {
-    const raw = readFileSync(join(lockPath, 'owner.json'), 'utf8');
-    let value: Partial<LockLease>;
-    try {
-      value = JSON.parse(raw) as Partial<LockLease>;
-    } catch {
-      return { token: lockInstanceToken(lockPath, raw), expiresAt: 0 };
-    }
-    return typeof value.token === 'string' && typeof value.expiresAt === 'number'
-      ? { token: value.token, expiresAt: value.expiresAt }
-      : { token: lockInstanceToken(lockPath, raw), expiresAt: 0 };
-  } catch (error) {
-    if (isCode(error, 'ENOENT')) {
-      return existsSync(lockPath) ? { token: lockInstanceToken(lockPath, ''), expiresAt: 0 } : null;
-    }
-    throw error;
-  }
-}
-
-function lockInstanceToken(lockPath: string, content: string): string {
-  const stat = statSync(lockPath);
-  return createHash('sha256')
-    .update(`${stat.ino}:${stat.ctimeMs}:${stat.birthtimeMs}:${content}`)
-    .digest('hex');
-}
-
-function reapingPath(lockPath: string, token: string): string {
-  return `${lockPath}.reaping-${createHash('sha256').update(token).digest('hex')}`;
-}
-
-function takeOverLease(lockPath: string, token: string): boolean {
-  const reaping = reapingPath(lockPath, token);
-  try {
-    renameSync(lockPath, reaping);
-    return true;
-  } catch (error) {
-    if (isBusy(error) || isCode(error, 'ENOENT')) return false;
-    throw error;
   }
 }
 
@@ -360,13 +311,4 @@ function isHookEnvelope(value: unknown, deliveryId: string): value is HookEnvelo
     && (item.durationMs === null || typeof item.durationMs === 'number')
     && (item.isError === null || typeof item.isError === 'boolean')
     && nullableString('inputFingerprint');
-}
-
-function isCode(error: unknown, code: string): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error
-    && (error as NodeJS.ErrnoException).code === code;
-}
-
-function isBusy(error: unknown): boolean {
-  return isCode(error, 'EEXIST') || isCode(error, 'ENOTEMPTY');
 }
