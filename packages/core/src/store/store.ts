@@ -148,6 +148,30 @@ export class LensStore {
     return deriveCollectionHealth({ now, observations });
   }
 
+  collectionHealthByClient(now = new Date().toISOString()): Map<ClientId, CollectionHealthSnapshot> {
+    const rows = this.select(
+      'SELECT client, source, phase, correlation_key, observed_at FROM ingest_observations ORDER BY observed_at, observation_id', [],
+    );
+    const byClient = new Map<ClientId, {
+      source: 'hook' | 'log'; phase: ToolObservation['phase'];
+      correlationKey: string; observedAt: string;
+    }[]>();
+    for (const row of rows) {
+      const client = row.client as ClientId;
+      const list = byClient.get(client) ?? [];
+      list.push({
+        source: row.source as 'hook' | 'log', phase: row.phase as ToolObservation['phase'],
+        correlationKey: row.correlation_key as string, observedAt: row.observed_at as string,
+      });
+      byClient.set(client, list);
+    }
+    const result = new Map<ClientId, CollectionHealthSnapshot>();
+    for (const [client, observations] of byClient) {
+      result.set(client, deriveCollectionHealth({ now, observations }));
+    }
+    return result;
+  }
+
   upsertDefinitions(defs: ToolDefinition[]): void {
     for (const d of defs)
       this.run(
