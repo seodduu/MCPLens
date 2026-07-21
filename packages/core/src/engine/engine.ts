@@ -14,6 +14,11 @@ export interface EngineInput {
    * 선택 — 없으면 분석 창 안의 호출만으로 판정하며, 창 밖 과거 사용은 보이지 않는다.
    */
   lastCallByTool?: Map<string, string>;
+  /**
+   * 클라이언트 → 그 클라이언트에 설정된 서버 이름 집합 (store.serversByClient()).
+   * 선택 — 없으면 정의를 필터링하지 않는다(기존 동작). 스캔 전 DB에서도 안전하다.
+   */
+  serversByClient?: Map<ClientId, Set<string>>;
 }
 
 // 판정 임계값 (설계문서 7장 기능 1 개정)
@@ -250,14 +255,24 @@ export function splitByClient(
   return clients.map((client) => {
     const ids = new Set(
       input.sessions.filter((s) => s.client === client).map((s) => s.sessionId));
+    // serversByClient 맵 자체가 없으면 필터링하지 않는다(undefined = 매핑 정보 없음).
+    // 맵은 있는데 이 클라이언트 키가 없으면 그 클라이언트엔 서버가 0개인 것 — 빈 Set으로 취급.
+    const allowed = input.serversByClient
+      ? (input.serversByClient.get(client) ?? new Set<string>())
+      : undefined;
     return {
       client,
       input: {
-        definitions: input.definitions,
+        // 매핑이 없으면 전량 통과(기존 동작). 매핑이 있으면 그 클라이언트 서버만.
+        // 호출·로드는 필터링하지 않는다 — 설정에서 지운 서버의 실사용 이력도 보여야 한다.
+        definitions: allowed === undefined
+          ? input.definitions
+          : input.definitions.filter((d) => allowed.has(d.serverName)),
         calls: input.calls.filter((c) => ids.has(c.sessionId)),
         loads: input.loads.filter((l) => ids.has(l.sessionId)),
         sessions: input.sessions.filter((s) => s.client === client),
         lastCallByTool: input.lastCallByTool,
+        serversByClient: input.serversByClient,
       },
     };
   });
