@@ -11,9 +11,33 @@ import type { LensNode } from './matrixTree.js';
 import { LensTreeProvider } from './lensTreeProvider.js';
 import { maybeAutoScan, watchConfigSources } from './autoScan.js';
 import { reportOptions } from './reportCommand.js';
+import { HookStatusProvider } from './hookStatusProvider.js';
+import type { CollectionHealthSnapshot } from './hookStatus.js';
 
 let watcher: LogWatcher | undefined;
 let store: LensStore | undefined;
+
+type IngestionCoordinatorLike = {
+  drainInbox(): Promise<unknown>;
+  on(event: 'ingested' | 'receipt', listener: () => void): unknown;
+  pause?: () => void | Promise<void>;
+};
+
+type HealthStore = LensStore & { collectionHealth?: () => CollectionHealthSnapshot };
+
+function coordinatorFor(store: LensStore): IngestionCoordinatorLike | undefined {
+  const Constructor = (require('@mcp-lens/core') as {
+    IngestionCoordinator?: new (options: { store: LensStore }) => IngestionCoordinatorLike;
+  }).IngestionCoordinator;
+  return Constructor ? new Constructor({ store }) : undefined;
+}
+
+function healthFor(store: LensStore): CollectionHealthSnapshot {
+  return (store as HealthStore).collectionHealth?.() ?? {
+    health: 'idle', hookObserved: false, logObserved: false,
+    consecutiveMisses: 0, consecutiveMatches: 0, waitingForCorrelation: 0, lastEventAt: null,
+  };
+}
 
 export async function activate(ctx: vscode.ExtensionContext) {
   const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
@@ -22,12 +46,16 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
   const treeProvider = new LensTreeProvider();
   ctx.subscriptions.push(vscode.window.registerTreeDataProvider('mcpLens.matrix', treeProvider));
+  const hookStatusProvider = new HookStatusProvider();
+  ctx.subscriptions.push(vscode.window.registerTreeDataProvider('mcpLens.collection', hookStatusProvider));
 
   store = await LensStore.open(dbPath()); // 전역 제약 2: 공유 경로
+  const coordinator = coordinatorFor(store);
   const active = detectClients().filter((c) => c.installed);
   watcher = new LogWatcher(store,
     [new ClaudeAdapter(), new CodexAdapter(), new GeminiAdapter()]
-      .filter((a) => active.some((c) => c.client === a.client)));
+      .filter((a) => active.some((c) => c.client === a.client)),
+    { onReceipt: () => refresh() });
 
   const reportDays = () =>
     Math.max(1, vscode.workspace.getConfiguration('mcpLens').get<number>('reportDays', 30));
@@ -49,9 +77,13 @@ export async function activate(ctx: vscode.ExtensionContext) {
       lastCallByTool: store!.lastCallByTool() };
     item.text = formatStatus(input.calls.length, sessionSavings(input).savedTokens);
     treeProvider.setRoots(buildTree(input, readDeniedSafe(), listManagedSafe()));
+    hookStatusProvider.setSnapshot(healthFor(store!), active.length > 0);
   };
+  await coordinator?.drainInbox();
   await watcher.backfill(); // 시작 시 밀린 세션 따라잡기 (기능 2)
   refresh();
+  coordinator?.on('ingested', refresh);
+  coordinator?.on('receipt', refresh);
   watcher.on('ingested', refresh);
   watcher.start();
   ctx.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
@@ -141,6 +173,19 @@ export async function activate(ctx: vscode.ExtensionContext) {
       const doc = renderReport(buildReport(input, opts), opts);
       vscode.workspace.openTextDocument({ content: doc, language: 'markdown' })
         .then((d) => vscode.window.showTextDocument(d));
+    }),
+    vscode.commands.registerCommand('mcp-lens.hooksDoctor', () => {
+      const status = hookStatusProvider.current();
+      void vscode.window.showInformationMessage(`MCP Lens 수집 상태: ${status.label} — ${status.description}`);
+    }),
+    vscode.commands.registerCommand('mcp-lens.hooksPause', async () => {
+      if (coordinator?.pause) {
+        await coordinator.pause();
+        void vscode.window.showInformationMessage('MCP Lens Hook 수집을 일시 중지했습니다.');
+      } else {
+        void vscode.window.showWarningMessage(
+          '이 버전에서는 Hook 수집을 확장에서 일시 중지할 수 없습니다. 클라이언트의 Hook 또는 플러그인을 비활성화하세요.');
+      }
     }));
 }
 

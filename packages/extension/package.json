@@ -23,6 +23,14 @@
         "title": "MCP Lens: Show Report"
       },
       {
+        "command": "mcp-lens.hooksDoctor",
+        "title": "MCP Lens: Hook 수집 진단"
+      },
+      {
+        "command": "mcp-lens.hooksPause",
+        "title": "MCP Lens: Hook 수집 일시 중지"
+      },
+      {
         "command": "mcp-lens.removeTool",
         "title": "Remove (Claude Code에서 차단)"
       },
@@ -79,6 +87,10 @@
         {
           "id": "mcpLens.matrix",
           "name": "비용×사용 매트릭스"
+        },
+        {
+          "id": "mcpLens.collection",
+          "name": "수집 상태"
         }
       ]
     },
