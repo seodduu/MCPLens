@@ -4,3 +4,15 @@ dist/
 .mcplens-scratch/
 .superpowers/
 lens-db-dump.md
+
+# OS / 에디터 잡파일
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# 로그
+*.log
+
+# 세션 핸드오프 등 운영성 작업 문서 (저장소 불필요)
+docs/handoffs/
