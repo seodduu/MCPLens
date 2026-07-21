@@ -31,6 +31,10 @@ const vscodeStub = {
     fire() {}
     dispose() {}
   },
+  Uri: { file: (p) => ({ fsPath: p, path: p }) },
+  RelativePattern: class {
+    constructor(base, pattern) { this.base = base; this.pattern = pattern; }
+  },
   window: {
     createStatusBarItem: () => ({ text: '', command: '', show() {}, hide() {}, dispose() {} }),
     registerTreeDataProvider: () => disposable,
@@ -39,6 +43,12 @@ const vscodeStub = {
   workspace: {
     getConfiguration: () => ({ get: (_k, d) => d }),
     onDidChangeConfiguration: () => disposable,
+    createFileSystemWatcher: () => ({
+      onDidChange: () => disposable,
+      onDidCreate: () => disposable,
+      onDidDelete: () => disposable,
+      dispose() {},
+    }),
     openTextDocument: async () => ({}),
   },
   commands: { registerCommand: () => disposable },

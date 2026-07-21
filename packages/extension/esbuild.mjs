@@ -13,7 +13,7 @@
 //      which in a Node CJS bundle resolves from __dirname (== dist). Copy the wasm
 //      into dist/ so its default lookup finds it.
 import { build } from 'esbuild';
-import { copyFileSync, mkdirSync } from 'node:fs';
+import { copyFileSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -21,6 +21,10 @@ import { createRequire } from 'node:module';
 const here = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const outdir = join(here, 'dist');
+// Wipe dist first: a stale `tsc -p` run (typecheck now uses --noEmit) left
+// per-file .js/.d.ts/.map here, and .vscodeignore does not filter the .js —
+// they rode along in the .vsix even though only the bundle is ever loaded.
+rmSync(outdir, { recursive: true, force: true });
 mkdirSync(outdir, { recursive: true });
 
 await build({
