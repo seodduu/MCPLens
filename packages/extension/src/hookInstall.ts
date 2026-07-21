@@ -42,19 +42,23 @@ export class ClaudeHookInstaller implements ClientHookInstaller {
   constructor(private deps: InstallerDeps) {}
   private bin(): string | null { return this.deps.findBinary('claude'); }
 
+  /** run은 절대 throw를 전파하지 않는다 — 실패를 non-zero RunResult로 정규화한다. */
+  private async run(bin: string, args: string[]): Promise<RunResult> {
+    try { return await this.deps.run(bin, args); }
+    catch (e) { return { stdout: '', stderr: msg(e), code: 1 }; }
+  }
+
   async detect(): Promise<InstallState> {
     const bin = this.bin();
     if (bin === null) return 'client-missing';
-    try {
-      const r = await this.deps.run(bin, ['plugin', 'list', '--json']);
-      if (r.code === 0) {
-        try {
-          const arr: unknown = JSON.parse(r.stdout);
-          const has = Array.isArray(arr) && arr.some((p) => (p as { id?: unknown })?.id === PLUGIN_ID);
-          return has ? 'installed' : 'not-installed';
-        } catch { return 'not-installed'; }
-      }
-    } catch { /* fall through */ }
+    const r = await this.run(bin, ['plugin', 'list', '--json']);
+    if (r.code === 0) {
+      try {
+        const arr: unknown = JSON.parse(r.stdout);
+        const has = Array.isArray(arr) && arr.some((p) => (p as { id?: unknown })?.id === PLUGIN_ID);
+        return has ? 'installed' : 'not-installed';
+      } catch { return 'not-installed'; }
+    }
     return 'not-installed';
   }
 
@@ -65,9 +69,9 @@ export class ClaudeHookInstaller implements ClientHookInstaller {
     const target = stableDir(this.deps.home, 'claude-marketplace');
     try { this.deps.fs.copyDir(this.deps.bundledDir, target); }
     catch (e) { return { kind: 'failed', step: 'copy', stderr: msg(e) }; }
-    const add = await this.deps.run(bin, ['plugin', 'marketplace', 'add', target]);
+    const add = await this.run(bin, ['plugin', 'marketplace', 'add', target]);
     if (add.code !== 0 && !alreadyPresent(add.stderr)) return { kind: 'failed', step: 'marketplace-add', stderr: add.stderr };
-    const ins = await this.deps.run(bin, ['plugin', 'install', PLUGIN_ID]);
+    const ins = await this.run(bin, ['plugin', 'install', PLUGIN_ID]);
     if (ins.code !== 0 && !alreadyPresent(ins.stderr)) return { kind: 'failed', step: 'install', stderr: ins.stderr };
     return { kind: 'ok', alreadyInstalled: false };
   }
@@ -75,9 +79,9 @@ export class ClaudeHookInstaller implements ClientHookInstaller {
   async uninstall(): Promise<InstallResult> {
     const bin = this.bin();
     if (bin === null) return { kind: 'client-missing' };
-    const un = await this.deps.run(bin, ['plugin', 'uninstall', PLUGIN_ID]);
+    const un = await this.run(bin, ['plugin', 'uninstall', PLUGIN_ID]);
     if (un.code !== 0 && !/not installed|no such/i.test(un.stderr)) return { kind: 'failed', step: 'uninstall', stderr: un.stderr };
-    await this.deps.run(bin, ['plugin', 'marketplace', 'remove', MARKETPLACE_NAME]);
+    await this.run(bin, ['plugin', 'marketplace', 'remove', MARKETPLACE_NAME]);
     return { kind: 'ok', alreadyInstalled: false };
   }
 }

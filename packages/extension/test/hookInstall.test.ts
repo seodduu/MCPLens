@@ -121,6 +121,21 @@ describe('ClaudeHookInstaller', () => {
     const inst = new ClaudeHookInstaller(deps({ findBinary: () => null }));
     expect(await inst.uninstall()).toEqual({ kind: 'client-missing' });
   });
+
+  it('install 중 run이 reject해도 던지지 않고 failed를 반환한다', async () => {
+    const run = async (_b: string, a: string[]): Promise<RunResult> => {
+      if (a.includes('list')) return { stdout: '[]', stderr: '', code: 0 };
+      throw new Error('spawn ENOENT');
+    };
+    const inst = new ClaudeHookInstaller(deps({ run }));
+    await expect(inst.install()).resolves.toEqual({ kind: 'failed', step: 'marketplace-add', stderr: 'spawn ENOENT' });
+  });
+
+  it('uninstall 중 run이 reject해도 던지지 않고 failed를 반환한다', async () => {
+    const run = async (): Promise<RunResult> => { throw new Error('spawn ENOENT'); };
+    const inst = new ClaudeHookInstaller(deps({ run }));
+    await expect(inst.uninstall()).resolves.toEqual({ kind: 'failed', step: 'uninstall', stderr: 'spawn ENOENT' });
+  });
 });
 
 describe('stableDir', () => {
