@@ -11,17 +11,69 @@ import { collectServerSpecs } from './scan-config.js';
 import { scanFailureLine, formatSourceCounts } from './scan-report.js';
 import { openUrl } from './auth-open.js';
 import { resolveAuthTarget } from './auth-target.js';
+import { captureHook } from './hook-capture.js';
+import {
+  collectHookStatus,
+  formatHookStatus,
+  type HookClient,
+} from './hooks-status.js';
+import { diagnoseHooks, formatHookDiagnosis } from './hooks-doctor.js';
 
 async function main() {
   const args = process.argv.slice(2);
   const cmd = args[0] ?? 'report';
   if (cmd === 'scan') { await runScan(args); return; }
   if (cmd === 'auth') { await runAuth(args); return; }
+  if (cmd === 'hooks') { await runHooks(args); return; }
+  if (cmd === 'hook') { runHookCapture(args); return; }
   if (cmd !== 'report') {
-    console.error(`unknown command: ${cmd} (expected 'report', 'scan' or 'auth')`);
+    console.error(`unknown command: ${cmd} (expected 'report', 'scan', 'auth', 'hooks' or 'hook')`);
     process.exit(1);
   }
   await runReport(args);
+}
+
+async function runHooks(args: string[]) {
+  const subcommand = args[1] ?? 'status';
+  const statuses = collectHookStatus();
+  if (subcommand === 'status') {
+    process.stdout.write(formatHookStatus(statuses, args.includes('--json')));
+    return;
+  }
+  if (subcommand === 'doctor') {
+    const requestedClient = args[2];
+    if (requestedClient !== undefined && !isHookClient(requestedClient)) {
+      console.error(`unknown hook client: ${requestedClient}`);
+      process.exit(1);
+      return;
+    }
+    process.stdout.write(formatHookDiagnosis(diagnoseHooks(statuses, requestedClient)));
+    return;
+  }
+  console.error(`unknown hooks command: ${subcommand} (expected 'status' or 'doctor')`);
+  process.exit(1);
+}
+
+function runHookCapture(args: string[]) {
+  if (args[1] !== 'capture') {
+    console.error(`unknown hook command: ${args[1] ?? ''} (expected 'capture')`);
+    process.exit(1);
+    return;
+  }
+  const client = argValue(args, '--client');
+  // Read the hook payload once even for an invalid command, then preserve the
+  // fail-open stdout contract required by lifecycle hook hosts.
+  const stdin = readFileSync(0, 'utf8');
+  if (!isHookClient(client)) {
+    console.error('hook capture requires --client claude-code|codex|gemini-cli');
+    process.stdout.write('{}\n');
+    return;
+  }
+  process.stdout.write(captureHook(client, stdin, new Date()).stdout);
+}
+
+function isHookClient(value: string | undefined): value is HookClient {
+  return value === 'claude-code' || value === 'codex' || value === 'gemini-cli';
 }
 
 async function runReport(args: string[]) {
