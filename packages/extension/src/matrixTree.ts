@@ -31,6 +31,18 @@ function fmtCalls(calls: number, errors: number): string {
   return errors > 0 ? `${calls}회(실패 ${errors})` : `${calls}회`;
 }
 
+/** 낭비로 판단한 툴 = remove | filter-server (확신 무관, 상태바 ②와 동일 정의) */
+function isWaste(r: MatrixRow): boolean {
+  const a = r.recommendation.action;
+  return a === 'remove' || a === 'filter-server';
+}
+
+/** 낭비 툴 수 꼬리표 — 0이면 빈 문자열(붙이지 않음) */
+function wasteSuffix(rows: MatrixRow[]): string {
+  const n = rows.filter(isWaste).length;
+  return n > 0 ? ` · 낭비 ${n}툴` : '';
+}
+
 /** 천단위 구분자 — report/markdown.ts:18과 동일 규칙 */
 function fmtTok(n: number): string {
   return `${Math.round(n).toLocaleString('en-US')}tok`;
@@ -91,7 +103,7 @@ export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set
       const desc = `${fmtCalls(
         rs.reduce((s, r) => s + r.callCount, 0),
         rs.reduce((s, r) => s + r.reliability.errorCount, 0),
-      )} · ${fmtTok(serverCost.tokens)}`;
+      )} · ${fmtTok(serverCost.tokens)}${wasteSuffix(rs)}`;
       return {
         kind: 'server' as const,
         id: `${client}/${server}`,
@@ -134,7 +146,7 @@ export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set
     return {
       kind: 'client' as const, id: client, label: client,
       description:
-        `세션 ${sub.sessions.length}개 · 총 ${fmtCalls(totalCalls, totalErrors)} · ${fmtTok(clientCost.tokens)}`,
+        `세션 ${sub.sessions.length}개 · 총 ${fmtCalls(totalCalls, totalErrors)} · ${fmtTok(clientCost.tokens)}${wasteSuffix(rows)}`,
       children: servers,
     };
   });

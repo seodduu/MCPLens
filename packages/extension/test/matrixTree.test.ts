@@ -277,6 +277,38 @@ describe('서버 단위 토글 표시', () => {
   });
 });
 
+describe('낭비 개수 표시', () => {
+  const DAY = 86_400_000;
+  const at = (d: number) => new Date(Date.parse('2026-06-01T00:00:00Z') + d * DAY).toISOString();
+  const upfront = (n: number) => Array.from({ length: n }, (_, i) => ({
+    sessionId: `s${i}`, client: 'claude-code' as const, filePath: `/f/${i}`,
+    startedAt: at(i), mode: 'UPFRONT' as const }));
+  const def = (tool: string, tokens: number) => ({
+    serverName: 'notion', toolName: tool, definitionTokens: tokens,
+    scannedAt: at(0), firstScannedAt: at(0) });
+
+  it('서버 노드 description에 낭비 툴 개수가 붙는다', () => {
+    const [client] = buildTree({
+      definitions: [def('a', 800), def('b', 800)], calls: [], loads: [], sessions: upfront(12) });
+    expect(client.children[0].description).toContain('낭비 2툴');
+  });
+
+  it('클라이언트 노드 description에 낭비 툴 합이 붙는다', () => {
+    const [client] = buildTree({
+      definitions: [def('a', 800), def('b', 800)], calls: [], loads: [], sessions: upfront(12) });
+    expect(client.description).toContain('낭비 2툴');
+  });
+
+  it('낭비 0인 서버·클라이언트에는 낭비 문구가 없다', () => {
+    const noWaste: EngineInput = {
+      definitions: [], calls: [call('c1', 'github', 'search')], loads: [],
+      sessions: [session('c1', 'claude-code')] };
+    const [client] = buildTree(noWaste);
+    expect(client.description).not.toContain('낭비');
+    expect(client.children[0].description).not.toContain('낭비');
+  });
+});
+
 describe('확신 등급 렌더링', () => {
   const DAY = 86_400_000;
   const at = (d: number) => new Date(Date.parse('2026-06-01T00:00:00Z') + d * DAY).toISOString();
