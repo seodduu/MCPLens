@@ -2,8 +2,9 @@
 
 ## Hook 우선 수집 파이프라인 (H12, 2026-07-21)
 
-H0~H11 병합 후 Hook 우선 수집 전 구간을 fixture·package runner 기반으로 검증. 실제
-클라이언트 조작(신뢰 승인·크레덧)이 필요한 단계는 절차만 남기고 `BLOCKED`로 표시한다.
+H0~H11 병합 후 Hook 우선 수집 전 구간을 fixture·package runner 기반으로 검증하고,
+Claude Code는 실기기(실 MCP 호출)까지 완주했다. Codex·Gemini 실기기 단계는 신뢰 승인·
+크레덧이 필요해 절차만 남기고 `BLOCKED`로 표시한다.
 
 ### 자동 검증 (통과)
 
@@ -17,15 +18,25 @@ H0~H11 병합 후 Hook 우선 수집 전 구간을 fixture·package runner 기�
 | 전체 빌드 | `npm run build` | ✅ core·cli·extension·dashboard 전 워크스페이스 |
 | 확장 typecheck·smoke | `npm run typecheck -w mcp-lens && npm run smoke -w mcp-lens` | ✅ activate() 완료, schema.sql·sql-wasm.wasm 해석 |
 
-### 실클라이언트 직렬 스모크 (BLOCKED — 사용자 신뢰/크레덧 필요)
+### Claude Code 실기기 검증 (통과, 2026-07-21)
 
-각 클라이언트에 `echo`·`fail` 툴을 가진 더미 stdio 서버 1개를 등록하고 아래를 순차 수행한다.
-공유 DB·실프로세스를 쓰므로 병렬 금지.
+실제 Claude Code(v2.1.216)에 훅 플러그인을 설치하고 실 MCP 호출로 전 구간 검증. 설치는
+로컬 마켓플레이스(`claude plugin marketplace add` → `claude plugin install mcp-lens@mcplens-local`)로
+수행 — 사용자 설정 파일 직접 편집 없음.
 
-1. **Claude Code**: `packages/lens-audit-plugin` 로컬 설치 → 새 세션/플러그인 리로드 → `echo`·`fail` 호출 → `mcp-lens hooks status`로 success/failure receipt·transcript 보강·정준 카운트 2 확인. → `BLOCKED: user trust/credential required` (플러그인 설치·세션 조작).
-2. **Codex**: `packages/codex-plugin` 등록 → `/hooks`로 해시 신뢰 승인 → 위와 동일 검증. 실제 `codex exec`는 크레덧 소비 → **사용자 요청 없이는 실행 금지**. → `BLOCKED: user trust/credential required`.
-3. **Gemini CLI**: `packages/gemini-extension` 설치 → CLI 재시작 → `AfterTool` 발화 확인. → `BLOCKED: user trust/credential required`.
-4. **로그 손상 전이**: 활성 세션의 transcript를 손상시켜 Hook만으로 정준 카운트가 유지되는지 확인 (fixture E2E로 대체 검증 완료; 실기기 재확인은 위 단계에 종속). → `BLOCKED`.
+- **설치·등록**: 플러그인 enabled(user scope), Claude Code가 5개 훅 인식(SessionStart·PreToolUse·PostToolUse·PostToolUseFailure·SessionEnd, harness-only 비용 0). 설치 위치 `~/.claude/plugins/cache/mcplens-local/mcp-lens/0.1.0/`.
+- **실발화**: 새 세션에서 `notion-search` 2회 호출 → 봉투 5개(session-start + before/after ×2) 원자 기록. native call ID·durationMs(538·587ms)·isError 캡처. 파일 권한 0600.
+- **레댁션**: 봉투에 `tool_input`/`tool_response`/본문 0건 — 메타데이터만.
+- **정준화**: 실 inbox 복사본을 임시 DB로 drain → 관측 5개 → **정준 호출 2개**(native ID당 정확히 1호출, before+after 병합). collection health `hook-only`.
+- **탐지 수정**: `hooks status`/`doctor`가 마켓플레이스 캐시 경로를 못 읽어 `package: missing` 오탐 → `installed_plugins.json` 기반 해석으로 수정(커밋 `fix(cli): detect Claude marketplace-installed hook plugin`). 수정 후 실설치 대상 `package: installed · runner: ready`, doctor `[OK] package-ready`.
+
+미완: 실 `echo`/`fail` 더미 서버 대신 실 notion MCP로 검증(성공 경로만; 실패 receipt는 fixture E2E로 대체). 실 inbox pending 5건은 확장/CLI drain 시 실 DB 반영 예정.
+
+### 실클라이언트 직렬 스모크 잔여 (BLOCKED — 사용자 신뢰/크레덧 필요)
+
+1. **Codex**: `packages/codex-plugin` 등록 → `/hooks`로 해시 신뢰 승인 → Claude와 동일 검증. 실 `codex exec`는 크레덧 소비 → 사용자 요청 시에만 실행. → `BLOCKED: user trust/credential required`.
+2. **Gemini CLI**: `packages/gemini-extension` 설치 → CLI 재시작 → `AfterTool` 발화 확인. → `BLOCKED: user trust/credential required`.
+3. **실패 receipt·로그 손상 전이**: `fail` 툴 실패 receipt와 transcript 손상 시 Hook-only 정준 유지 (fixture E2E로 대체 검증 완료; 실기기 재확인은 위 단계에 종속). → `BLOCKED`.
 
 ## Wave 8 (2026-07-20) — OAuth 실완주 (vercel)
 
