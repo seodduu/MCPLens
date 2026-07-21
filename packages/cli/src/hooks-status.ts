@@ -52,7 +52,7 @@ export function collectHookStatus(dependencies: HookStatusDependencies = {}): Ho
 
   return CLIENTS.map((client) => {
     const packageDirectory = dependencies.packageDirectories?.[client]
-      ?? resolvePackageDirectory(client, home, exists, readFile);
+      ?? resolvePackageDirectory(client, home, exists, readFile, readDirectory);
     const packageState: PackageState = exists(packageDirectory) ? 'installed' : 'missing';
     const runnerState: RunnerState = packageState === 'installed'
       && exists(join(packageDirectory, 'scripts', 'hook-runner.mjs'))
@@ -101,38 +101,83 @@ function resolvePackageDirectory(
   client: HookClient, home: string,
   exists: (path: string) => boolean,
   readFile: (path: string) => string,
+  readDirectory: (path: string) => string[],
 ): string {
   if (client === 'claude-code') {
-    const resolved = resolveClaudePackageDirectory(home, exists, readFile);
-    if (resolved !== null) return resolved;
+    return resolveClaudePackageDirectory(home, exists, readFile, readDirectory)
+      ?? defaultPackageDirectory(home, client);
+  }
+  if (client === 'codex') {
+    return resolveCachePackageDirectory(join(home, '.codex', 'plugins'), exists, readDirectory)
+      ?? defaultPackageDirectory(home, client);
   }
   return defaultPackageDirectory(home, client);
 }
 
-// Claude Code installs marketplace plugins under a versioned cache directory
-// (~/.claude/plugins/cache/<marketplace>/<plugin>/<version>) and records the
-// resolved path in installed_plugins.json. Read that record instead of guessing
-// the marketplace/version segments, while still honoring a legacy drop-in dir.
+// Claude Code records marketplace installs (with their resolved installPath) in
+// installed_plugins.json — the authoritative signal. Fall back to the versioned
+// cache layout and a legacy drop-in directory.
 function resolveClaudePackageDirectory(
   home: string,
   exists: (path: string) => boolean,
   readFile: (path: string) => string,
+  readDirectory: (path: string) => string[],
 ): string | null {
-  const candidates = [join(home, '.claude', 'plugins', 'mcp-lens')];
+  const pluginsRoot = join(home, '.claude', 'plugins');
+  const recorded = claudeInstalledPaths(pluginsRoot, readFile)
+    .find((dir) => exists(join(dir, 'scripts', 'hook-runner.mjs')));
+  if (recorded !== undefined) return recorded;
+  return resolveCachePackageDirectory(pluginsRoot, exists, readDirectory);
+}
+
+function claudeInstalledPaths(
+  pluginsRoot: string, readFile: (path: string) => string,
+): string[] {
   try {
-    const parsed = JSON.parse(readFile(join(home, '.claude', 'plugins', 'installed_plugins.json')));
+    const parsed = JSON.parse(readFile(join(pluginsRoot, 'installed_plugins.json')));
     const plugins = (parsed?.plugins ?? {}) as Record<string, unknown>;
+    const paths: string[] = [];
     for (const [key, entries] of Object.entries(plugins)) {
       if (!key.startsWith('mcp-lens@') || !Array.isArray(entries)) continue;
       for (const entry of entries) {
         const installPath = (entry as { installPath?: unknown }).installPath;
-        if (typeof installPath === 'string') candidates.push(installPath);
+        if (typeof installPath === 'string') paths.push(installPath);
       }
     }
+    return paths;
   } catch {
-    // No install record (or unreadable) → rely on the legacy candidate only.
+    return [];
+  }
+}
+
+// Both Claude Code and Codex install marketplace plugins under
+// <pluginsRoot>/cache/<marketplace>/mcp-lens/<version>. Scan that layout — Codex
+// records only an enabled flag in config.toml, so the cache dir is the reliable
+// signal — while still honoring a legacy <pluginsRoot>/mcp-lens drop-in.
+function resolveCachePackageDirectory(
+  pluginsRoot: string,
+  exists: (path: string) => boolean,
+  readDirectory: (path: string) => string[],
+): string | null {
+  const candidates = [join(pluginsRoot, 'mcp-lens')];
+  const cacheRoot = join(pluginsRoot, 'cache');
+  for (const marketplace of safeReadDirectory(cacheRoot, readDirectory)) {
+    const pluginDir = join(cacheRoot, marketplace, 'mcp-lens');
+    for (const version of safeReadDirectory(pluginDir, readDirectory)) {
+      candidates.push(join(pluginDir, version));
+    }
   }
   return candidates.find((dir) => exists(join(dir, 'scripts', 'hook-runner.mjs'))) ?? null;
+}
+
+function safeReadDirectory(
+  directory: string, readDirectory: (path: string) => string[],
+): string[] {
+  try {
+    return readDirectory(directory);
+  } catch {
+    return [];
+  }
 }
 
 function defaultTrustState(client: HookClient): TrustState {

@@ -27,6 +27,14 @@ function claudeStatus(deps: HookStatusDependencies): HookStatus {
   return collectHookStatus(deps).find((s) => s.client === 'claude-code')!;
 }
 
+const CODEX_CACHE = join(HOME, '.codex', 'plugins', 'cache');
+const CODEX_DIR = join(CODEX_CACHE, 'mcplens-local', 'mcp-lens', '0.1.0');
+const CODEX_RUNNER = join(CODEX_DIR, 'scripts', 'hook-runner.mjs');
+
+function codexStatus(deps: HookStatusDependencies): HookStatus {
+  return collectHookStatus(deps).find((s) => s.client === 'codex')!;
+}
+
 const status = (client: HookStatus['client']): HookStatus => ({
   client,
   packageState: 'installed',
@@ -102,5 +110,40 @@ describe('collectHookStatus Claude package detection', () => {
 
     expect(claude.packageState).toBe('missing');
     expect(claude.runnerState).toBe('missing');
+  });
+});
+
+describe('collectHookStatus Codex package detection', () => {
+  it('detects a marketplace-installed plugin under the versioned cache dir', () => {
+    const codex = codexStatus(baseDeps({
+      exists: (path) => path === CODEX_DIR || path === CODEX_RUNNER,
+      readDirectory: (path) => {
+        if (path === CODEX_CACHE) return ['mcplens-local'];
+        if (path === join(CODEX_CACHE, 'mcplens-local', 'mcp-lens')) return ['0.1.0'];
+        return [];
+      },
+    }));
+
+    expect(codex.packageState).toBe('installed');
+    expect(codex.runnerState).toBe('ready');
+  });
+
+  it('still detects the legacy drop-in plugin directory', () => {
+    const legacyDir = join(HOME, '.codex', 'plugins', 'mcp-lens');
+    const codex = codexStatus(baseDeps({
+      exists: (path) => path === legacyDir || path === join(legacyDir, 'scripts', 'hook-runner.mjs'),
+    }));
+
+    expect(codex.packageState).toBe('installed');
+    expect(codex.runnerState).toBe('ready');
+  });
+
+  it('reports missing when the cache holds no mcp-lens runner', () => {
+    const codex = codexStatus(baseDeps({
+      readDirectory: (path) => (path === CODEX_CACHE ? ['some-other-marketplace'] : []),
+    }));
+
+    expect(codex.packageState).toBe('missing');
+    expect(codex.runnerState).toBe('missing');
   });
 });
