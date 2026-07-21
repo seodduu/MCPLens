@@ -31,7 +31,7 @@ export function stableMarketplaceDir(home: string): string {
 export async function detectClaudeHookInstall(deps: HookInstallDeps): Promise<InstallState> {
   if (deps.findClaudeBinary() === null) return 'claude-missing';
   try {
-    const r = await deps.runClaude(['plugin', 'list']);
+    const r = await deps.runClaude(['plugin', 'list', '--json']);
     // A successful `plugin list` is authoritative — trust it either way. `claude
     // plugin uninstall` leaves the versioned cache dir behind, so falling through
     // to the cache scan here would falsely report a removed plugin as installed.
@@ -79,8 +79,17 @@ export async function uninstallClaudeHooks(deps: HookInstallDeps): Promise<Insta
   }
 }
 
+// `claude plugin list --json` emits an array of installed plugins, each with an
+// `id` like "mcp-lens@mcplens". Parse it rather than scraping the multi-line
+// text format (where the id and its status live on separate lines).
 function pluginListReportsInstalled(stdout: string): boolean {
-  return stdout.split('\n').some((line) => line.includes(PLUGIN_ID) && /\binstalled\b/.test(line));
+  try {
+    const plugins: unknown = JSON.parse(stdout);
+    return Array.isArray(plugins)
+      && plugins.some((p) => (p as { id?: unknown })?.id === PLUGIN_ID);
+  } catch {
+    return false;
+  }
 }
 
 function hasCachedRunner(deps: HookInstallDeps): boolean {

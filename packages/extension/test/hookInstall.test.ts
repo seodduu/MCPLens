@@ -38,7 +38,7 @@ describe('installClaudeHooks', () => {
   it('skips install when plugin list already reports it installed', async () => {
     const runClaude = vi.fn(async (args: string[]): Promise<RunResult> =>
       args[1] === 'list'
-        ? { stdout: `${PLUGIN_ID}  installed, enabled  0.1.0`, stderr: '', code: 0 }
+        ? { stdout: JSON.stringify([{ id: PLUGIN_ID, enabled: true }]), stderr: '', code: 0 }
         : { stdout: '', stderr: '', code: 0 });
     const result = await installClaudeHooks(deps({ runClaude }));
 
@@ -100,9 +100,9 @@ describe('detectClaudeHookInstall', () => {
     const cache = join(HOME, '.claude', 'plugins', 'cache');
     const runner = join(cache, 'mcplens', 'mcp-lens', '0.1.0', 'scripts', 'hook-runner.mjs');
     const state = await detectClaudeHookInstall(deps({
-      // `plugin list` succeeds but no longer lists our plugin (just uninstalled),
-      // while the versioned cache dir is still present on disk.
-      runClaude: async () => ({ stdout: 'other-plugin@mkt  installed\n', stderr: '', code: 0 }),
+      // `plugin list --json` succeeds but no longer lists our plugin (just
+      // uninstalled), while the versioned cache dir is still present on disk.
+      runClaude: async () => ({ stdout: JSON.stringify([{ id: 'other-plugin@mkt' }]), stderr: '', code: 0 }),
       fs: {
         copyDir: () => {}, exists: (p) => p === runner,
         readDir: (p) => {
