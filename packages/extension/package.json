@@ -31,6 +31,14 @@
         "title": "MCP Lens: Hook 수집 일시 중지"
       },
       {
+        "command": "mcp-lens.installClaudeHooks",
+        "title": "MCP Lens: Install Claude hooks"
+      },
+      {
+        "command": "mcp-lens.uninstallClaudeHooks",
+        "title": "MCP Lens: Uninstall Claude hooks"
+      },
+      {
         "command": "mcp-lens.removeTool",
         "title": "Remove (Claude Code에서 차단)"
       },

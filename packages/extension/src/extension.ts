@@ -13,6 +13,8 @@ import { maybeAutoScan, watchConfigSources } from './autoScan.js';
 import { reportOptions } from './reportCommand.js';
 import { HookStatusProvider } from './hookStatusProvider.js';
 import type { CollectionHealthSnapshot } from './hookStatus.js';
+import { detectClaudeHookInstall, installClaudeHooks, uninstallClaudeHooks, type HookInstallDeps } from './hookInstall.js';
+import { findClaudeBinary, runClaude, nodeFs } from './claudeCli.js';
 
 let watcher: LogWatcher | undefined;
 let store: LensStore | undefined;
@@ -48,6 +50,38 @@ export async function activate(ctx: vscode.ExtensionContext) {
   ctx.subscriptions.push(vscode.window.registerTreeDataProvider('mcpLens.matrix', treeProvider));
   const hookStatusProvider = new HookStatusProvider();
   ctx.subscriptions.push(vscode.window.registerTreeDataProvider('mcpLens.collection', hookStatusProvider));
+
+  const DISMISS_KEY = 'mcpLens.hookInstall.dismissed';
+  function hookDeps(): HookInstallDeps {
+    const bin = findClaudeBinary();
+    return {
+      home: require('node:os').homedir(),
+      findClaudeBinary,
+      runClaude: (args) => runClaude(bin ?? 'claude', args),
+      fs: nodeFs,
+      bundledMarketplaceDir: path.join(__dirname, 'claude-marketplace'),
+    };
+  }
+  async function runInstallFlow() {
+    const result = await installClaudeHooks(hookDeps());
+    if (result.kind === 'claude-missing') {
+      void vscode.window.showWarningMessage('MCP Lens: claude CLI를 찾을 수 없어 훅을 설치할 수 없습니다. Claude Code 설치를 확인하세요.');
+    } else if (result.kind === 'failed') {
+      void vscode.window.showErrorMessage(`MCP Lens 훅 설치 실패 (${result.step}): ${result.stderr.slice(0, 300)}`);
+    } else if (result.alreadyInstalled) {
+      void vscode.window.showInformationMessage('MCP Lens: Claude 훅이 이미 설치되어 있습니다.');
+    } else {
+      void vscode.window.showInformationMessage('MCP Lens: 훅 설치 완료 — 새 Claude 세션을 시작하면 수집이 시작됩니다.');
+    }
+  }
+  ctx.subscriptions.push(
+    vscode.commands.registerCommand('mcp-lens.installClaudeHooks', () => runInstallFlow()),
+    vscode.commands.registerCommand('mcp-lens.uninstallClaudeHooks', async () => {
+      const result = await uninstallClaudeHooks(hookDeps());
+      if (result.kind === 'ok') void vscode.window.showInformationMessage('MCP Lens: Claude 훅을 제거했습니다.');
+      else if (result.kind === 'claude-missing') void vscode.window.showWarningMessage('MCP Lens: claude CLI를 찾을 수 없습니다.');
+      else void vscode.window.showErrorMessage(`MCP Lens 훅 제거 실패: ${result.stderr.slice(0, 300)}`);
+    }));
 
   store = await LensStore.open(dbPath()); // 전역 제약 2: 공유 경로
   const coordinator = coordinatorFor(store);
@@ -86,6 +120,18 @@ export async function activate(ctx: vscode.ExtensionContext) {
   coordinator?.on('receipt', refresh);
   watcher.on('ingested', refresh);
   watcher.start();
+
+  void (async () => {
+    if (ctx.globalState.get<boolean>(DISMISS_KEY)) return;
+    if (!detectClients().some((c) => c.client === 'claude-code' && c.installed)) return;
+    if (await detectClaudeHookInstall(hookDeps()) !== 'not-installed') return;
+    const choice = await vscode.window.showInformationMessage(
+      'MCP Lens: Claude Code 훅 수집을 켜시겠어요? (설정 편집 없이 설치됩니다)',
+      '설치', '나중에', '다시 안 보기');
+    if (choice === '설치') await runInstallFlow();
+    else if (choice === '다시 안 보기') await ctx.globalState.update(DISMISS_KEY, true);
+  })();
+
   ctx.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
     if (e.affectsConfiguration('mcpLens.reportDays')) refresh();
   }));
