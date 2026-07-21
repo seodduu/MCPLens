@@ -15,6 +15,9 @@ export function inboxPath(): string {
 export function oauthDir(): string {
   return path.join(lensHome(), 'oauth');
 }
+export function dbWriterLockPath(home: string = os.homedir()): string {
+  return path.join(home, '.mcplens', 'db-writer.lock');
+}
 export function clientLogRoots(client: ClientId): string[] {
   const h = os.homedir();
   switch (client) {
