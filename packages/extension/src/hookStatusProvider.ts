@@ -9,7 +9,12 @@ const ICON: Record<CollectionHealthPresentation['severity'], string> = {
   ok: 'pass', info: 'clock', warning: 'warning', error: 'error', idle: 'circle-outline',
 };
 
-export class HookStatusProvider implements vscode.TreeDataProvider<void> {
+// A single fixed node so the view renders one status row. Returning `[]` from
+// getChildren leaves the tree empty and getTreeItem never runs.
+type HookStatusNode = 'collection-health';
+const ROOT_NODE: HookStatusNode = 'collection-health';
+
+export class HookStatusProvider implements vscode.TreeDataProvider<HookStatusNode> {
   private readonly emitter = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.emitter.event;
   private presentation: CollectionHealthPresentation = formatCollectionHealth({
@@ -35,5 +40,8 @@ export class HookStatusProvider implements vscode.TreeDataProvider<void> {
     return item;
   }
 
-  getChildren(): void[] { return []; }
+  getChildren(element?: HookStatusNode): HookStatusNode[] {
+    // One root row; the row itself has no children.
+    return element === undefined ? [ROOT_NODE] : [];
+  }
 }
