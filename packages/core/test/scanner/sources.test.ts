@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import os from 'node:os';
 import path from 'node:path';
-import { configSources, collectFromSource } from '../../src/scanner/sources.js';
+import { configSources, collectFromSource, collectAllSpecs } from '../../src/scanner/sources.js';
 
 const CODEX_TOML_FIXTURE = `
 [mcp_servers.node_repl]
@@ -117,5 +117,27 @@ describe('configSources', () => {
     expect(
       configSources({ claudeUserJson: '{}' }).filter((s) => s.kind === 'claude-project'),
     ).toEqual([]);
+  });
+});
+
+describe('collectAllSpecs 귀속', () => {
+  it('반환에 attribution과 replaceable이 있다', () => {
+    const r = collectAllSpecs();
+    expect(r.attribution).toBeInstanceOf(Map);
+    expect(r.replaceable).toBeInstanceOf(Set);
+  });
+
+  it('발견된 모든 서버가 attribution에 담긴다', () => {
+    const r = collectAllSpecs();
+    for (const spec of r.specs) {
+      expect(r.attribution.has(spec.name)).toBe(true);
+      expect(r.attribution.get(spec.name)!.size).toBeGreaterThan(0);
+    }
+  });
+
+  it('specs는 여전히 이름 기준으로 dedupe된다 (서버당 1회 스캔)', () => {
+    const r = collectAllSpecs();
+    const names = r.specs.map((s) => s.name);
+    expect(names.length).toBe(new Set(names).size);
   });
 });

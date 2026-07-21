@@ -30,6 +30,7 @@ export {
 export { readClaudeMcpConfig, specTransport, type McpServerSpec } from './scanner/configs.js';
 export { collectServerSpecs, type CollectResult } from './scanner/configs.js';
 export { configSources, collectFromSource, collectAllSpecs, type ConfigSource } from './scanner/sources.js';
+export { clientForSourceKind, attributeServers, type SourceRead } from './scanner/attribution.js';
 export { detectClients, type ClientStatus } from './detect/detector.js';
 export { LogWatcher } from './watch/watcher.js';
 export { claudeSettingsPath, mcpDenyRule, readDeniedMcpTools, denyMcpTool, allowMcpTool } from './permissions/claudeSettings.js';
