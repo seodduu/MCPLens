@@ -516,6 +516,11 @@ describe('splitByClient 정의 필터링', () => {
     for (const p of parts) expect(p.input.definitions).toHaveLength(2);
   });
 
+  it('serversByClient가 빈 맵(size 0)이어도 필터링하지 않는다 (C1 회귀 방지)', () => {
+    const parts = splitByClient({ ...base, serversByClient: new Map() });
+    for (const p of parts) expect(p.input.definitions).toHaveLength(2);
+  });
+
   it('매핑된 서버의 정의만 그 클라이언트에 통과한다', () => {
     const parts = splitByClient({ ...base, serversByClient: new Map([
       ['claude-code', new Set(['notion'])],

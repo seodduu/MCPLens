@@ -255,9 +255,10 @@ export function splitByClient(
   return clients.map((client) => {
     const ids = new Set(
       input.sessions.filter((s) => s.client === client).map((s) => s.sessionId));
-    // serversByClient 맵 자체가 없으면 필터링하지 않는다(undefined = 매핑 정보 없음).
-    // 맵은 있는데 이 클라이언트 키가 없으면 그 클라이언트엔 서버가 0개인 것 — 빈 Set으로 취급.
-    const allowed = input.serversByClient
+    // serversByClient 맵 자체가 없거나 표 전체가 비어 있으면(size 0) 필터링하지 않는다
+    // (없음/비어 있음 = 매핑 정보 없음 — 스캔 전이거나 마이그레이션 중).
+    // 맵에 행이 있는데 이 클라이언트 키가 없으면 그 클라이언트엔 서버가 0개인 것 — 빈 Set으로 취급.
+    const allowed = input.serversByClient && input.serversByClient.size > 0
       ? (input.serversByClient.get(client) ?? new Set<string>())
       : undefined;
     return {

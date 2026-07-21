@@ -214,6 +214,7 @@ export class LensStore {
     }
     return out;
   }
+
   callsSince(iso: string): ToolCallEvent[] {
     return this.select(
       `SELECT * FROM tool_calls WHERE called_at IS NULL OR called_at >= ?`, [iso]

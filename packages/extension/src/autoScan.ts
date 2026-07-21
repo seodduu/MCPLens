@@ -71,6 +71,8 @@ export async function maybeAutoScan(store: LensStore, onDone: () => void): Promi
   // 귀속은 설정 파일만 읽으면 되므로 서버 스캔 성공 여부와 무관하게 저장한다.
   // 자동 스캔을 건너뛰는 경우(action.kind === 'skip')에도 매핑은 최신이어야 한다.
   store.upsertClientServers(attribution, replaceable);
+  store.save(); // run()은 자동 저장하지 않는다 — 여기서 저장 안 하면 skip 경로(정상 정착 상태의 기본값)에서
+                // 매핑이 디스크에 반영되지 않고 다음 활성화 때 다시 빈 매핑으로 보인다.
   const config = vscode.workspace.getConfiguration('mcpLens');
   const setting = config.get<AutoScanSetting>('autoScan', 'prompt');
   const knownServers = new Set(store.allDefinitions().map((d) => d.serverName));

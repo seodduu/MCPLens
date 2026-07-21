@@ -141,7 +141,9 @@ async function runScan(args: string[]) {
 
   for (const name of skipped)
     console.log(`- ${name}: stdio 서버가 아니어서 건너뜀 (command 필드 없음)`);
-  if (specs.length === 0) {
+  // --config 단일 파일 스캔에서 서버가 0개면 여기서 끝 — 매핑을 건드리지 않는다
+  // (전체 소스를 관찰하지 않았으므로 attribution이 애초에 undefined).
+  if (specs.length === 0 && attribution === undefined) {
     console.log('스캔할 MCP 서버가 없습니다.');
     return;
   }
@@ -151,6 +153,13 @@ async function runScan(args: string[]) {
   // 교체하면 다른 클라이언트의 매핑이 잘못 지워진다.
   if (attribution !== undefined && replaceable !== undefined)
     store.upsertClientServers(attribution, replaceable);
+  if (specs.length === 0) {
+    // 전체 스캔 경로에서 서버가 0개 — 매핑은 위에서 이미 갱신(비움)했다. 스캔할 것만 없다.
+    console.log('스캔할 MCP 서버가 없습니다.');
+    store.save();
+    store.close();
+    return;
+  }
   for (const spec of specs) {
     try {
       const defs = await scanServer(spec);

@@ -1,6 +1,7 @@
 // packages/core/test/store/clientServers.test.ts
 import { describe, it, expect } from 'vitest';
 import { LensStore } from '../../src/store/store.js';
+import { splitByClient } from '../../src/engine/engine.js';
 import type { ClientId } from '../../src/types.js';
 
 const attr = (pairs: Array<[string, ClientId[]]>) =>
@@ -60,5 +61,26 @@ describe('client_servers', () => {
       new Set<ClientId>(['gemini-cli']));
     store.upsertClientServers(new Map(), new Set<ClientId>(['gemini-cli']));
     expect(store.serversByClient().has('gemini-cli')).toBe(false);
+  });
+
+  // C1 경계 테스트: store와 engine을 각각 테스트해서는 이 결함을 못 잡는다 —
+  // 빈 DB의 serversByClient() 결과(빈 Map)를 그대로 splitByClient에 넘겼을 때
+  // 정의가 전량 필터링되지 않는지를 두 계층에 걸쳐 검증한다.
+  it('빈 DB의 serversByClient() 결과를 splitByClient에 그대로 넘겨도 정의가 살아남는다', async () => {
+    const store = await LensStore.open(':memory:');
+    const definitions = [
+      { serverName: 'notion', toolName: 'search', definitionTokens: 100,
+        scannedAt: '2026-07-19T00:00:00Z', firstScannedAt: '2026-07-19T00:00:00Z' },
+    ];
+    const sessions = [
+      { sessionId: 'c1', client: 'claude-code' as ClientId, filePath: '/f',
+        externalSessionId: null, startedAt: '2026-07-10T00:00:00Z', mode: 'UPFRONT' as const },
+    ];
+    const parts = splitByClient({
+      definitions, calls: [], loads: [], sessions,
+      serversByClient: store.serversByClient(), // 빈 DB → 빈 Map (size 0), undefined 아님
+    });
+    const claude = parts.find((p) => p.client === 'claude-code')!;
+    expect(claude.input.definitions).toHaveLength(1);
   });
 });
