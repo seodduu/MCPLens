@@ -8,6 +8,7 @@ export * from './paths.js';
 export { countTokens } from './tokenize.js';
 export * from './engine/engine.js';
 export * from './engine/evidence.js';
+export * from './engine/cost.js';
 export * from './report/index.js';
 export { ClaudeAdapter } from './adapters/claude/adapter.js';
 export { CodexAdapter } from './adapters/codex/adapter.js';
