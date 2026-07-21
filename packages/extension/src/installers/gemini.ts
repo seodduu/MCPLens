@@ -29,7 +29,10 @@ export class GeminiHookInstaller extends BaseHookInstaller {
     const r = await this.run(bin, ['extensions', 'list', '-o', 'json']);
     if (r.code !== 0) return 'not-installed';
     try {
-      const parsed: unknown = JSON.parse(r.stdout);
+      // gemini-cli 0.51.0은 TTY 없이 spawn되면 `-o json` 출력을 stdout이 아니라
+      // stderr로 보낸다(stdout 빈 문자열). 확장은 항상 비TTY로 spawn하므로 stderr 폴백이 실사용 경로다.
+      const raw = r.stdout.trim() !== '' ? r.stdout : r.stderr;
+      const parsed: unknown = JSON.parse(raw);
       const has = Array.isArray(parsed)
         && (parsed as GeminiExtensionEntry[]).some((e) => e?.name === GEMINI_EXT_NAME);
       return has ? 'installed' : 'not-installed';

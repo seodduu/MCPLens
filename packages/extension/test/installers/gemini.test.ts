@@ -13,6 +13,10 @@ const emptyJson = '[]';
 
 const BUNDLE = '/bundle/gemini-extension';
 
+// gemini-cli 0.51.0은 TTY 없이 spawn되면 `-o json` 출력을 stdout이 아니라 stderr로 내보낸다
+// (code=0, stdout 빈 문자열). 확장은 항상 TTY 없이 spawn하므로 이 경로가 실사용 경로다.
+const listOnStderr = (json: string): RunResult => ({ stdout: '', stderr: json, code: 0 });
+
 function deps(over: Partial<InstallerDeps> = {}): InstallerDeps {
   return {
     home: '/home/u',
@@ -42,6 +46,16 @@ describe('GeminiHookInstaller.detect', () => {
 
   it('빈 배열이면 not-installed', async () => {
     const run = async (): Promise<RunResult> => ({ stdout: emptyJson, stderr: '', code: 0 });
+    expect(await new GeminiHookInstaller(deps({ run })).detect()).toBe('not-installed');
+  });
+
+  it('JSON이 stdout이 아니라 stderr로 오면(비TTY spawn) installed로 감지한다', async () => {
+    const run = async (): Promise<RunResult> => listOnStderr(listJson);
+    expect(await new GeminiHookInstaller(deps({ run })).detect()).toBe('installed');
+  });
+
+  it('stderr가 빈 배열이면(비TTY spawn) not-installed', async () => {
+    const run = async (): Promise<RunResult> => listOnStderr('[]');
     expect(await new GeminiHookInstaller(deps({ run })).detect()).toBe('not-installed');
   });
 
