@@ -67,7 +67,10 @@ export async function maybeAuthPrompt(
 }
 
 export async function maybeAutoScan(store: LensStore, onDone: () => void): Promise<void> {
-  const { specs } = collectAllSpecs();
+  const { specs, attribution, replaceable } = collectAllSpecs();
+  // 귀속은 설정 파일만 읽으면 되므로 서버 스캔 성공 여부와 무관하게 저장한다.
+  // 자동 스캔을 건너뛰는 경우(action.kind === 'skip')에도 매핑은 최신이어야 한다.
+  store.upsertClientServers(attribution, replaceable);
   const config = vscode.workspace.getConfiguration('mcpLens');
   const setting = config.get<AutoScanSetting>('autoScan', 'prompt');
   const knownServers = new Set(store.allDefinitions().map((d) => d.serverName));

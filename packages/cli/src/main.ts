@@ -5,7 +5,7 @@ import { LensStore, LogWatcher, buildMatrix, sessionSavings, dbPath,
   scanServer, ClaudeAdapter, CodexAdapter, GeminiAdapter,
   collectAllSpecs, configSources, collectFromSource,
   authenticateServer, clearStoredOAuth,
-  type McpServerSpec } from '@mcp-lens/core';
+  type McpServerSpec, type ClientId } from '@mcp-lens/core';
 import { formatReport } from './report.js';
 import { collectServerSpecs } from './scan-config.js';
 import { scanFailureLine, formatSourceCounts } from './scan-report.js';
@@ -116,6 +116,8 @@ async function runScan(args: string[]) {
   const configPath = argValue(args, '--config');
   let specs: McpServerSpec[];
   let skipped: string[];
+  let attribution: Map<string, Set<ClientId>> | undefined;
+  let replaceable: Set<ClientId> | undefined;
 
   if (configPath) {
     let jsonText: string;
@@ -131,6 +133,8 @@ async function runScan(args: string[]) {
     const result = collectAllSpecs();
     specs = result.specs;
     skipped = result.skipped;
+    attribution = result.attribution;
+    replaceable = result.replaceable;
     const summary = formatSourceCounts(sourceDiscoveryCounts());
     if (summary) console.log(`발견: ${summary}`);
   }
@@ -143,6 +147,10 @@ async function runScan(args: string[]) {
   }
 
   const store = await LensStore.open(dbPath());
+  // --config 단일 파일 스캔에서는 undefined — 전체 소스를 관찰하지 않았으므로
+  // 교체하면 다른 클라이언트의 매핑이 잘못 지워진다.
+  if (attribution !== undefined && replaceable !== undefined)
+    store.upsertClientServers(attribution, replaceable);
   for (const spec of specs) {
     try {
       const defs = await scanServer(spec);

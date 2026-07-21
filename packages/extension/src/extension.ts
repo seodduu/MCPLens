@@ -108,7 +108,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
     const since = sinceIso();
     const input = { definitions: store!.allDefinitions(), calls: store!.callsSince(since),
       loads: store!.loadsSince(since), sessions: store!.sessionsSince(since),
-      lastCallByTool: store!.lastCallByTool() };
+      lastCallByTool: store!.lastCallByTool(),
+      serversByClient: store!.serversByClient() };
     item.text = formatStatus(input.calls.length, sessionSavings(input).savedTokens);
     treeProvider.setRoots(buildTree(input, readDeniedSafe(), listManagedSafe()));
     hookStatusProvider.setSnapshot(healthFor(store!), active.length > 0);
@@ -211,7 +212,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
       const since = sinceIso();
       const input = { definitions: store!.allDefinitions(), calls: store!.callsSince(since),
         loads: store!.loadsSince(since), sessions: store!.sessionsSince(since),
-        lastCallByTool: store!.lastCallByTool() };
+        lastCallByTool: store!.lastCallByTool(),
+        serversByClient: store!.serversByClient() };
       const opts = reportOptions({
         reportDays: vscode.workspace.getConfiguration('mcpLens').get<number>('reportDays', 30),
         reportDetail: vscode.workspace.getConfiguration('mcpLens').get<'summary' | 'full'>('reportDetail'),
