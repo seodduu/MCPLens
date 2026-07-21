@@ -13,7 +13,7 @@
 //      which in a Node CJS bundle resolves from __dirname (== dist). Copy the wasm
 //      into dist/ so its default lookup finds it.
 import { build } from 'esbuild';
-import { copyFileSync, mkdirSync } from 'node:fs';
+import { copyFileSync, cpSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -50,5 +50,20 @@ copyFileSync(schemaSrc, join(outdir, 'schema.sql'));
 
 const wasmSrc = require.resolve('sql.js/dist/sql-wasm.wasm');
 copyFileSync(wasmSrc, join(outdir, 'sql-wasm.wasm'));
+
+// Bundle the self-contained Claude hook plugin + marketplace manifest into
+// dist/claude-marketplace so a later install flow can copy it to a stable
+// path and register it with the `claude` CLI (join(__dirname, 'claude-marketplace')).
+const marketplaceRoot = join(outdir, 'claude-marketplace');
+mkdirSync(join(marketplaceRoot, '.claude-plugin'), { recursive: true });
+cpSync(
+  join(here, 'assets/claude-marketplace.json'),
+  join(marketplaceRoot, '.claude-plugin/marketplace.json'),
+);
+cpSync(join(here, '../lens-audit-plugin'), join(marketplaceRoot, 'mcp-lens'), {
+  recursive: true,
+  filter: (src) => !src.includes(`${'/'}node_modules${'/'}`),
+});
+console.log('[esbuild] bundled dist/claude-marketplace (Claude hook plugin)');
 
 console.log('[esbuild] bundled dist/extension.js + schema.sql + sql-wasm.wasm');
