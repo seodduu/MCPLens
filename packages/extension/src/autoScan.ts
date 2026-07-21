@@ -6,7 +6,14 @@ import {
   type LensStore, type McpServerSpec,
 } from '@mcp-lens/core';
 import { decideScanAction, type AutoScanSetting } from './scanDecision.js';
-import { decideAuthPrompt } from './authDecision.js';
+import { decideAuthPrompt, friendlyAuthError } from './authDecision.js';
+
+/**
+ * '나중에'로 이번 세션 동안 로그인 알림을 억제한 서버 이름.
+ * 모듈 스코프라 확장 활성화(=VSCode 창) 수명과 함께 살고 재시작 시 초기화된다 —
+ * '나중에 → VSCode 재시작 전까지 알림 없음' 요구를 만족한다. (영구 무시는 authIgnore 설정)
+ */
+const sessionAuthSnooze = new Set<string>();
 
 async function runScan(store: LensStore, targets: McpServerSpec[],
   onDone: () => void): Promise<void> {
@@ -37,7 +44,7 @@ export async function maybeAuthPrompt(
 ): Promise<void> {
   const config = vscode.workspace.getConfiguration('mcpLens');
   const ignoreList = config.get<string[]>('authIgnore', []);
-  const action = decideAuthPrompt({ failedServers, ignoreList });
+  const action = decideAuthPrompt({ failedServers, ignoreList, sessionSnoozed: [...sessionAuthSnooze] });
   if (action.kind === 'skip') return;
 
   const names = action.targets.map((t) => t.name).join(', ');
@@ -47,6 +54,7 @@ export async function maybeAuthPrompt(
     '로그인', '나중에', '이 서버는 묻지 않음');
 
   if (pick === '로그인') {
+    const errors: string[] = [];
     for (const spec of action.targets) {
       try {
         await authenticateServer(spec, {
@@ -54,16 +62,22 @@ export async function maybeAuthPrompt(
         });
         const defs = await scanServer(spec);
         store.upsertDefinitions(defs);
-      } catch {
-        // 로그인/재스캔 실패 — 다음 스캔 때 다시 auth-required로 잡힌다.
+      } catch (err) {
+        // 브라우저가 열리기 전(예: DCR 거부)에 실패하면 사용자는 아무 변화도 못 본다 —
+        // 침묵하지 말고 원인을 표면화한다.
+        errors.push(`${spec.name}: ${friendlyAuthError(err)}`);
       }
     }
     store.save();
     onDone();
+    if (errors.length) void vscode.window.showErrorMessage(errors.join('\n'));
   } else if (pick === '이 서버는 묻지 않음') {
     const names2 = action.targets.map((t) => t.name);
     await config.update('authIgnore', [...ignoreList, ...names2], vscode.ConfigurationTarget.Global);
-  } // '나중에'/닫기 → 아무것도 저장 안 함
+  } else if (pick === '나중에') {
+    // 이번 VSCode 세션 동안만 억제 — 재시작하면 다시 묻는다.
+    for (const t of action.targets) sessionAuthSnooze.add(t.name);
+  } // 닫기(undefined) → 아무것도 저장 안 함 → 다음 스캔 때 다시 묻는다
 }
 
 export async function maybeAutoScan(store: LensStore, onDone: () => void): Promise<void> {
