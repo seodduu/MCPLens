@@ -40,32 +40,40 @@ export async function detectClaudeHookInstall(deps: HookInstallDeps): Promise<In
 }
 
 export async function installClaudeHooks(deps: HookInstallDeps): Promise<InstallResult> {
-  const state = await detectClaudeHookInstall(deps);
-  if (state === 'claude-missing') return { kind: 'claude-missing' };
-  if (state === 'installed') return { kind: 'ok', alreadyInstalled: true };
+  try {
+    const state = await detectClaudeHookInstall(deps);
+    if (state === 'claude-missing') return { kind: 'claude-missing' };
+    if (state === 'installed') return { kind: 'ok', alreadyInstalled: true };
 
-  const target = stableMarketplaceDir(deps.home);
-  deps.fs.copyDir(deps.bundledMarketplaceDir, target);
+    const target = stableMarketplaceDir(deps.home);
+    deps.fs.copyDir(deps.bundledMarketplaceDir, target);
 
-  const add = await deps.runClaude(['plugin', 'marketplace', 'add', target]);
-  if (add.code !== 0 && !isAlreadyPresent(add.stderr)) {
-    return { kind: 'failed', step: 'marketplace-add', stderr: add.stderr };
+    const add = await deps.runClaude(['plugin', 'marketplace', 'add', target]);
+    if (add.code !== 0 && !isAlreadyPresent(add.stderr)) {
+      return { kind: 'failed', step: 'marketplace-add', stderr: add.stderr };
+    }
+    const install = await deps.runClaude(['plugin', 'install', PLUGIN_ID]);
+    if (install.code !== 0 && !isAlreadyPresent(install.stderr)) {
+      return { kind: 'failed', step: 'install', stderr: install.stderr };
+    }
+    return { kind: 'ok', alreadyInstalled: false };
+  } catch (error) {
+    return { kind: 'failed', step: 'unexpected', stderr: errorMessage(error) };
   }
-  const install = await deps.runClaude(['plugin', 'install', PLUGIN_ID]);
-  if (install.code !== 0 && !isAlreadyPresent(install.stderr)) {
-    return { kind: 'failed', step: 'install', stderr: install.stderr };
-  }
-  return { kind: 'ok', alreadyInstalled: false };
 }
 
 export async function uninstallClaudeHooks(deps: HookInstallDeps): Promise<InstallResult> {
-  if (deps.findClaudeBinary() === null) return { kind: 'claude-missing' };
-  const uninstall = await deps.runClaude(['plugin', 'uninstall', PLUGIN_ID]);
-  if (uninstall.code !== 0 && !/not installed|no such/i.test(uninstall.stderr)) {
-    return { kind: 'failed', step: 'uninstall', stderr: uninstall.stderr };
+  try {
+    if (deps.findClaudeBinary() === null) return { kind: 'claude-missing' };
+    const uninstall = await deps.runClaude(['plugin', 'uninstall', PLUGIN_ID]);
+    if (uninstall.code !== 0 && !/not installed|no such/i.test(uninstall.stderr)) {
+      return { kind: 'failed', step: 'uninstall', stderr: uninstall.stderr };
+    }
+    await deps.runClaude(['plugin', 'marketplace', 'remove', MARKETPLACE_NAME]);
+    return { kind: 'ok', alreadyInstalled: false };
+  } catch (error) {
+    return { kind: 'failed', step: 'unexpected', stderr: errorMessage(error) };
   }
-  await deps.runClaude(['plugin', 'marketplace', 'remove', MARKETPLACE_NAME]);
-  return { kind: 'ok', alreadyInstalled: false };
 }
 
 function pluginListReportsInstalled(stdout: string): boolean {
@@ -89,4 +97,8 @@ function safeReadDir(deps: HookInstallDeps, dir: string): string[] {
 
 function isAlreadyPresent(stderr: string): boolean {
   return /already (exists|added|installed)/i.test(stderr);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

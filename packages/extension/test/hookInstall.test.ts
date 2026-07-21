@@ -70,6 +70,12 @@ describe('installClaudeHooks', () => {
     const result = await installClaudeHooks(deps({ runClaude }));
     expect(result).toEqual({ kind: 'ok', alreadyInstalled: false });
   });
+
+  it('returns a failed result instead of throwing when copyDir throws', async () => {
+    const copyDir = () => { throw new Error('disk full'); };
+    const result = await installClaudeHooks(deps({ fs: { copyDir, exists: () => false, readDir: () => [] } }));
+    expect(result).toEqual({ kind: 'failed', step: 'unexpected', stderr: 'disk full' });
+  });
 });
 
 describe('detectClaudeHookInstall', () => {
