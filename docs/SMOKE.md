@@ -1,5 +1,32 @@
 # 실기기 스모크 기록
 
+## Hook 우선 수집 파이프라인 (H12, 2026-07-21)
+
+H0~H11 병합 후 Hook 우선 수집 전 구간을 fixture·package runner 기반으로 검증. 실제
+클라이언트 조작(신뢰 승인·크레덧)이 필요한 단계는 절차만 남기고 `BLOCKED`로 표시한다.
+
+### 자동 검증 (통과)
+
+| 항목 | 명령 | 결과 |
+|---|---|---|
+| 전체 유닛+E2E | `npm test` | ✅ 45 파일 / 534 테스트 통과 (watcher 이중 저장 회귀 수정 포함) |
+| Hook 파이프라인 E2E | `npx vitest run packages/core/test/e2e/hook-pipeline.test.ts` | ✅ 11 테스트 — hook-only·log-only·Hook↔log 병합·중복 delivery·corrupt log+healthy Hook·inbox 재시작·3사 통합 매트릭스·native ID당 1호출 |
+| 수집 건강도 E2E | `npx vitest run packages/core/test/e2e/hook-health.test.ts` | ✅ 10 테스트 — idle→hook-only→healthy, 3회 미스 degrade / 2회 매치 회복, corrupt log+healthy Hook, 권고 게이트 |
+| 롤아웃 `shadow` 불변식 | 위 hook-pipeline.test.ts | ✅ `shadow`(기본)가 로그 전용 권고와 동일; `count-primary`는 hook-only 호출 반영; `health-gated`는 건강도 따라 분기 |
+| 3사 패키지 검증 | `node scripts/verify-hook-packages.mjs` | ✅ Claude·Codex·Gemini 모두 PASS (runner byte-identical, exit 0, stdout `{}`, pending 1건, secret 없음) |
+| 전체 빌드 | `npm run build` | ✅ core·cli·extension·dashboard 전 워크스페이스 |
+| 확장 typecheck·smoke | `npm run typecheck -w mcp-lens && npm run smoke -w mcp-lens` | ✅ activate() 완료, schema.sql·sql-wasm.wasm 해석 |
+
+### 실클라이언트 직렬 스모크 (BLOCKED — 사용자 신뢰/크레덧 필요)
+
+각 클라이언트에 `echo`·`fail` 툴을 가진 더미 stdio 서버 1개를 등록하고 아래를 순차 수행한다.
+공유 DB·실프로세스를 쓰므로 병렬 금지.
+
+1. **Claude Code**: `packages/lens-audit-plugin` 로컬 설치 → 새 세션/플러그인 리로드 → `echo`·`fail` 호출 → `mcp-lens hooks status`로 success/failure receipt·transcript 보강·정준 카운트 2 확인. → `BLOCKED: user trust/credential required` (플러그인 설치·세션 조작).
+2. **Codex**: `packages/codex-plugin` 등록 → `/hooks`로 해시 신뢰 승인 → 위와 동일 검증. 실제 `codex exec`는 크레덧 소비 → **사용자 요청 없이는 실행 금지**. → `BLOCKED: user trust/credential required`.
+3. **Gemini CLI**: `packages/gemini-extension` 설치 → CLI 재시작 → `AfterTool` 발화 확인. → `BLOCKED: user trust/credential required`.
+4. **로그 손상 전이**: 활성 세션의 transcript를 손상시켜 Hook만으로 정준 카운트가 유지되는지 확인 (fixture E2E로 대체 검증 완료; 실기기 재확인은 위 단계에 종속). → `BLOCKED`.
+
 ## Wave 8 (2026-07-20) — OAuth 실완주 (vercel)
 
 - `mcp-lens auth vercel` → 브라우저 동의 → **"로그인 완료, 툴 30개 · 9,146토큰"** — 인증 필요 서버가 비용 축에 편입
