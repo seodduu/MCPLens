@@ -32,9 +32,12 @@ export async function detectClaudeHookInstall(deps: HookInstallDeps): Promise<In
   if (deps.findClaudeBinary() === null) return 'claude-missing';
   try {
     const r = await deps.runClaude(['plugin', 'list']);
-    if (r.code === 0 && pluginListReportsInstalled(r.stdout)) return 'installed';
+    // A successful `plugin list` is authoritative — trust it either way. `claude
+    // plugin uninstall` leaves the versioned cache dir behind, so falling through
+    // to the cache scan here would falsely report a removed plugin as installed.
+    if (r.code === 0) return pluginListReportsInstalled(r.stdout) ? 'installed' : 'not-installed';
   } catch {
-    // fall through to the filesystem cache check
+    // The CLI could not report — fall back to the filesystem cache check.
   }
   return hasCachedRunner(deps) ? 'installed' : 'not-installed';
 }

@@ -95,6 +95,25 @@ describe('detectClaudeHookInstall', () => {
     }));
     expect(state).toBe('installed');
   });
+
+  it('trusts a successful plugin list over a stale cache dir (uninstalled → not-installed)', async () => {
+    const cache = join(HOME, '.claude', 'plugins', 'cache');
+    const runner = join(cache, 'mcplens', 'mcp-lens', '0.1.0', 'scripts', 'hook-runner.mjs');
+    const state = await detectClaudeHookInstall(deps({
+      // `plugin list` succeeds but no longer lists our plugin (just uninstalled),
+      // while the versioned cache dir is still present on disk.
+      runClaude: async () => ({ stdout: 'other-plugin@mkt  installed\n', stderr: '', code: 0 }),
+      fs: {
+        copyDir: () => {}, exists: (p) => p === runner,
+        readDir: (p) => {
+          if (p === cache) return ['mcplens'];
+          if (p === join(cache, 'mcplens', 'mcp-lens')) return ['0.1.0'];
+          return [];
+        },
+      },
+    }));
+    expect(state).toBe('not-installed');
+  });
 });
 
 describe('uninstallClaudeHooks', () => {
