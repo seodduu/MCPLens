@@ -1,116 +1,138 @@
 import { join } from 'node:path';
+import { BaseHookInstaller, msg } from './installers/base.js';
 
 export interface RunResult { stdout: string; stderr: string; code: number; }
 
-export interface HookInstallDeps {
+export type HookClient = 'claude-code' | 'codex' | 'gemini-cli';
+
+export interface InstallerDeps {
   home: string;
-  findClaudeBinary: () => string | null;
-  runClaude: (args: string[]) => Promise<RunResult>;
+  findBinary: (name: string) => string | null;
+  run: (bin: string, args: string[]) => Promise<RunResult>;
   fs: {
     copyDir: (from: string, to: string) => void;
     exists: (path: string) => boolean;
     readDir: (path: string) => string[];
   };
+  bundledDir: string; // dist/<...> 번들 경로
+}
+
+export interface ClientHookInstaller {
+  readonly client: HookClient;
+  detect(): Promise<InstallState>;
+  install(): Promise<InstallResult>;
+  uninstall(): Promise<InstallResult>;
+}
+
+export type InstallState = 'installed' | 'not-installed' | 'client-missing';
+
+export type InstallResult =
+  | { kind: 'ok'; alreadyInstalled: boolean }
+  | { kind: 'client-missing' }
+  | { kind: 'failed'; step: string; stderr: string };
+
+export function stableDir(home: string, sub: string): string {
+  return join(home, '.mcplens', sub);
+}
+
+export const PLUGIN_ID = 'mcp-lens@mcplens';
+export const MARKETPLACE_NAME = 'mcplens';
+
+export class ClaudeHookInstaller extends BaseHookInstaller {
+  readonly client = 'claude-code' as const;
+
+  async detect(): Promise<InstallState> {
+    const bin = this.bin('claude');
+    if (bin === null) return 'client-missing';
+    const r = await this.run(bin, ['plugin', 'list', '--json']);
+    if (r.code === 0) {
+      try {
+        const arr: unknown = JSON.parse(r.stdout);
+        const has = Array.isArray(arr) && arr.some((p) => (p as { id?: unknown })?.id === PLUGIN_ID);
+        return has ? 'installed' : 'not-installed';
+      } catch { return 'not-installed'; }
+    }
+    return 'not-installed';
+  }
+
+  async install(): Promise<InstallResult> {
+    const bin = this.bin('claude');
+    if (bin === null) return { kind: 'client-missing' };
+    if (await this.detect() === 'installed') return { kind: 'ok', alreadyInstalled: true };
+    const target = stableDir(this.deps.home, 'claude-marketplace');
+    try { this.deps.fs.copyDir(this.deps.bundledDir, target); }
+    catch (e) { return { kind: 'failed', step: 'copy', stderr: msg(e) }; }
+    const add = await this.run(bin, ['plugin', 'marketplace', 'add', target]);
+    if (add.code !== 0 && !alreadyPresent(add.stderr)) return { kind: 'failed', step: 'marketplace-add', stderr: add.stderr };
+    const ins = await this.run(bin, ['plugin', 'install', PLUGIN_ID]);
+    if (ins.code !== 0 && !alreadyPresent(ins.stderr)) return { kind: 'failed', step: 'install', stderr: ins.stderr };
+    return { kind: 'ok', alreadyInstalled: false };
+  }
+
+  async uninstall(): Promise<InstallResult> {
+    const bin = this.bin('claude');
+    if (bin === null) return { kind: 'client-missing' };
+    const un = await this.run(bin, ['plugin', 'uninstall', PLUGIN_ID]);
+    if (un.code !== 0 && !/not installed|no such/i.test(un.stderr)) return { kind: 'failed', step: 'uninstall', stderr: un.stderr };
+    await this.run(bin, ['plugin', 'marketplace', 'remove', MARKETPLACE_NAME]);
+    return { kind: 'ok', alreadyInstalled: false };
+  }
+}
+
+function alreadyPresent(s: string): boolean { return /already (exists|added|installed)/i.test(s); }
+
+// ---- Legacy compatibility layer --------------------------------------------
+// `extension.ts` still calls the pre-refactor, Claude-only function API and
+// narrows on the 'claude-missing' literal. This layer adapts the old
+// `HookInstallDeps` shape onto `InstallerDeps` and delegates to
+// `ClaudeHookInstaller`, translating 'client-missing' back to 'claude-missing'
+// so `extension.ts` keeps compiling and behaving unchanged. Task C3 removes
+// this layer once `extension.ts` is migrated to `ClientHookInstaller` directly.
+
+export interface HookInstallDeps {
+  home: string;
+  findClaudeBinary: () => string | null;
+  runClaude: (args: string[]) => Promise<RunResult>;
+  fs: InstallerDeps['fs'];
   bundledMarketplaceDir: string;
 }
 
-export const MARKETPLACE_NAME = 'mcplens';
-export const PLUGIN_ID = 'mcp-lens@mcplens';
+type LegacyInstallState = 'installed' | 'not-installed' | 'claude-missing';
 
-export type InstallState = 'installed' | 'not-installed' | 'claude-missing';
-
-export type InstallResult =
+type LegacyInstallResult =
   | { kind: 'ok'; alreadyInstalled: boolean }
   | { kind: 'claude-missing' }
   | { kind: 'failed'; step: string; stderr: string };
 
-export function stableMarketplaceDir(home: string): string {
-  return join(home, '.mcplens', 'claude-marketplace');
+function toInstallerDeps(deps: HookInstallDeps): InstallerDeps {
+  return {
+    home: deps.home,
+    findBinary: () => deps.findClaudeBinary(),
+    run: (_bin, args) => deps.runClaude(args),
+    fs: deps.fs,
+    bundledDir: deps.bundledMarketplaceDir,
+  };
 }
 
-export async function detectClaudeHookInstall(deps: HookInstallDeps): Promise<InstallState> {
-  if (deps.findClaudeBinary() === null) return 'claude-missing';
-  try {
-    const r = await deps.runClaude(['plugin', 'list', '--json']);
-    // A successful `plugin list` is authoritative — trust it either way. `claude
-    // plugin uninstall` leaves the versioned cache dir behind, so falling through
-    // to the cache scan here would falsely report a removed plugin as installed.
-    if (r.code === 0) return pluginListReportsInstalled(r.stdout) ? 'installed' : 'not-installed';
-  } catch {
-    // The CLI could not report — fall back to the filesystem cache check.
-  }
-  return hasCachedRunner(deps) ? 'installed' : 'not-installed';
+function toLegacyState(state: InstallState): LegacyInstallState {
+  return state === 'client-missing' ? 'claude-missing' : state;
 }
 
-export async function installClaudeHooks(deps: HookInstallDeps): Promise<InstallResult> {
-  try {
-    const state = await detectClaudeHookInstall(deps);
-    if (state === 'claude-missing') return { kind: 'claude-missing' };
-    if (state === 'installed') return { kind: 'ok', alreadyInstalled: true };
-
-    const target = stableMarketplaceDir(deps.home);
-    deps.fs.copyDir(deps.bundledMarketplaceDir, target);
-
-    const add = await deps.runClaude(['plugin', 'marketplace', 'add', target]);
-    if (add.code !== 0 && !isAlreadyPresent(add.stderr)) {
-      return { kind: 'failed', step: 'marketplace-add', stderr: add.stderr };
-    }
-    const install = await deps.runClaude(['plugin', 'install', PLUGIN_ID]);
-    if (install.code !== 0 && !isAlreadyPresent(install.stderr)) {
-      return { kind: 'failed', step: 'install', stderr: install.stderr };
-    }
-    return { kind: 'ok', alreadyInstalled: false };
-  } catch (error) {
-    return { kind: 'failed', step: 'unexpected', stderr: errorMessage(error) };
-  }
+function toLegacyResult(result: InstallResult): LegacyInstallResult {
+  return result.kind === 'client-missing' ? { kind: 'claude-missing' } : result;
 }
 
-export async function uninstallClaudeHooks(deps: HookInstallDeps): Promise<InstallResult> {
-  try {
-    if (deps.findClaudeBinary() === null) return { kind: 'claude-missing' };
-    const uninstall = await deps.runClaude(['plugin', 'uninstall', PLUGIN_ID]);
-    if (uninstall.code !== 0 && !/not installed|no such/i.test(uninstall.stderr)) {
-      return { kind: 'failed', step: 'uninstall', stderr: uninstall.stderr };
-    }
-    await deps.runClaude(['plugin', 'marketplace', 'remove', MARKETPLACE_NAME]);
-    return { kind: 'ok', alreadyInstalled: false };
-  } catch (error) {
-    return { kind: 'failed', step: 'unexpected', stderr: errorMessage(error) };
-  }
+export async function detectClaudeHookInstall(deps: HookInstallDeps): Promise<LegacyInstallState> {
+  const state = await new ClaudeHookInstaller(toInstallerDeps(deps)).detect();
+  return toLegacyState(state);
 }
 
-// `claude plugin list --json` emits an array of installed plugins, each with an
-// `id` like "mcp-lens@mcplens". Parse it rather than scraping the multi-line
-// text format (where the id and its status live on separate lines).
-function pluginListReportsInstalled(stdout: string): boolean {
-  try {
-    const plugins: unknown = JSON.parse(stdout);
-    return Array.isArray(plugins)
-      && plugins.some((p) => (p as { id?: unknown })?.id === PLUGIN_ID);
-  } catch {
-    return false;
-  }
+export async function installClaudeHooks(deps: HookInstallDeps): Promise<LegacyInstallResult> {
+  const result = await new ClaudeHookInstaller(toInstallerDeps(deps)).install();
+  return toLegacyResult(result);
 }
 
-function hasCachedRunner(deps: HookInstallDeps): boolean {
-  const cacheRoot = join(deps.home, '.claude', 'plugins', 'cache');
-  for (const marketplace of safeReadDir(deps, cacheRoot)) {
-    const pluginDir = join(cacheRoot, marketplace, 'mcp-lens');
-    for (const version of safeReadDir(deps, pluginDir)) {
-      if (deps.fs.exists(join(pluginDir, version, 'scripts', 'hook-runner.mjs'))) return true;
-    }
-  }
-  return false;
-}
-
-function safeReadDir(deps: HookInstallDeps, dir: string): string[] {
-  try { return deps.fs.readDir(dir); } catch { return []; }
-}
-
-function isAlreadyPresent(stderr: string): boolean {
-  return /already (exists|added|installed)/i.test(stderr);
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+export async function uninstallClaudeHooks(deps: HookInstallDeps): Promise<LegacyInstallResult> {
+  const result = await new ClaudeHookInstaller(toInstallerDeps(deps)).uninstall();
+  return toLegacyResult(result);
 }

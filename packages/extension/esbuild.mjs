@@ -70,4 +70,33 @@ cpSync(join(here, '../lens-audit-plugin'), join(marketplaceRoot, 'mcp-lens'), {
 });
 console.log('[esbuild] bundled dist/claude-marketplace (Claude hook plugin)');
 
+// Bundle the Codex marketplace snapshot: `codex plugin marketplace add <dir>`
+// expects `.agents/plugins/marketplace.json` at the snapshot root, and the
+// manifest's `plugins[0].source.path` (./plugins/mcp-lens, see
+// assets/codex-marketplace.json) resolves relative to that same root — so
+// the plugin copy must land at dist/codex-marketplace/plugins/mcp-lens.
+// Layout confirmed against a real `codex` CLI in Task B2's research.
+const codexRoot = join(outdir, 'codex-marketplace');
+mkdirSync(join(codexRoot, '.agents/plugins'), { recursive: true });
+copyFileSync(
+  join(here, 'assets/codex-marketplace.json'),
+  join(codexRoot, '.agents/plugins/marketplace.json'),
+);
+cpSync(join(here, '../codex-plugin'), join(codexRoot, 'plugins/mcp-lens'), {
+  recursive: true,
+  filter: (src) => !src.includes(`${'/'}node_modules${'/'}`),
+});
+console.log('[esbuild] bundled dist/codex-marketplace (Codex hook plugin)');
+
+// Bundle the Gemini extension directory as-is: `gemini extensions install
+// <dir>` snapshot-copies it to ~/.gemini/extensions/mcp-lens and rewrites
+// hook command paths relative to that copy, so all manifest paths inside
+// must stay extension-root-relative (Task B3 research).
+const geminiRoot = join(outdir, 'gemini-extension');
+cpSync(join(here, '../gemini-extension'), geminiRoot, {
+  recursive: true,
+  filter: (src) => !src.includes(`${'/'}node_modules${'/'}`),
+});
+console.log('[esbuild] bundled dist/gemini-extension (Gemini hook extension)');
+
 console.log('[esbuild] bundled dist/extension.js + schema.sql + sql-wasm.wasm');

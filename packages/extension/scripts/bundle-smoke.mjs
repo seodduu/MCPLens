@@ -8,11 +8,28 @@ import { createRequire } from 'node:module';
 import Module from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const bundlePath = join(here, '..', 'dist', 'extension.js');
+const distDir = join(here, '..', 'dist');
+const bundlePath = join(distDir, 'extension.js');
+
+// Codex/Gemini installers copy these bundle paths at install time (see
+// src/installers/codex.ts, src/installers/gemini.ts). Assert the exact files
+// they read, not just a top-level directory, so a broken esbuild copy step
+// fails here instead of surfacing as a silent install failure later.
+for (const rel of [
+  'codex-marketplace/.agents/plugins/marketplace.json',
+  'codex-marketplace/plugins/mcp-lens/.codex-plugin/plugin.json',
+  'gemini-extension/gemini-extension.json',
+  'gemini-extension/hooks/hooks.json',
+]) {
+  if (!existsSync(join(distDir, rel))) {
+    console.error('[smoke] missing bundle path:', rel);
+    process.exit(1);
+  }
+}
 
 // Point the shared DB path at a throwaway dir so we never touch ~/.mcplens/lens.db.
 process.env.HOME = mkdtempSync(join(tmpdir(), 'mcplens-smoke-'));
