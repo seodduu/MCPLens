@@ -36,7 +36,10 @@ function fmtTok(n: number): string {
   return `${Math.round(n).toLocaleString('en-US')}tok`;
 }
 
-/** 누적 비용 문구. 정의 미측정이면 응답분만 담겼음을 밝힌다. */
+/** 툴 노드의 누적 비용 문구. 정의 미측정이면 응답분만 담겼음을 밝힌다.
+ * 상위(서버·클라이언트) 노드는 fmtTok만 쓴다 — 자식 하나만 미측정이어도 AND-fold로
+ * 꼬리표가 붙어, 모든 상위 줄에 같은 문구가 반복되며 잡음이 되기 때문이다.
+ * 미측정 여부는 원인이 있는 툴 노드에서 확인한다. */
 function costText(cost: CumulativeCost): string {
   return cost.definitionMeasured
     ? fmtTok(cost.tokens)
@@ -88,7 +91,7 @@ export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set
       const desc = `${fmtCalls(
         rs.reduce((s, r) => s + r.callCount, 0),
         rs.reduce((s, r) => s + r.reliability.errorCount, 0),
-      )} · ${costText(serverCost)}`;
+      )} · ${fmtTok(serverCost.tokens)}`;
       return {
         kind: 'server' as const,
         id: `${client}/${server}`,
@@ -131,7 +134,7 @@ export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set
     return {
       kind: 'client' as const, id: client, label: client,
       description:
-        `세션 ${sub.sessions.length}개 · 총 ${fmtCalls(totalCalls, totalErrors)} · ${costText(clientCost)}`,
+        `세션 ${sub.sessions.length}개 · 총 ${fmtCalls(totalCalls, totalErrors)} · ${fmtTok(clientCost.tokens)}`,
       children: servers,
     };
   });

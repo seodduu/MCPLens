@@ -158,8 +158,16 @@ describe('집계 표시', () => {
   });
   it('서버 노드에 호출수·응답토큰 합이 들어간다', () => {
     const server = buildTree(input)[0].children[0];
-    // 정의 토큰 미측정 — 자식 툴과 동일하게 응답분만 담고 미측정을 표시한다
-    expect(server.description).toBe('2회 · 100tok(정의 미측정)');
+    // 미측정 표기는 툴 노드에만 — 상위 노드에서 반복되면 잡음이 된다
+    expect(server.description).toBe('2회 · 100tok');
+  });
+
+  it('미측정 표기는 서버·클라이언트 노드에 나타나지 않는다', () => {
+    const roots = buildTree(input);
+    expect(roots[0].description).not.toContain('정의 미측정');
+    expect(roots[0].children[0].description).not.toContain('정의 미측정');
+    // 툴 노드에는 그대로 남는다
+    expect(roots[0].children[0].children[0].description).toContain('정의 미측정');
   });
 });
 
