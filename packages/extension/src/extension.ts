@@ -11,10 +11,15 @@ import type { LensNode } from './matrixTree.js';
 import { LensTreeProvider } from './lensTreeProvider.js';
 import { maybeAutoScan, watchConfigSources } from './autoScan.js';
 import { reportOptions } from './reportCommand.js';
-import { HookStatusProvider } from './hookStatusProvider.js';
+import { HookStatusProvider, toRow, type ClientRowInput } from './hookStatusProvider.js';
 import type { CollectionHealthSnapshot } from './hookStatus.js';
-import { detectClaudeHookInstall, installClaudeHooks, uninstallClaudeHooks, type HookInstallDeps } from './hookInstall.js';
-import { findClaudeBinary, runClaude, nodeFs } from './claudeCli.js';
+import {
+  ClaudeHookInstaller, type ClientHookInstaller, type HookClient, type InstallerDeps,
+} from './hookInstall.js';
+import { CodexHookInstaller } from './installers/codex.js';
+import { GeminiHookInstaller } from './installers/gemini.js';
+import { findBinary, runBin, nodeFs } from './claudeCli.js';
+import { pendingHookClients } from './nudge.js';
 
 let watcher: LogWatcher | undefined;
 let store: LensStore | undefined;
@@ -52,35 +57,39 @@ export async function activate(ctx: vscode.ExtensionContext) {
   ctx.subscriptions.push(vscode.window.registerTreeDataProvider('mcpLens.collection', hookStatusProvider));
 
   const DISMISS_KEY = 'mcpLens.hookInstall.dismissed';
-  function hookDeps(): HookInstallDeps {
-    const bin = findClaudeBinary();
-    return {
+
+  function installerFor(client: HookClient): ClientHookInstaller {
+    const deps: InstallerDeps = {
       home: require('node:os').homedir(),
-      findClaudeBinary,
-      runClaude: (args) => runClaude(bin ?? 'claude', args),
+      findBinary,
+      run: runBin,
       fs: nodeFs,
-      bundledMarketplaceDir: path.join(__dirname, 'claude-marketplace'),
+      bundledDir: path.join(__dirname,
+        client === 'claude-code' ? 'claude-marketplace'
+        : client === 'codex' ? 'codex-marketplace' : 'gemini-extension'),
     };
+    return client === 'claude-code' ? new ClaudeHookInstaller(deps)
+      : client === 'codex' ? new CodexHookInstaller(deps)
+      : new GeminiHookInstaller(deps);
   }
-  async function runInstallFlow() {
-    const result = await installClaudeHooks(hookDeps());
-    if (result.kind === 'claude-missing') {
-      void vscode.window.showWarningMessage('MCP Lens: claude CLI를 찾을 수 없어 훅을 설치할 수 없습니다. Claude Code 설치를 확인하세요.');
-    } else if (result.kind === 'failed') {
-      void vscode.window.showErrorMessage(`MCP Lens 훅 설치 실패 (${result.step}): ${result.stderr.slice(0, 300)}`);
-    } else if (result.alreadyInstalled) {
-      void vscode.window.showInformationMessage('MCP Lens: Claude 훅이 이미 설치되어 있습니다.');
-    } else {
-      void vscode.window.showInformationMessage('MCP Lens: 훅 설치 완료 — 새 Claude 세션을 시작하면 수집이 시작됩니다.');
-    }
-  }
+
+  let lastCollectionInputs: ClientRowInput[] = [];
+
   ctx.subscriptions.push(
-    vscode.commands.registerCommand('mcp-lens.installClaudeHooks', () => runInstallFlow()),
-    vscode.commands.registerCommand('mcp-lens.uninstallClaudeHooks', async () => {
-      const result = await uninstallClaudeHooks(hookDeps());
-      if (result.kind === 'ok') void vscode.window.showInformationMessage('MCP Lens: Claude 훅을 제거했습니다.');
-      else if (result.kind === 'claude-missing') void vscode.window.showWarningMessage('MCP Lens: claude CLI를 찾을 수 없습니다.');
-      else void vscode.window.showErrorMessage(`MCP Lens 훅 제거 실패: ${result.stderr.slice(0, 300)}`);
+    vscode.commands.registerCommand('mcp-lens.installHooks', async (node?: { client?: HookClient }) => {
+      const client = node?.client; if (!client) return;
+      const r = await installerFor(client).install();
+      if (r.kind === 'client-missing') void vscode.window.showWarningMessage(`MCP Lens: ${client} CLI를 찾을 수 없습니다.`);
+      else if (r.kind === 'failed') void vscode.window.showErrorMessage(`MCP Lens ${client} 훅 설치 실패 (${r.step}): ${r.stderr.slice(0, 300)}`);
+      else void vscode.window.showInformationMessage(`MCP Lens: ${client} 훅 설치 완료 — 새 세션부터 수집이 시작됩니다.`);
+      await refreshCollection();
+    }),
+    vscode.commands.registerCommand('mcp-lens.uninstallHooks', async (node?: { client?: HookClient }) => {
+      const client = node?.client; if (!client) return;
+      const r = await installerFor(client).uninstall();
+      if (r.kind === 'ok') void vscode.window.showInformationMessage(`MCP Lens: ${client} 훅을 제거했습니다.`);
+      else if (r.kind === 'failed') void vscode.window.showErrorMessage(`MCP Lens ${client} 훅 제거 실패: ${r.stderr.slice(0, 300)}`);
+      await refreshCollection();
     }));
 
   store = await LensStore.open(dbPath()); // 전역 제약 2: 공유 경로
@@ -114,6 +123,20 @@ export async function activate(ctx: vscode.ExtensionContext) {
   // Lens가 지원하지 않는 서버(DCR 거부 등) — 트리에서 숨긴다.
   const unsupportedServers = (): Set<string> => new Set(
     vscode.workspace.getConfiguration('mcpLens').get<string[]>('unsupportedServers', []));
+
+  async function refreshCollection(): Promise<ClientRowInput[]> {
+    const detected = detectClients().filter((c) => c.installed).map((c) => c.client);
+    const byHealth = store!.collectionHealthByClient();
+    const inputs = await Promise.all(detected.map(async (client) => ({
+      client,
+      install: await installerFor(client).detect(),
+      snapshot: byHealth.get(client),
+    })));
+    lastCollectionInputs = inputs;
+    hookStatusProvider.setClients(inputs);
+    return inputs;
+  }
+
   const refresh = () => {
     const since = sinceIso();
     const input = { definitions: store!.allDefinitions(), calls: store!.callsSince(since),
@@ -127,7 +150,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
     item.text = formatStatus(wasteToolCount, wasteTokens);
     item.tooltip = wasteTooltip(wasteToolCount, wasteTokens);
     treeProvider.setRoots(buildTree(input, readDeniedSafe(), listManagedSafe(), unsupportedServers()));
-    hookStatusProvider.setSnapshot(healthFor(store!), active.length > 0);
+    void refreshCollection();
   };
   await coordinator?.drainInbox();
   await watcher.backfill(); // 시작 시 밀린 세션 따라잡기 (기능 2)
@@ -138,14 +161,19 @@ export async function activate(ctx: vscode.ExtensionContext) {
   watcher.start();
 
   void (async () => {
-    if (ctx.globalState.get<boolean>(DISMISS_KEY)) return;
-    if (!detectClients().some((c) => c.client === 'claude-code' && c.installed)) return;
-    if (await detectClaudeHookInstall(hookDeps()) !== 'not-installed') return;
+    const inputs = await refreshCollection();
+    const detected = new Set(inputs.map((i) => i.client));
+    const states = new Map(inputs.map((i) => [i.client, i.install] as const));
+    const dismissed = new Set<HookClient>(
+      (['claude-code', 'codex', 'gemini-cli'] as HookClient[])
+        .filter((c) => ctx.globalState.get<boolean>(`${DISMISS_KEY}.${c}`)));
+    const pending = pendingHookClients(detected, states, dismissed);
+    if (pending.length === 0) return;
     const choice = await vscode.window.showInformationMessage(
-      'MCP Lens: Claude Code 훅 수집을 켜시겠어요? (설정 편집 없이 설치됩니다)',
-      '설치', '나중에', '다시 안 보기');
-    if (choice === '설치') await runInstallFlow();
-    else if (choice === '다시 안 보기') await ctx.globalState.update(DISMISS_KEY, true);
+      `MCP Lens: ${pending.join('·')} 훅 수집이 꺼져 있어요`, '모두 설치', '수집 뷰 열기', '다시 안 보기');
+    if (choice === '모두 설치') { for (const c of pending) await installerFor(c).install(); await refreshCollection(); }
+    else if (choice === '수집 뷰 열기') void vscode.commands.executeCommand('mcpLens.collection.focus');
+    else if (choice === '다시 안 보기') for (const c of pending) await ctx.globalState.update(`${DISMISS_KEY}.${c}`, true);
   })();
 
   ctx.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
@@ -238,9 +266,23 @@ export async function activate(ctx: vscode.ExtensionContext) {
       vscode.workspace.openTextDocument({ content: doc, language: 'markdown' })
         .then((d) => vscode.window.showTextDocument(d));
     }),
-    vscode.commands.registerCommand('mcp-lens.hooksDoctor', () => {
-      const status = hookStatusProvider.current();
-      void vscode.window.showInformationMessage(`MCP Lens 수집 상태: ${status.label} — ${status.description}`);
+    vscode.commands.registerCommand('mcp-lens.hooksDoctor', (client?: HookClient) => {
+      if (lastCollectionInputs.length === 0) {
+        void vscode.window.showInformationMessage('MCP Lens: 아직 수집 상태를 알 수 없습니다 (감지된 클라이언트 없음).');
+        return;
+      }
+      if (client) {
+        const found = lastCollectionInputs.find((i) => i.client === client);
+        if (!found) {
+          void vscode.window.showInformationMessage(`MCP Lens: ${client} 상태를 아직 알 수 없습니다.`);
+          return;
+        }
+        const row = toRow(found);
+        void vscode.window.showInformationMessage(`MCP Lens 수집 상태 (${client}): ${row.description}`);
+        return;
+      }
+      const summary = lastCollectionInputs.map((i) => `${i.client}: ${toRow(i).description}`).join(' / ');
+      void vscode.window.showInformationMessage(`MCP Lens 수집 상태 — ${summary}`);
     }),
     vscode.commands.registerCommand('mcp-lens.hooksPause', async () => {
       if (coordinator?.pause) {
