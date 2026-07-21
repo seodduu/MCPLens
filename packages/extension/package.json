@@ -31,12 +31,12 @@
         "title": "MCP Lens: Hook 수집 일시 중지"
       },
       {
-        "command": "mcp-lens.installClaudeHooks",
-        "title": "MCP Lens: Install Claude hooks"
+        "command": "mcp-lens.installHooks",
+        "title": "MCP Lens: 이 클라이언트에 훅 설치"
       },
       {
-        "command": "mcp-lens.uninstallClaudeHooks",
-        "title": "MCP Lens: Uninstall Claude hooks"
+        "command": "mcp-lens.uninstallHooks",
+        "title": "MCP Lens: 이 클라이언트 훅 제거"
       },
       {
         "command": "mcp-lens.removeTool",
@@ -60,7 +60,9 @@
         { "command": "mcp-lens.removeTool", "when": "false" },
         { "command": "mcp-lens.addTool", "when": "false" },
         { "command": "mcp-lens.removeServer", "when": "false" },
-        { "command": "mcp-lens.addServer", "when": "false" }
+        { "command": "mcp-lens.addServer", "when": "false" },
+        { "command": "mcp-lens.installHooks", "when": "false" },
+        { "command": "mcp-lens.uninstallHooks", "when": "false" }
       ],
       "view/item/context": [
         {
@@ -78,6 +80,16 @@
         {
           "command": "mcp-lens.addServer",
           "when": "view == mcpLens.matrix && viewItem == mcpServer-disabled"
+        },
+        {
+          "command": "mcp-lens.installHooks",
+          "when": "view == mcpLens.collection && viewItem == hook-installable",
+          "group": "inline"
+        },
+        {
+          "command": "mcp-lens.uninstallHooks",
+          "when": "view == mcpLens.collection && viewItem == hook-installed",
+          "group": "1_actions"
         }
       ]
     },
