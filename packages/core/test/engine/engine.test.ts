@@ -493,3 +493,67 @@ describe('확신 등급 (evidence 축)', () => {
     expect(row.recommendation.confidence).toBe('high');
   });
 });
+
+describe('splitByClient 정의 필터링', () => {
+  const d = (server: string, tool: string) => ({
+    serverName: server, toolName: tool, definitionTokens: 100,
+    scannedAt: '2026-07-19T00:00:00Z', firstScannedAt: '2026-07-19T00:00:00Z' });
+  const s = (sessionId: string, client: any) => ({
+    sessionId, client, filePath: '/f', startedAt: '2026-07-10T00:00:00Z',
+    mode: 'UPFRONT' as const });
+  const c = (sessionId: string, server: string, tool: string) => ({
+    sessionId, serverName: server, toolName: tool, calledAt: '2026-07-10T00:00:00Z',
+    durationMs: null, isError: false, responseTokens: 10, responseText: null });
+
+  const base = {
+    definitions: [d('notion', 'search'), d('node_repl', 'js')],
+    calls: [], loads: [],
+    sessions: [s('c1', 'claude-code'), s('x1', 'codex')],
+  };
+
+  it('serversByClient가 없으면 필터링하지 않는다 (기존 동작 보존)', () => {
+    const parts = splitByClient(base);
+    for (const p of parts) expect(p.input.definitions).toHaveLength(2);
+  });
+
+  it('serversByClient가 빈 맵(size 0)이어도 필터링하지 않는다 (C1 회귀 방지)', () => {
+    const parts = splitByClient({ ...base, serversByClient: new Map() });
+    for (const p of parts) expect(p.input.definitions).toHaveLength(2);
+  });
+
+  it('매핑된 서버의 정의만 그 클라이언트에 통과한다', () => {
+    const parts = splitByClient({ ...base, serversByClient: new Map([
+      ['claude-code', new Set(['notion'])],
+      ['codex', new Set(['node_repl'])],
+    ]) });
+    const claude = parts.find((p) => p.client === 'claude-code')!;
+    const codex = parts.find((p) => p.client === 'codex')!;
+    expect(claude.input.definitions.map((x) => x.serverName)).toEqual(['notion']);
+    expect(codex.input.definitions.map((x) => x.serverName)).toEqual(['node_repl']);
+  });
+
+  it('매핑에 없는 클라이언트는 정의가 0개다', () => {
+    const parts = splitByClient({ ...base, serversByClient: new Map([
+      ['claude-code', new Set(['notion'])],
+    ]) });
+    const codex = parts.find((p) => p.client === 'codex')!;
+    expect(codex.input.definitions).toHaveLength(0);
+  });
+
+  it('매핑에 없어도 호출 이력이 있는 행은 매트릭스에 남는다', () => {
+    const input = { ...base, calls: [c('x1', 'notion', 'search')],
+      serversByClient: new Map([['codex', new Set(['node_repl'])]]) };
+    const codex = splitByClient(input).find((p) => p.client === 'codex')!;
+    const rows = buildMatrix(codex.input);
+    expect(rows.some((r) => r.serverName === 'notion' && r.callCount === 1)).toBe(true);
+  });
+
+  it('매핑에 없어도 로드 이력이 있는 행은 매트릭스에 남는다', () => {
+    const input = { ...base,
+      loads: [{ sessionId: 'x1', serverName: 'notion', toolName: 'search', loadedTokens: null }],
+      serversByClient: new Map([['codex', new Set(['node_repl'])]]) };
+    const codex = splitByClient(input).find((p) => p.client === 'codex')!;
+    const rows = buildMatrix(codex.input);
+    expect(rows.some((r) => r.serverName === 'notion' && r.loadedSessionCount === 1)).toBe(true);
+  });
+});

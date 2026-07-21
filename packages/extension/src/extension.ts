@@ -99,6 +99,13 @@ export async function activate(ctx: vscode.ExtensionContext) {
     try { return readDeniedMcpTools(claudeSettingsPath()); }
     catch { return new Set(); } // 깨진 settings.json — 표시는 계속, 쓰기 시점에 에러 안내
   };
+  // 표 전체가 비어 있으면(스캔 전) undefined를 넘겨 필터링을 끈다.
+  // 표에 행이 있는데 특정 클라이언트 키만 없는 경우(예: gemini-cli 서버 0개)는
+  // 그대로 넘겨 splitByClient가 그 클라이언트를 정의 0개로 걸러내게 한다.
+  const serversByClientOrUndefined = () => {
+    const m = store!.serversByClient();
+    return m.size > 0 ? m : undefined;
+  };
   const configPaths = defaultClaudeConfigPaths();
   const listManagedSafe = (): ManagedServer[] => {
     try { return listManagedServers(configPaths); }
@@ -108,7 +115,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
     const since = sinceIso();
     const input = { definitions: store!.allDefinitions(), calls: store!.callsSince(since),
       loads: store!.loadsSince(since), sessions: store!.sessionsSince(since),
-      lastCallByTool: store!.lastCallByTool() };
+      lastCallByTool: store!.lastCallByTool(),
+      serversByClient: serversByClientOrUndefined() };
     item.text = formatStatus(input.calls.length, sessionSavings(input).savedTokens);
     treeProvider.setRoots(buildTree(input, readDeniedSafe(), listManagedSafe()));
     hookStatusProvider.setSnapshot(healthFor(store!), active.length > 0);
@@ -211,7 +219,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
       const since = sinceIso();
       const input = { definitions: store!.allDefinitions(), calls: store!.callsSince(since),
         loads: store!.loadsSince(since), sessions: store!.sessionsSince(since),
-        lastCallByTool: store!.lastCallByTool() };
+        lastCallByTool: store!.lastCallByTool(),
+        serversByClient: serversByClientOrUndefined() };
       const opts = reportOptions({
         reportDays: vscode.workspace.getConfiguration('mcpLens').get<number>('reportDays', 30),
         reportDetail: vscode.workspace.getConfiguration('mcpLens').get<'summary' | 'full'>('reportDetail'),

@@ -3,6 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { parse as parseToml } from 'smol-toml';
 import { readClaudeMcpConfig, collectServerSpecs, type CollectResult, type McpServerSpec } from './configs.js';
+import { attributeServers, type SourceRead } from './attribution.js';
+import type { ClientId } from '../types.js';
 
 /** 설정 소스 종류: 'claude-user' | 'claude-project' | 'codex' | 'gemini' */
 export interface ConfigSource {
@@ -106,9 +108,15 @@ export function collectFromSource(kind: string, text: string): CollectResult {
   }
 }
 
-/** 모든 소스 파일을 읽어 병합 (읽기 전용, 없는 파일은 무시). 우선순위: claude-user > claude-project > codex > gemini (이름 충돌 시 먼저 온 것). */
-export function collectAllSpecs(): CollectResult & { sources: ConfigSource[] } {
-  const sources = configSources();
+/** 소스 목록과 파일 읽기 함수를 받아 병합한다. collectAllSpecs의 테스트 가능한 알맹이. */
+export function collectFromSources(
+  sources: ConfigSource[],
+  readFile: (filePath: string) => string,
+): CollectResult & {
+  sources: ConfigSource[];
+  attribution: Map<string, Set<ClientId>>;
+  replaceable: Set<ClientId>;
+} {
   const priority: Record<string, number> = {
     'claude-user': 0,
     'claude-project': 1,
@@ -119,20 +127,36 @@ export function collectAllSpecs(): CollectResult & { sources: ConfigSource[] } {
 
   const byName = new Map<string, McpServerSpec>();
   const skippedSet = new Set<string>();
+  const reads: SourceRead[] = [];
 
   for (const source of ordered) {
     let text: string;
     try {
-      text = fs.readFileSync(source.filePath, 'utf-8');
-    } catch {
+      text = readFile(source.filePath);
+    } catch (err) {
+      // 파일 부재는 정상(프로젝트별 .mcp.json은 대부분 없다) — 관찰 실패와 구분한다.
+      const missing = (err as NodeJS.ErrnoException)?.code === 'ENOENT';
+      reads.push({ kind: source.kind, servers: [], failed: missing ? 'missing' : 'error' });
       continue;
     }
     const { specs, skipped } = collectFromSource(source.kind, text);
+    reads.push({ kind: source.kind, servers: specs.map((s) => s.name), failed: 'none' });
     for (const spec of specs) {
       if (!byName.has(spec.name)) byName.set(spec.name, spec);
     }
     for (const name of skipped) skippedSet.add(name);
   }
 
-  return { specs: [...byName.values()], skipped: [...skippedSet], sources };
+  const { attribution, replaceable } = attributeServers(reads);
+  return { specs: [...byName.values()], skipped: [...skippedSet], sources,
+    attribution, replaceable };
+}
+
+/** 모든 소스 파일을 읽어 병합 (읽기 전용, 없는 파일은 무시). 우선순위: claude-user > claude-project > codex > gemini (이름 충돌 시 먼저 온 것). */
+export function collectAllSpecs(): CollectResult & {
+  sources: ConfigSource[];
+  attribution: Map<string, Set<ClientId>>;
+  replaceable: Set<ClientId>;
+} {
+  return collectFromSources(configSources(), (p) => fs.readFileSync(p, 'utf-8'));
 }
