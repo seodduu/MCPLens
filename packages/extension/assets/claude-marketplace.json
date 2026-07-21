@@ -1,0 +1,15 @@
+{
+  "name": "mcplens",
+  "owner": { "name": "MCP Lens", "email": "" },
+  "metadata": { "description": "MCP Lens local hook collection", "version": "0.1.0" },
+  "plugins": [
+    {
+      "name": "mcp-lens",
+      "source": "./mcp-lens",
+      "description": "Local MCP context accounting with self-contained lifecycle hooks",
+      "category": "monitoring",
+      "tags": ["mcp", "hooks", "accounting"]
+    }
+  ],
+  "version": "0.1.0"
+}
