@@ -31,6 +31,14 @@ describe('ClaudeHookInstaller', () => {
     expect(await inst.detect()).toBe('client-missing');
   });
 
+  it('findBinary가 throw해도 전파하지 않고 client-missing으로 취급한다', async () => {
+    const findBinary = (): never => { throw new Error('boom'); };
+    const inst = new ClaudeHookInstaller(deps({ findBinary }));
+    expect(await inst.detect()).toBe('client-missing');
+    expect(await inst.install()).toEqual({ kind: 'client-missing' });
+    expect(await inst.uninstall()).toEqual({ kind: 'client-missing' });
+  });
+
   it('plugin list가 실패해도 던지지 않고 not-installed로 fail-open한다', async () => {
     const inst = new ClaudeHookInstaller(deps({
       run: async () => { throw new Error('spawn failed'); },

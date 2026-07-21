@@ -68,6 +68,14 @@ describe('GeminiHookInstaller.detect', () => {
     expect(await new GeminiHookInstaller(deps({ findBinary: () => null })).detect()).toBe('client-missing');
   });
 
+  it('findBinary가 throw해도 전파하지 않고 client-missing으로 취급한다', async () => {
+    const findBinary = (): never => { throw new Error('boom'); };
+    const inst = new GeminiHookInstaller(deps({ findBinary }));
+    expect(await inst.detect()).toBe('client-missing');
+    expect(await inst.install()).toEqual({ kind: 'client-missing' });
+    expect(await inst.uninstall()).toEqual({ kind: 'client-missing' });
+  });
+
   it('JSON이 아닌 출력이어도 throw하지 않고 not-installed', async () => {
     const run = async (): Promise<RunResult> => ({ stdout: 'No extensions installed.', stderr: '', code: 0 });
     expect(await new GeminiHookInstaller(deps({ run })).detect()).toBe('not-installed');
@@ -126,13 +134,15 @@ describe('GeminiHookInstaller.install', () => {
       .toEqual({ kind: 'failed', step: 'install', stderr: 'Failed to install: bad manifest' });
   });
 
-  it('이미 설치돼 있다는 실측 메시지는 실패로 보지 않는다', async () => {
+  it('이미 설치돼 있다는 실측 메시지는 실패로 보지 않고 alreadyInstalled로 보고한다', async () => {
     // 실측: exit 1 + stderr `Extension "mcp-lens" is already installed. Please uninstall it first.`
+    // detect()가 stale/failed list 때문에 not-installed를 반환했더라도, install이 이미 설치됨을
+    // 보고하면 신규 설치가 아니라 alreadyInstalled: true로 반영해야 한다.
     const { run } = recorder(emptyJson, {
       stderr: 'Extension "mcp-lens" is already installed. Please uninstall it first.',
       code: 1,
     });
-    expect(await new GeminiHookInstaller(deps({ run })).install()).toEqual({ kind: 'ok', alreadyInstalled: false });
+    expect(await new GeminiHookInstaller(deps({ run })).install()).toEqual({ kind: 'ok', alreadyInstalled: true });
   });
 
   it('run이 throw해도 전파하지 않고 failed를 돌려준다', async () => {

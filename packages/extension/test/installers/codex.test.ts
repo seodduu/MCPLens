@@ -58,6 +58,14 @@ describe('CodexHookInstaller.detect', () => {
     expect(await new CodexHookInstaller(deps({ findBinary: () => null })).detect()).toBe('client-missing');
   });
 
+  it('findBinary가 throw해도 전파하지 않고 client-missing으로 취급한다', async () => {
+    const findBinary = (): never => { throw new Error('boom'); };
+    const inst = new CodexHookInstaller(deps({ findBinary }));
+    expect(await inst.detect()).toBe('client-missing');
+    expect(await inst.install()).toEqual({ kind: 'client-missing' });
+    expect(await inst.uninstall()).toEqual({ kind: 'client-missing' });
+  });
+
   it('codex 바이너리를 이름으로 찾는다', async () => {
     const asked: string[] = [];
     const findBinary = (n: string): string | null => { asked.push(n); return '/bin/codex'; };
@@ -130,14 +138,14 @@ describe('CodexHookInstaller.install', () => {
     expect(calls.some((a) => a.includes('add') && a.includes(PLUGIN_ID))).toBe(false);
   });
 
-  it('plugin add가 실패하면 step=add로 failed', async () => {
+  it('plugin add가 실패하면 step=install로 failed', async () => {
     const run = async (_b: string, a: string[]): Promise<RunResult> => {
       if (a.includes('list')) return { stdout: emptyJson, stderr: '', code: 0 };
       if (a.includes('marketplace')) return { stdout: '', stderr: '', code: 0 };
       return { stdout: '', stderr: 'no such plugin', code: 1 };
     };
     expect(await new CodexHookInstaller(deps({ run })).install())
-      .toEqual({ kind: 'failed', step: 'add', stderr: 'no such plugin' });
+      .toEqual({ kind: 'failed', step: 'install', stderr: 'no such plugin' });
   });
 
   it('이미 추가됨 메시지는 실패로 보지 않는다', async () => {
@@ -172,14 +180,14 @@ describe('CodexHookInstaller.uninstall', () => {
     expect(await new CodexHookInstaller(deps({ findBinary: () => null })).uninstall()).toEqual({ kind: 'client-missing' });
   });
 
-  it('plugin remove가 실패하면 step=remove로 failed하고 marketplace remove는 건너뛴다', async () => {
+  it('plugin remove가 실패하면 step=uninstall로 failed하고 marketplace remove는 건너뛴다', async () => {
     const calls: string[][] = [];
     const run = async (_b: string, a: string[]): Promise<RunResult> => {
       calls.push(a);
       return { stdout: '', stderr: 'permission denied', code: 1 };
     };
     expect(await new CodexHookInstaller(deps({ run })).uninstall())
-      .toEqual({ kind: 'failed', step: 'remove', stderr: 'permission denied' });
+      .toEqual({ kind: 'failed', step: 'uninstall', stderr: 'permission denied' });
     expect(calls.some((a) => a.includes('marketplace'))).toBe(false);
   });
 
@@ -198,7 +206,7 @@ describe('CodexHookInstaller.uninstall', () => {
   it('run이 throw해도 전파하지 않는다', async () => {
     const run = async (): Promise<RunResult> => { throw new Error('spawn ENOENT'); };
     expect(await new CodexHookInstaller(deps({ run })).uninstall())
-      .toEqual({ kind: 'failed', step: 'remove', stderr: 'spawn ENOENT' });
+      .toEqual({ kind: 'failed', step: 'uninstall', stderr: 'spawn ENOENT' });
   });
 });
 

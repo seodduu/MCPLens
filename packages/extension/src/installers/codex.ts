@@ -22,7 +22,11 @@ export class CodexHookInstaller implements ClientHookInstaller {
 
   constructor(private deps: InstallerDeps) {}
 
-  private bin(): string | null { return this.deps.findBinary('codex'); }
+  /** findBinary는 절대 throw를 전파하지 않는다 — 던지면 client-missing으로 취급한다. */
+  private bin(): string | null {
+    try { return this.deps.findBinary('codex'); }
+    catch { return null; }
+  }
 
   /** run은 절대 throw를 전파하지 않는다 — 실패를 non-zero RunResult로 정규화한다. */
   private async run(bin: string, args: string[]): Promise<RunResult> {
@@ -57,7 +61,7 @@ export class CodexHookInstaller implements ClientHookInstaller {
     }
     const ins = await this.run(bin, ['plugin', 'add', PLUGIN_ID]);
     if (ins.code !== 0 && !alreadyPresent(ins.stderr)) {
-      return { kind: 'failed', step: 'add', stderr: ins.stderr };
+      return { kind: 'failed', step: 'install', stderr: ins.stderr };
     }
     return { kind: 'ok', alreadyInstalled: false };
   }
@@ -67,7 +71,7 @@ export class CodexHookInstaller implements ClientHookInstaller {
     if (bin === null) return { kind: 'client-missing' };
     const un = await this.run(bin, ['plugin', 'remove', PLUGIN_ID]);
     if (un.code !== 0 && !absent(un.stderr)) {
-      return { kind: 'failed', step: 'remove', stderr: un.stderr };
+      return { kind: 'failed', step: 'uninstall', stderr: un.stderr };
     }
     // 마켓플레이스가 이미 없으면 실측상 exit 1 — 제거는 최선 노력으로 두고 결과를 무시한다.
     await this.run(bin, ['plugin', 'marketplace', 'remove', MARKETPLACE_NAME]);

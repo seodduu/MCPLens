@@ -6,16 +6,31 @@ import type { RunResult } from './hookInstall.js';
 
 const BIN_CANDIDATES = (name: string): string[] => [
   join(homedir(), '.local', 'bin', name),
-  join(homedir(), '.nvm', 'current', 'bin', name), // best-effort
   `/opt/homebrew/bin/${name}`,
   `/usr/local/bin/${name}`,
 ];
+
+// nvm has no `current` symlink — it installs under
+// ~/.nvm/versions/node/<version>/bin/<name>. Scan every version directory.
+// Must fail open: an unreadable/absent nvm root yields no candidates rather
+// than throwing, consistent with the rest of this module.
+// Exported so tests can point it at a temp directory instead of the
+// developer's real ~/.nvm.
+export function nvmCandidates(name: string, nvmRoot = join(homedir(), '.nvm')): string[] {
+  const versionsDir = join(nvmRoot, 'versions', 'node');
+  let versions: string[];
+  try { versions = readdirSync(versionsDir); }
+  catch { return []; }
+  return versions.map((v) => join(versionsDir, v, 'bin', name));
+}
 
 // Locate a client binary without spawning a subprocess: probe known install
 // locations, then scan PATH via stat only. Runs on the extension's startup
 // detection path, so it must not block the host with a child process.
 export function findBinary(name: string): string | null {
-  for (const candidate of BIN_CANDIDATES(name)) if (existsSync(candidate)) return candidate;
+  for (const candidate of [...BIN_CANDIDATES(name), ...nvmCandidates(name)]) {
+    if (existsSync(candidate)) return candidate;
+  }
   for (const dir of (process.env.PATH ?? '').split(delimiter)) {
     if (dir && existsSync(join(dir, name))) return join(dir, name);
   }

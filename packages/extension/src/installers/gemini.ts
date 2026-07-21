@@ -24,7 +24,11 @@ export class GeminiHookInstaller implements ClientHookInstaller {
 
   constructor(private deps: InstallerDeps) {}
 
-  private bin(): string | null { return this.deps.findBinary('gemini'); }
+  /** findBinary는 절대 throw를 전파하지 않는다 — 던지면 client-missing으로 취급한다. */
+  private bin(): string | null {
+    try { return this.deps.findBinary('gemini'); }
+    catch { return null; }
+  }
 
   /** run은 절대 throw를 전파하지 않는다 — 실패를 non-zero RunResult로 정규화한다. */
   private async run(bin: string, args: string[]): Promise<RunResult> {
@@ -50,9 +54,19 @@ export class GeminiHookInstaller implements ClientHookInstaller {
     if (bin === null) return { kind: 'client-missing' };
     if (await this.detect() === 'installed') return { kind: 'ok', alreadyInstalled: true };
 
+    // --consent is required or `gemini extensions install` blocks on an
+    // interactive [Y/n] prompt and hangs forever, even with stdin closed
+    // (measured on gemini-cli 0.51.0) — see class JSDoc above.
     const ins = await this.run(bin, ['extensions', 'install', this.deps.bundledDir, '--consent', '--skip-settings']);
     if (ins.code !== 0 && !alreadyInstalled(ins.stderr)) {
       return { kind: 'failed', step: 'install', stderr: ins.stderr };
+    }
+    // detect() may have missed a stale/failed `list`; if install then reports
+    // the plugin is already there, reflect that instead of claiming a fresh
+    // install happened (unlike Claude/Codex, where the alreadyPresent match
+    // is about the marketplace, not the plugin itself).
+    if (ins.code !== 0 && alreadyInstalled(ins.stderr)) {
+      return { kind: 'ok', alreadyInstalled: true };
     }
     return { kind: 'ok', alreadyInstalled: false };
   }

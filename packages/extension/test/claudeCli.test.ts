@@ -1,8 +1,8 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { findBinary, findClaudeBinary, nodeFs, runBin, runClaude } from '../src/claudeCli.js';
+import { findBinary, findClaudeBinary, nodeFs, nvmCandidates, runBin, runClaude } from '../src/claudeCli.js';
 
 describe('findClaudeBinary', () => {
   it('returns null or a string without throwing', () => {
@@ -51,6 +51,50 @@ describe('findBinary', () => {
       // the lookup is parameterized on `name`, not hardcoded to 'claude'.
       expect(findBinary('mcplens-fake-cli-other')).toBeNull();
     });
+  });
+});
+
+describe('nvmCandidates', () => {
+  // Uses a temp dir standing in for ~/.nvm — never touches the developer's
+  // real nvm install.
+  let dir: string | undefined;
+
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true });
+    dir = undefined;
+  });
+
+  it('nvm 루트가 없으면(리더블하지 않으면) 빈 배열 — throw하지 않는다', () => {
+    expect(nvmCandidates('codex', '/no/such/nvm-root')).toEqual([]);
+  });
+
+  it('~/.nvm/versions/node/<버전>/bin/<name> 형태의 후보를 만든다 (current 심볼릭 링크 아님)', () => {
+    dir = mkdtempSync(join(tmpdir(), 'mcplens-nvm-'));
+    mkdirSync(join(dir, 'versions', 'node', 'v24.14.1', 'bin'), { recursive: true });
+    mkdirSync(join(dir, 'versions', 'node', 'v20.11.0', 'bin'), { recursive: true });
+
+    const candidates = nvmCandidates('codex', dir);
+    expect(candidates).toContain(join(dir, 'versions', 'node', 'v24.14.1', 'bin', 'codex'));
+    expect(candidates).toContain(join(dir, 'versions', 'node', 'v20.11.0', 'bin', 'codex'));
+  });
+
+  it('findBinary가 HOME을 임시 디렉터리로 바꿔도 nvm 후보 경로에서 실제로 바이너리를 찾는다', () => {
+    // findBinary itself hardcodes join(homedir(), '.nvm'), so exercise the
+    // real integration path via a redirected $HOME rather than the real one.
+    const originalHome = process.env.HOME;
+    dir = mkdtempSync(join(tmpdir(), 'mcplens-nvm-findbin-'));
+    const binDir = join(dir, '.nvm', 'versions', 'node', 'v24.14.1', 'bin');
+    mkdirSync(binDir, { recursive: true });
+    const binName = 'mcplens-fake-nvm-cli';
+    const binPath = join(binDir, binName);
+    writeFileSync(binPath, '#!/bin/sh\necho ok\n', { mode: 0o755 });
+
+    try {
+      process.env.HOME = dir;
+      expect(findBinary(binName)).toBe(binPath);
+    } finally {
+      process.env.HOME = originalHome;
+    }
   });
 });
 

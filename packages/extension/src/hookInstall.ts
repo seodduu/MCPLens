@@ -40,7 +40,11 @@ export const MARKETPLACE_NAME = 'mcplens';
 export class ClaudeHookInstaller implements ClientHookInstaller {
   readonly client = 'claude-code' as const;
   constructor(private deps: InstallerDeps) {}
-  private bin(): string | null { return this.deps.findBinary('claude'); }
+  /** findBinary는 절대 throw를 전파하지 않는다 — 던지면 client-missing으로 취급한다. */
+  private bin(): string | null {
+    try { return this.deps.findBinary('claude'); }
+    catch { return null; }
+  }
 
   /** run은 절대 throw를 전파하지 않는다 — 실패를 non-zero RunResult로 정규화한다. */
   private async run(bin: string, args: string[]): Promise<RunResult> {
