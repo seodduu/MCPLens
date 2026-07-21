@@ -64,6 +64,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
   }
 
   let lastCollectionInputs: ClientRowInput[] = [];
+  let collectionGeneration = 0;
 
   ctx.subscriptions.push(
     vscode.commands.registerCommand('mcp-lens.installHooks', async (node?: { client?: HookClient }) => {
@@ -115,6 +116,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
     vscode.workspace.getConfiguration('mcpLens').get<string[]>('unsupportedServers', []));
 
   async function computeCollection(): Promise<ClientRowInput[]> {
+    const gen = ++collectionGeneration;
     const detected = detectClients().filter((c) => c.installed).map((c) => c.client);
     const byHealth = store!.collectionHealthByClient();
     const inputs = await Promise.all(detected.map(async (client) => ({
@@ -122,8 +124,10 @@ export async function activate(ctx: vscode.ExtensionContext) {
       install: await installerFor(client).detect(),
       snapshot: byHealth.get(client),
     })));
-    lastCollectionInputs = inputs;
-    hookStatusProvider.setClients(inputs);
+    if (gen === collectionGeneration) {
+      lastCollectionInputs = inputs;
+      hookStatusProvider.setClients(inputs);
+    }
     return inputs;
   }
 

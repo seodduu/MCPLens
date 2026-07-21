@@ -32,7 +32,8 @@
       },
       {
         "command": "mcp-lens.installHooks",
-        "title": "MCP Lens: 이 클라이언트에 훅 설치"
+        "title": "MCP Lens: 이 클라이언트에 훅 설치",
+        "icon": "$(cloud-download)"
       },
       {
         "command": "mcp-lens.uninstallHooks",
