@@ -12,7 +12,6 @@ import { LensTreeProvider } from './lensTreeProvider.js';
 import { maybeAutoScan, watchConfigSources } from './autoScan.js';
 import { reportOptions } from './reportCommand.js';
 import { HookStatusProvider, toRow, type ClientRowInput } from './hookStatusProvider.js';
-import type { CollectionHealthSnapshot } from './hookStatus.js';
 import {
   ClaudeHookInstaller, type ClientHookInstaller, type HookClient, type InstallerDeps,
 } from './hookInstall.js';
@@ -30,20 +29,11 @@ type IngestionCoordinatorLike = {
   pause?: () => void | Promise<void>;
 };
 
-type HealthStore = LensStore & { collectionHealth?: () => CollectionHealthSnapshot };
-
 function coordinatorFor(store: LensStore): IngestionCoordinatorLike | undefined {
   const Constructor = (require('@mcp-lens/core') as {
     IngestionCoordinator?: new (options: { store: LensStore }) => IngestionCoordinatorLike;
   }).IngestionCoordinator;
   return Constructor ? new Constructor({ store }) : undefined;
-}
-
-function healthFor(store: LensStore): CollectionHealthSnapshot {
-  return (store as HealthStore).collectionHealth?.() ?? {
-    health: 'idle', hookObserved: false, logObserved: false,
-    consecutiveMisses: 0, consecutiveMatches: 0, waitingForCorrelation: 0, lastEventAt: null,
-  };
 }
 
 export async function activate(ctx: vscode.ExtensionContext) {
@@ -82,14 +72,14 @@ export async function activate(ctx: vscode.ExtensionContext) {
       if (r.kind === 'client-missing') void vscode.window.showWarningMessage(`MCP Lens: ${client} CLI를 찾을 수 없습니다.`);
       else if (r.kind === 'failed') void vscode.window.showErrorMessage(`MCP Lens ${client} 훅 설치 실패 (${r.step}): ${r.stderr.slice(0, 300)}`);
       else void vscode.window.showInformationMessage(`MCP Lens: ${client} 훅 설치 완료 — 새 세션부터 수집이 시작됩니다.`);
-      await refreshCollection();
+      await computeCollection();
     }),
     vscode.commands.registerCommand('mcp-lens.uninstallHooks', async (node?: { client?: HookClient }) => {
       const client = node?.client; if (!client) return;
       const r = await installerFor(client).uninstall();
       if (r.kind === 'ok') void vscode.window.showInformationMessage(`MCP Lens: ${client} 훅을 제거했습니다.`);
       else if (r.kind === 'failed') void vscode.window.showErrorMessage(`MCP Lens ${client} 훅 제거 실패: ${r.stderr.slice(0, 300)}`);
-      await refreshCollection();
+      await computeCollection();
     }));
 
   store = await LensStore.open(dbPath()); // 전역 제약 2: 공유 경로
@@ -124,7 +114,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
   const unsupportedServers = (): Set<string> => new Set(
     vscode.workspace.getConfiguration('mcpLens').get<string[]>('unsupportedServers', []));
 
-  async function refreshCollection(): Promise<ClientRowInput[]> {
+  async function computeCollection(): Promise<ClientRowInput[]> {
     const detected = detectClients().filter((c) => c.installed).map((c) => c.client);
     const byHealth = store!.collectionHealthByClient();
     const inputs = await Promise.all(detected.map(async (client) => ({
@@ -135,6 +125,28 @@ export async function activate(ctx: vscode.ExtensionContext) {
     lastCollectionInputs = inputs;
     hookStatusProvider.setClients(inputs);
     return inputs;
+  }
+
+  // 이벤트 유발 refresh는 고빈도(코디네이터/워처/설정/파일워처)로 몰려 들어올 수 있는데,
+  // computeCollection()은 클라이언트마다 CLI 서브프로세스를 스폰한다(installerFor(...).detect()).
+  // 가드 없이 각 이벤트가 computeCollection()을 직접 부르면 CLI 프로세스 폭주와
+  // lastCollectionInputs/hookStatusProvider에 대한 경쟁이 발생한다.
+  // 인플라이트 가드 + 트레일링 코얼레싱: 실행 중이면 대기만 표시하고,
+  // 끝난 뒤 대기가 있었으면 정확히 한 번 더 실행한다(N개 큐잉 아님, 유실 없는 debounce도 아님).
+  let collectionRefreshInFlight = false;
+  let collectionRefreshPending = false;
+  async function scheduleCollectionRefresh(): Promise<void> {
+    if (collectionRefreshInFlight) { collectionRefreshPending = true; return; }
+    collectionRefreshInFlight = true;
+    try {
+      await computeCollection();
+    } finally {
+      collectionRefreshInFlight = false;
+      if (collectionRefreshPending) {
+        collectionRefreshPending = false;
+        void scheduleCollectionRefresh();
+      }
+    }
   }
 
   const refresh = () => {
@@ -150,7 +162,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
     item.text = formatStatus(wasteToolCount, wasteTokens);
     item.tooltip = wasteTooltip(wasteToolCount, wasteTokens);
     treeProvider.setRoots(buildTree(input, readDeniedSafe(), listManagedSafe(), unsupportedServers()));
-    void refreshCollection();
+    void scheduleCollectionRefresh();
   };
   await coordinator?.drainInbox();
   await watcher.backfill(); // 시작 시 밀린 세션 따라잡기 (기능 2)
@@ -161,7 +173,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
   watcher.start();
 
   void (async () => {
-    const inputs = await refreshCollection();
+    const inputs = await computeCollection();
     const detected = new Set(inputs.map((i) => i.client));
     const states = new Map(inputs.map((i) => [i.client, i.install] as const));
     const dismissed = new Set<HookClient>(
@@ -171,7 +183,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
     if (pending.length === 0) return;
     const choice = await vscode.window.showInformationMessage(
       `MCP Lens: ${pending.join('·')} 훅 수집이 꺼져 있어요`, '모두 설치', '수집 뷰 열기', '다시 안 보기');
-    if (choice === '모두 설치') { for (const c of pending) await installerFor(c).install(); await refreshCollection(); }
+    if (choice === '모두 설치') { for (const c of pending) await installerFor(c).install(); await computeCollection(); }
     else if (choice === '수집 뷰 열기') void vscode.commands.executeCommand('mcpLens.collection.focus');
     else if (choice === '다시 안 보기') for (const c of pending) await ctx.globalState.update(`${DISMISS_KEY}.${c}`, true);
   })();
