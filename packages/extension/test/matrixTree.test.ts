@@ -101,8 +101,27 @@ describe('buildTree', () => {
       sessions: [session('c1', 'claude-code')],
     };
     const tool = buildTree(lowConfidence)[0].children[0].children[0];
-    expect(tool.description).toContain('(후보)');
+    expect(tool.description).toContain('remove (후보)');
     expect(tool.description).not.toContain('?');
+  });
+
+  it('로드만 되고 호출 0인 툴이 있을 때 클라이언트 노드가 0tok이 아니라 자식 합을 표시한다', () => {
+    const loadedOnly: EngineInput = {
+      definitions: [{ serverName: 'notion', toolName: 'notion-update-page',
+        definitionTokens: 3287, scannedAt: '2026-07-19T00:00:00Z',
+        firstScannedAt: '2026-07-19T00:00:00Z' }],
+      calls: [],
+      loads: [{ sessionId: 'c1', serverName: 'notion', toolName: 'notion-update-page',
+        loadedTokens: null }],
+      sessions: [session('c1', 'claude-code')],
+    };
+    const [clientNode] = buildTree(loadedOnly);
+    const toolNode = clientNode.children[0].children[0];
+    // 클라이언트 노드는 접혀 있어도 자식(툴)과 모순되지 않아야 한다 —
+    // 응답 토큰 합(0)이 아니라 서버·툴 노드와 동일한 누적 비용 fold를 써야 한다.
+    expect(clientNode.description).toContain('3,287tok');
+    expect(clientNode.description).not.toContain('0tok');
+    expect(clientNode.description).toContain(toolNode.description.match(/[\d,]+tok/)![0]);
   });
 
   it('서버 노드 누적 비용은 자식 툴들의 합과 같다', () => {
