@@ -2,7 +2,7 @@ import initSqlJs, { type Database } from 'sql.js';
 import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { AdapterResult, SessionMeta, ToolCallEvent, ToolDefinition,
+import type { AdapterResult, ClientId, SessionMeta, ToolCallEvent, ToolDefinition,
   ToolLoadEvent } from '../types.js';
 import type { ToolObservation } from '../ingest/contracts.js';
 import { adapterResultToObservations } from '../ingest/log-bridge.js';
@@ -183,6 +183,36 @@ export class LensStore {
       // 마이그레이션 직후·구행 방어: 값이 없으면 scanned_at을 최초 관찰로 간주
       firstScannedAt: (r.first_scanned_at as string | null) ?? (r.scanned_at as string),
     }));
+  }
+
+  /**
+   * 서버 귀속을 저장한다. replaceable에 든 클라이언트만 행을 통째로 교체하고,
+   * 그 외 클라이언트(설정 읽기 실패)는 기존 매핑을 보존한다.
+   */
+  upsertClientServers(attribution: Map<string, Set<ClientId>>,
+    replaceable: Set<ClientId>): void {
+    for (const client of replaceable)
+      this.run('DELETE FROM client_servers WHERE client=?', [client]);
+    for (const [serverName, clients] of attribution)
+      for (const client of clients) {
+        if (!replaceable.has(client)) continue; // 보존 대상은 새로 쓰지도 않는다
+        this.run(
+          `INSERT INTO client_servers(client, server_name) VALUES(?,?)
+           ON CONFLICT(client, server_name) DO NOTHING`,
+          [client, serverName]);
+      }
+  }
+
+  /** 클라이언트 → 그 클라이언트에 설정된 서버 이름 집합. 매핑이 없으면 빈 맵. */
+  serversByClient(): Map<ClientId, Set<string>> {
+    const out = new Map<ClientId, Set<string>>();
+    for (const r of this.select('SELECT client, server_name FROM client_servers', [])) {
+      const client = r.client as ClientId;
+      let set = out.get(client);
+      if (set === undefined) { set = new Set(); out.set(client, set); }
+      set.add(r.server_name as string);
+    }
+    return out;
   }
   callsSince(iso: string): ToolCallEvent[] {
     return this.select(

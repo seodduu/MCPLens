@@ -31,6 +31,11 @@ CREATE TABLE IF NOT EXISTS tool_definitions (
   first_scanned_at  TEXT,
   PRIMARY KEY (server_name, tool_name)
 );
+CREATE TABLE IF NOT EXISTS client_servers (
+  client      TEXT NOT NULL,
+  server_name TEXT NOT NULL,
+  PRIMARY KEY (client, server_name)
+);
 CREATE TABLE IF NOT EXISTS token_usage (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id    TEXT NOT NULL,
