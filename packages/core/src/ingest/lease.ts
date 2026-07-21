@@ -93,7 +93,15 @@ export function acquireLease(lockPath: string, ttlMs: number, nowMs: () => numbe
   return null;
 }
 
-/** 내가 여전히 홀더면 만료 연장(원자적 owner.json 교체). 인수당했으면 null. */
+/**
+ * 내가 여전히 홀더면 만료 연장(원자적 owner.json 교체). 인수당했으면 null.
+ *
+ * KNOWN RACE (Wave 2 선행 수정 필수 — docs/BACKLOG.md "renewLease 인수 레이스"):
+ * readLease(check)와 owner.json write(act) 사이에 경쟁자가 takeOverLease로 락 dir을
+ * 치우고 새 토큰으로 재설치하면, 이 write가 경쟁자의 새 dir에 떨어져 split-brain을
+ * 유발한다. Wave 1에는 호출자가 없어 무해하나, WriterLeaseManager 하트비트가 붙기 전
+ * identity-keyed atomic renew로 재설계해야 한다.
+ */
 export function renewLease(lockPath: string, token: string, ttlMs: number, nowMs: () => number = () => Date.now()): Lease | null {
   const current = readLease(lockPath);
   if (!current || current.token !== token) return null;

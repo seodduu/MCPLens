@@ -33,6 +33,23 @@
 | state 파라미터 | OAuth 콜백에 state 검증 없음 — PKCE+루프백이 1차 방어라 관례상 수용, 심층 방어로 추가 여지 |
 | 재로그인 redirect_uri | 로그인마다 임시 포트가 달라 등록된 client의 redirect_uri와 불일치 가능(RFC 8252 §7.3상 서버가 포트 무시해야 정상) — vercel 1회 로그인은 성공, **재로그인 반복 케이스는 미검증** |
 
+## 단일 writer 리스 Wave 1 이월 (renewLease 인수 레이스) — **Wave 2 선행 필수**
+
+`renewLease`(`packages/core/src/ingest/lease.ts`)에 split-brain 레이스가 있다. 함수는
+owner를 읽어 토큰을 확인한 뒤(check), `lockPath` 안에 tmp를 쓰고 `owner.json`으로 rename
+(act)하는데, 이 사이(TOCTOU)에 경쟁자가 `acquireLease`→`takeOverLease`로 락 디렉토리를
+치우고 새 토큰 B로 재설치하면, A의 write가 **B의 새 디렉토리**에 떨어져 B의 owner.json을
+토큰 A로 덮어쓴다. 결과: 두 프로세스가 동시에 자신을 홀더로 착각 → 리스가 막으려던 바로 그
+lost-update 조건. (계획서가 지정한 코드 그대로이며, 최종 whole-branch 리뷰가 Important로 적발.)
+
+- **Wave 1 영향 없음**: `renewLease` 호출자가 이 브랜치에 없다(하트비트 배선은 Wave 2 Task 4·5).
+- **왜 즉수정 안 함**: inode 가드로 *탐지*는 되지만, 탐지 시점엔 이미 B의 owner.json을
+  훼손한 뒤다 — rename 기반 배타 불변식을 보존하는 올바른 renew(자기-인수/identity-keyed
+  atomic swap)는 실제 설계가 필요. 리뷰 압박 하 인라인 패치로 리스 알고리즘을 발명하지 않기로
+  사용자 결정(2026-07-22).
+- **Wave 2 착수 전 반드시**: 인터리브드-인수 레이스를 재현하는 실패 테스트 → 신뢰도 있는 renew
+  재설계 → 통과. `WriterLeaseManager` 하트비트(TTL 30s / 갱신 10s)가 이 renew에 의존한다.
+
 ## 상태바 지표 재정의 (2026-07-21) — **착수 가능**
 
 현행 상태바(`지연 로딩으로 아낀 토큰`)는 **인센티브가 역방향**이다 — 안 쓰는 MCP 서버를
