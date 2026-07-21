@@ -220,11 +220,19 @@ export class LogWatcher extends EventEmitter {
 
       try {
         const result = adapter.parseFile(resolvedPath, content);
-        this.store.ingest(result);
-        this.store.setCursor(resolvedPath, Buffer.byteLength(content), mtimeMs);
         try {
-          this.store.save();
+          // Persist the ingest and its cursor advance inside one transaction so a
+          // single commit/save flushes both together. LensStore.commit() now
+          // writes to disk, so ingest() already persists on its own; a separate
+          // save() would double-persist and split the data from its cursor.
+          this.store.begin();
+          this.store.ingest(result);
+          this.store.setCursor(resolvedPath, Buffer.byteLength(content), mtimeMs);
+          this.store.commit();
         } catch {
+          // The commit/save did not durably land. Roll the in-memory cursor back
+          // so the idempotent ingest replays on the next request.
+          try { this.store.rollback(); } catch { /* transaction already settled */ }
           this.store.setCursor(
             resolvedPath,
             cursor?.byteOffset ?? 0,
