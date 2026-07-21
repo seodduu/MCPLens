@@ -3,8 +3,8 @@ import type {
   CumulativeCost, EngineInput, ManagedServer, MatrixRow, RecommendationConfidence,
 } from '@mcp-lens/core';
 import {
-  buildMatrix, callSessionCounts, cumulativeCost, mcpDenyRule, splitByClient,
-  toolCostKey, visibleMatrixRows,
+  buildMatrix, callSessionCounts, cumulativeCost, dominantMode, mcpDenyRule,
+  splitByClient, toolCostKey, visibleMatrixRows,
 } from '@mcp-lens/core';
 
 export interface LensNode {
@@ -48,7 +48,7 @@ function fmtTok(n: number): string {
   return `${Math.round(n).toLocaleString('en-US')}tok`;
 }
 
-/** 툴 노드의 누적 비용 문구. 정의 미측정이면 응답분만 담겼음을 밝힌다.
+/** 지연 로딩 노드의 누적 비용 문구. 정의 미측정이면 응답분만 담겼음을 밝힌다.
  * 상위(서버·클라이언트) 노드는 fmtTok만 쓴다 — 자식 하나만 미측정이어도 AND-fold로
  * 꼬리표가 붙어, 모든 상위 줄에 같은 문구가 반복되며 잡음이 되기 때문이다.
  * 미측정 여부는 원인이 있는 툴 노드에서 확인한다. */
@@ -56,6 +56,42 @@ function costText(cost: CumulativeCost): string {
   return cost.definitionMeasured
     ? fmtTok(cost.tokens)
     : `${fmtTok(cost.tokens)}(정의 미측정)`;
+}
+
+/**
+ * 업프론트 세션의 정의 비용 = 세션당 부담(정의 토큰 그대로, 세션 수 미승산).
+ * 업프론트는 매 세션 전 정의가 로드되지만 툴별 로드 이벤트가 남지 않아
+ * cumulativeCost의 loadSessions가 0이 되고 누적이 거짓 0tok으로 뭉개진다.
+ * 세션 수를 곱하면 세션별 연결 서버 목록이 없는 상태에서 과대계상되므로(설계 유보안 A),
+ * 곱하지 않고 "매 세션 이만큼 든다"만 정직하게 표기한다.
+ */
+function perSessionCost(row: MatrixRow): CumulativeCost {
+  return { tokens: row.definitionTokens ?? 0, definitionMeasured: row.definitionTokens != null };
+}
+
+/**
+ * 노드의 비용 세그먼트 문구.
+ * 업프론트: 호출 비용(누적)과 정의 비용(세션당)은 단위가 달라 분리 표기한다 — "호출 X · 정의 Y/세션".
+ *   호출 비용은 세션마다 반복되지 않으므로 곱하지 않고 관측 구간 누적을 그대로 쓴다.
+ * 지연 로딩: 정의·응답이 같은 누적 단위라 단일 누적값으로 합쳐 표기한다(기존 동작).
+ * showUnmeasured=true(툴 노드)면 정의 미측정 꼬리표를 단다 — 상위 노드에서는 잡음이라 생략한다.
+ */
+function costSegment(
+  rows: MatrixRow[], callSessions: Map<string, number>,
+  perSession: boolean, showUnmeasured: boolean,
+): string {
+  if (perSession) {
+    const call = rows.reduce((s, r) => s + r.responseTokens, 0);
+    const def = sumCosts(rows.map(perSessionCost));
+    // 정의 미측정이면 0tok/세션은 거짓 신호 — 토큰·세션 표기 없이 미측정임만 밝힌다.
+    const defText = showUnmeasured && !def.definitionMeasured
+      ? '정의 미측정'
+      : `정의 ${fmtTok(def.tokens)}/세션`;
+    return `호출 ${fmtTok(call)} · ${defText}`;
+  }
+  const cost = sumCosts(rows.map(
+    (r) => cumulativeCost(r, callSessions.get(toolCostKey(r.serverName, r.toolName)) ?? 0)));
+  return showUnmeasured ? costText(cost) : fmtTok(cost.tokens);
 }
 
 /** 누적 비용의 합산 fold — 서버·클라이언트 노드가 공유한다.
@@ -91,22 +127,19 @@ export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set
     const rows = visibleMatrixRows(buildMatrix(sub), sub.sessions)
       .filter((r) => !excludeServers.has(r.serverName));
     const callSessions = callSessionCounts(sub.calls);
+    // 업프론트는 호출(누적)·정의(세션당)를 분리, 지연 로딩은 누적 단일값으로 표기한다.
+    const perSession = dominantMode(sub.sessions) === 'UPFRONT';
     const byServer = new Map<string, MatrixRow[]>();
     for (const r of rows) {
       if (!byServer.has(r.serverName)) byServer.set(r.serverName, []);
       byServer.get(r.serverName)!.push(r);
     }
-    const serverCosts = new Map<string, CumulativeCost>();
     const servers: LensNode[] = [...byServer.entries()].map(([server, rs]) => {
       const serverEnabled = client === 'claude-code' ? managed.get(server)?.enabled : undefined;
-      const serverCost = sumCosts(rs.map(
-        (r) => cumulativeCost(r, callSessions.get(toolCostKey(r.serverName, r.toolName)) ?? 0),
-      ));
-      serverCosts.set(server, serverCost);
       const desc = `${fmtCalls(
         rs.reduce((s, r) => s + r.callCount, 0),
         rs.reduce((s, r) => s + r.reliability.errorCount, 0),
-      )} · ${fmtTok(serverCost.tokens)}${wasteSuffix(rs)}`;
+      )} · ${costSegment(rs, callSessions, perSession, false)}${wasteSuffix(rs)}`;
       return {
         kind: 'server' as const,
         id: `${client}/${server}`,
@@ -122,8 +155,7 @@ export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set
           const actionLabel =
             confidence === 'low' && (action === 'remove' || action === 'filter-server')
               ? `${action} (후보)` : action;
-          const cost = cumulativeCost(r, callSessions.get(toolCostKey(r.serverName, r.toolName)) ?? 0);
-          const toolDesc = `${fmtCalls(r.callCount, r.reliability.errorCount)} · ${costText(cost)} · ${actionLabel}`;
+          const toolDesc = `${fmtCalls(r.callCount, r.reliability.errorCount)} · ${costSegment([r], callSessions, perSession, true)} · ${actionLabel}`;
           return {
             kind: 'tool',
             id: `${client}/${server}/${r.toolName}`,
@@ -144,12 +176,11 @@ export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set
     }
     const totalCalls = rows.reduce((s, r) => s + r.callCount, 0);
     const totalErrors = rows.reduce((s, r) => s + r.reliability.errorCount, 0);
-    // 서버 노드와 동일한 fold — 접힌 트리에서도 자식 합과 일치시켜 거짓 0tok을 없앤다
-    const clientCost = sumCosts([...serverCosts.values()]);
+    // 전체 행에서 직접 fold — 접힌 트리에서도 자식(서버) 합과 일치시켜 거짓 0tok을 없앤다
     return {
       kind: 'client' as const, id: client, label: client,
       description:
-        `세션 ${sub.sessions.length}개 · 총 ${fmtCalls(totalCalls, totalErrors)} · ${fmtTok(clientCost.tokens)}${wasteSuffix(rows)}`,
+        `세션 ${sub.sessions.length}개 · 총 ${fmtCalls(totalCalls, totalErrors)} · ${costSegment(rows, callSessions, perSession, false)}${wasteSuffix(rows)}`,
       children: servers,
     };
   });

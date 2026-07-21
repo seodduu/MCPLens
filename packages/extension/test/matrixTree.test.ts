@@ -309,6 +309,86 @@ describe('낭비 개수 표시', () => {
   });
 });
 
+describe('업프론트 클라이언트 세션당 정의 부담 표시', () => {
+  const DAY = 86_400_000;
+  const at = (d: number) => new Date(Date.parse('2026-06-01T00:00:00Z') + d * DAY).toISOString();
+  const upfront = (n: number) => Array.from({ length: n }, (_, i) => ({
+    sessionId: `s${i}`, client: 'gemini-cli' as const, filePath: `/f/${i}`,
+    startedAt: at(i), mode: 'UPFRONT' as const }));
+  const def = (tool: string, tokens: number) => ({
+    serverName: 'tiny', toolName: tool, definitionTokens: tokens,
+    scannedAt: at(0), firstScannedAt: at(0) });
+
+  const upcall = (sessionId: string, tool: string) => ({
+    sessionId, serverName: 'tiny', toolName: tool, calledAt: at(0),
+    durationMs: null, isError: false, responseTokens: 50, responseText: null });
+
+  it('업프론트 미호출 툴은 0tok이 아니라 호출·정의를 분리해 표시한다', () => {
+    // 로드 이벤트가 없어 loadSessions=0 → 누적은 0tok이 되지만, 매 세션 로드되는 부담이 있다.
+    const [client] = buildTree({
+      definitions: [def('a', 800)], calls: [], loads: [], sessions: upfront(5) });
+    const tool = client.children[0].children[0];
+    expect(tool.description).toContain('호출 0tok');
+    expect(tool.description).toContain('정의 800tok/세션');
+    // 순서: 호출 → 정의
+    expect(tool.description.indexOf('호출')).toBeLessThan(tool.description.indexOf('정의'));
+  });
+
+  it('호출 비용은 세션당이 아니라 누적 — 세션 수를 곱하지 않는다', () => {
+    // a를 2세션에서 3회 호출(응답 50×3=150 누적). 정의는 세션당 800.
+    const [client] = buildTree({
+      definitions: [def('a', 800)],
+      calls: [upcall('s0', 'a'), upcall('s0', 'a'), upcall('s1', 'a')],
+      loads: [], sessions: upfront(5) });
+    const tool = client.children[0].children[0];
+    expect(tool.description).toContain('호출 150tok');     // 50×3 누적
+    expect(tool.description).toContain('정의 800tok/세션'); // 세션 수 미승산
+    expect(tool.description).not.toContain('4,000');       // 800×5 아님
+  });
+
+  it('서버·클라이언트 롤업도 호출·정의 분리로 표기한다', () => {
+    const [client] = buildTree({
+      definitions: [def('a', 800), def('b', 200)], calls: [], loads: [], sessions: upfront(5) });
+    expect(client.children[0].description).toContain('호출 0tok · 정의 1,000tok/세션'); // 800+200
+    expect(client.description).toContain('호출 0tok · 정의 1,000tok/세션');
+  });
+
+  it('정의 1토큰짜리 더미 툴도 0tok이 아니라 1tok/세션으로 보인다', () => {
+    const [client] = buildTree({
+      definitions: [def('a', 1), def('b', 1), def('c', 1)], calls: [], loads: [],
+      sessions: upfront(5) });
+    for (const t of client.children[0].children)
+      expect(t.description).toContain('정의 1tok/세션');
+  });
+
+  it('정의 미측정 툴은 0tok/세션이 아니라 "정의 미측정"만 표기한다', () => {
+    // 스캐너가 못 잡은 툴이 업프론트에서 호출됨 → 정의 토큰 null.
+    const [client] = buildTree({
+      definitions: [], calls: [upcall('s0', 'a')], loads: [], sessions: upfront(5) });
+    const tool = client.children[0].children[0];
+    expect(tool.description).toContain('호출 50tok');
+    expect(tool.description).toContain('정의 미측정');
+    expect(tool.description).not.toContain('0tok/세션');
+    expect(tool.description).not.toContain('정의 0tok');
+  });
+
+  it('지연 로딩 클라이언트는 여전히 누적(/세션·호출 라벨 없음)으로 표시한다 — 회귀', () => {
+    const loadedOnly: EngineInput = {
+      definitions: [{ serverName: 'notion', toolName: 'notion-update-page',
+        definitionTokens: 3287, scannedAt: '2026-07-19T00:00:00Z',
+        firstScannedAt: '2026-07-19T00:00:00Z' }],
+      calls: [],
+      loads: [{ sessionId: 'c1', serverName: 'notion', toolName: 'notion-update-page',
+        loadedTokens: null }],
+      sessions: [session('c1', 'claude-code')],
+    };
+    const tool = buildTree(loadedOnly)[0].children[0].children[0];
+    expect(tool.description).toContain('3,287tok');
+    expect(tool.description).not.toContain('/세션');
+    expect(tool.description).not.toContain('호출 '); // 지연 로딩은 누적 단일값
+  });
+});
+
 describe('지원하지 않는 서버 숨김 (excludeServers)', () => {
   const m = (name: string, enabled: boolean): ManagedServer =>
     ({ name, enabled, origins: ['user'] });
