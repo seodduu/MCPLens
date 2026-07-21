@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -32,6 +32,7 @@ export interface HookStatusDependencies {
   trustState?: (client: HookClient) => TrustState;
   healthSnapshot?: (client: HookClient) => HookHealthSnapshot | undefined;
   exists?: (path: string) => boolean;
+  readFile?: (path: string) => string;
   readDirectory?: (path: string) => string[];
   modifiedAt?: (path: string) => Date;
 }
@@ -40,6 +41,7 @@ const CLIENTS: readonly HookClient[] = ['claude-code', 'codex', 'gemini-cli'];
 
 export function collectHookStatus(dependencies: HookStatusDependencies = {}): HookStatus[] {
   const exists = dependencies.exists ?? existsSync;
+  const readFile = dependencies.readFile ?? ((path: string) => readFileSync(path, 'utf8'));
   const readDirectory = dependencies.readDirectory ?? ((path: string) => readdirSync(path));
   const modifiedAt = dependencies.modifiedAt ?? ((path: string) => statSync(path).mtime);
   const home = dependencies.homeDirectory ?? homedir();
@@ -50,7 +52,7 @@ export function collectHookStatus(dependencies: HookStatusDependencies = {}): Ho
 
   return CLIENTS.map((client) => {
     const packageDirectory = dependencies.packageDirectories?.[client]
-      ?? defaultPackageDirectory(home, client);
+      ?? resolvePackageDirectory(client, home, exists, readFile);
     const packageState: PackageState = exists(packageDirectory) ? 'installed' : 'missing';
     const runnerState: RunnerState = packageState === 'installed'
       && exists(join(packageDirectory, 'scripts', 'hook-runner.mjs'))
@@ -93,6 +95,44 @@ function defaultPackageDirectory(home: string, client: HookClient): string {
     case 'codex': return join(home, '.codex', 'plugins', 'mcp-lens');
     case 'gemini-cli': return join(home, '.gemini', 'extensions', 'mcp-lens');
   }
+}
+
+function resolvePackageDirectory(
+  client: HookClient, home: string,
+  exists: (path: string) => boolean,
+  readFile: (path: string) => string,
+): string {
+  if (client === 'claude-code') {
+    const resolved = resolveClaudePackageDirectory(home, exists, readFile);
+    if (resolved !== null) return resolved;
+  }
+  return defaultPackageDirectory(home, client);
+}
+
+// Claude Code installs marketplace plugins under a versioned cache directory
+// (~/.claude/plugins/cache/<marketplace>/<plugin>/<version>) and records the
+// resolved path in installed_plugins.json. Read that record instead of guessing
+// the marketplace/version segments, while still honoring a legacy drop-in dir.
+function resolveClaudePackageDirectory(
+  home: string,
+  exists: (path: string) => boolean,
+  readFile: (path: string) => string,
+): string | null {
+  const candidates = [join(home, '.claude', 'plugins', 'mcp-lens')];
+  try {
+    const parsed = JSON.parse(readFile(join(home, '.claude', 'plugins', 'installed_plugins.json')));
+    const plugins = (parsed?.plugins ?? {}) as Record<string, unknown>;
+    for (const [key, entries] of Object.entries(plugins)) {
+      if (!key.startsWith('mcp-lens@') || !Array.isArray(entries)) continue;
+      for (const entry of entries) {
+        const installPath = (entry as { installPath?: unknown }).installPath;
+        if (typeof installPath === 'string') candidates.push(installPath);
+      }
+    }
+  } catch {
+    // No install record (or unreadable) → rely on the legacy candidate only.
+  }
+  return candidates.find((dir) => exists(join(dir, 'scripts', 'hook-runner.mjs'))) ?? null;
 }
 
 function defaultTrustState(client: HookClient): TrustState {
