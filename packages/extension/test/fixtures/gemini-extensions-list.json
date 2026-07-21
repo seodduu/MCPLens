@@ -1,0 +1,71 @@
+[
+  {
+    "name": "mcp-lens",
+    "version": "1.0.0",
+    "path": "/Users/u/.gemini/extensions/mcp-lens",
+    "contextFiles": [],
+    "installMetadata": {
+      "source": "/repo/packages/gemini-extension",
+      "type": "local"
+    },
+    "hooks": {
+      "SessionStart": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "name": "mcp-lens-session-start",
+              "command": "node \"/Users/u/.gemini/extensions/mcp-lens/scripts/hook-runner.mjs\"",
+              "timeout": 2000,
+              "description": "Passive capture: writes only {} to stdout and diagnostics to stderr"
+            }
+          ]
+        }
+      ],
+      "BeforeTool": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "name": "mcp-lens-before-tool",
+              "command": "node \"/Users/u/.gemini/extensions/mcp-lens/scripts/hook-runner.mjs\"",
+              "timeout": 2000,
+              "description": "Passive capture: writes only {} to stdout and diagnostics to stderr"
+            }
+          ]
+        }
+      ],
+      "AfterTool": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "name": "mcp-lens-after-tool",
+              "command": "node \"/Users/u/.gemini/extensions/mcp-lens/scripts/hook-runner.mjs\"",
+              "timeout": 2000,
+              "description": "Passive capture: writes only {} to stdout and diagnostics to stderr"
+            }
+          ]
+        }
+      ],
+      "SessionEnd": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "name": "mcp-lens-session-end",
+              "command": "node \"/Users/u/.gemini/extensions/mcp-lens/scripts/hook-runner.mjs\"",
+              "timeout": 2000,
+              "description": "Passive capture: writes only {} to stdout and diagnostics to stderr"
+            }
+          ]
+        }
+      ]
+    },
+    "isActive": true,
+    "id": "0ef94242c5bffb4f200c8557bd698a817429fbc4e3b22cfbb95e855f6cbe7569",
+    "resolvedSettings": [],
+    "skills": [],
+    "agents": []
+  }
+]
