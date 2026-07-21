@@ -1,6 +1,9 @@
 // packages/extension/src/matrixTree.ts — vscode import 금지 (테스트 가능성)
 import type { EngineInput, ManagedServer, MatrixRow, RecommendationConfidence } from '@mcp-lens/core';
-import { buildMatrix, mcpDenyRule, splitByClient, visibleMatrixRows } from '@mcp-lens/core';
+import {
+  buildMatrix, callSessionCounts, cumulativeCost, mcpDenyRule, splitByClient,
+  toolCostKey, visibleMatrixRows,
+} from '@mcp-lens/core';
 
 export interface LensNode {
   kind: 'client' | 'server' | 'tool';
@@ -26,6 +29,18 @@ function fmtCalls(calls: number, errors: number): string {
   return errors > 0 ? `${calls}회(실패 ${errors})` : `${calls}회`;
 }
 
+/** 천단위 구분자 — report/markdown.ts:18과 동일 규칙 */
+function fmtTok(n: number): string {
+  return `${Math.round(n).toLocaleString('en-US')}tok`;
+}
+
+/** 누적 비용 문구. 정의 미측정이면 응답분만 담겼음을 밝힌다. */
+function costText(cost: { tokens: number; definitionMeasured: boolean }): string {
+  return cost.definitionMeasured
+    ? fmtTok(cost.tokens)
+    : `${fmtTok(cost.tokens)}(정의 미측정)`;
+}
+
 /** 사용 이력 없는 managed 서버 → 0회 서버 노드 (스펙 1-2: 설정된 서버는 항상 표시) */
 function zeroUsageServerNodes(managed: ManagedServer[], usedNames: Set<string>): LensNode[] {
   return managed.filter((s) => !usedNames.has(s.name)).map((s): LensNode => ({
@@ -44,6 +59,7 @@ export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set
   const roots = splitByClient(input).map(({ client, input: sub }) => {
     // 모드 인지 표시: 지연 로딩 클라이언트에서는 실비용 0인 미사용 툴을 숨긴다
     const rows = visibleMatrixRows(buildMatrix(sub), sub.sessions);
+    const callSessions = callSessionCounts(sub.calls);
     const byServer = new Map<string, MatrixRow[]>();
     for (const r of rows) {
       if (!byServer.has(r.serverName)) byServer.set(r.serverName, []);
@@ -69,8 +85,9 @@ export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set
           const { action, confidence } = r.recommendation;
           const actionLabel =
             confidence === 'low' && (action === 'remove' || action === 'filter-server')
-              ? `${action}?(후보)` : action;
-          const toolDesc = `${fmtCalls(r.callCount, r.reliability.errorCount)} · ${r.responseTokens}tok · ${actionLabel}`;
+              ? `${action} (후보)` : action;
+          const cost = cumulativeCost(r, callSessions.get(toolCostKey(r.serverName, r.toolName)) ?? 0);
+          const toolDesc = `${fmtCalls(r.callCount, r.reliability.errorCount)} · ${costText(cost)} · ${actionLabel}`;
           return {
             kind: 'tool',
             id: `${client}/${server}/${r.toolName}`,

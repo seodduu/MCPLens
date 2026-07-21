@@ -39,6 +39,71 @@ describe('buildTree', () => {
   it('클라이언트 노드 description에 세션 수가 들어간다', () => {
     expect(buildTree(input)[0].description).toContain('1');
   });
+
+  it('로드만 되고 호출 0인 툴도 정의 토큰을 누적 비용으로 표시한다', () => {
+    const loadedOnly: EngineInput = {
+      definitions: [{ serverName: 'notion', toolName: 'notion-update-page',
+        definitionTokens: 3287, scannedAt: '2026-07-19T00:00:00Z',
+        firstScannedAt: '2026-07-19T00:00:00Z' }],
+      calls: [],
+      loads: [{ sessionId: 'c1', serverName: 'notion', toolName: 'notion-update-page',
+        loadedTokens: null }],
+      sessions: [session('c1', 'claude-code')],
+    };
+    const tool = buildTree(loadedOnly)[0].children[0].children[0];
+    expect(tool.description).toContain('3,287tok');
+    expect(tool.description).not.toContain('0tok');
+  });
+
+  it('로드 세션 수만큼 정의 비용을 곱한다', () => {
+    const threeSessions: EngineInput = {
+      definitions: [{ serverName: 'notion', toolName: 'notion-update-page',
+        definitionTokens: 1000, scannedAt: '2026-07-19T00:00:00Z',
+        firstScannedAt: '2026-07-19T00:00:00Z' }],
+      calls: [],
+      loads: ['c1', 'c2', 'c3'].map((s) => ({ sessionId: s, serverName: 'notion',
+        toolName: 'notion-update-page', loadedTokens: null })),
+      sessions: [session('c1', 'claude-code'), session('c2', 'claude-code'),
+        session('c3', 'claude-code')],
+    };
+    const tool = buildTree(threeSessions)[0].children[0].children[0];
+    expect(tool.description).toContain('3,000tok');
+  });
+
+  it('로드 기록이 없어도 호출된 세션 수로 정의 비용을 역산한다', () => {
+    const hookOnly: EngineInput = {
+      definitions: [{ serverName: 'notion', toolName: 'notion-search',
+        definitionTokens: 1721, scannedAt: '2026-07-19T00:00:00Z',
+        firstScannedAt: '2026-07-19T00:00:00Z' }],
+      calls: [call('c1', 'notion', 'notion-search'), call('c2', 'notion', 'notion-search')],
+      loads: [],
+      sessions: [session('c1', 'claude-code'), session('c2', 'claude-code')],
+    };
+    const tool = buildTree(hookOnly)[0].children[0].children[0];
+    // 정의 1721 × 2세션 = 3442, 응답 50 × 2회 = 100 → 합계 3542
+    expect(tool.description).toContain('3,542tok');
+  });
+
+  it('정의 토큰 미측정이면 응답분은 남기고 미측정을 표시한다', () => {
+    const tool = buildTree(input)[1].children[0].children[0]; // codex/node_repl/js
+    expect(tool.description).toContain('50tok');
+    expect(tool.description).toContain('정의 미측정');
+  });
+
+  it('확신이 낮은 권고는 물음표 없이 (후보)로 표시한다', () => {
+    const lowConfidence: EngineInput = {
+      definitions: [{ serverName: 'notion', toolName: 'notion-update-page',
+        definitionTokens: 3287, scannedAt: '2026-07-19T00:00:00Z',
+        firstScannedAt: '2026-07-19T00:00:00Z' }],
+      calls: [],
+      loads: [{ sessionId: 'c1', serverName: 'notion', toolName: 'notion-update-page',
+        loadedTokens: null }],
+      sessions: [session('c1', 'claude-code')],
+    };
+    const tool = buildTree(lowConfidence)[0].children[0].children[0];
+    expect(tool.description).toContain('(후보)');
+    expect(tool.description).not.toContain('?');
+  });
 });
 
 describe('집계 표시', () => {
