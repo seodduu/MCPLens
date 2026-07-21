@@ -104,6 +104,25 @@ describe('buildTree', () => {
     expect(tool.description).toContain('(후보)');
     expect(tool.description).not.toContain('?');
   });
+
+  it('서버 노드 누적 비용은 자식 툴들의 합과 같다', () => {
+    const twoTools: EngineInput = {
+      definitions: [
+        { serverName: 'notion', toolName: 'notion-update-page', definitionTokens: 3287,
+          scannedAt: '2026-07-19T00:00:00Z', firstScannedAt: '2026-07-19T00:00:00Z' },
+        { serverName: 'notion', toolName: 'notion-create-pages', definitionTokens: 2526,
+          scannedAt: '2026-07-19T00:00:00Z', firstScannedAt: '2026-07-19T00:00:00Z' },
+      ],
+      calls: [],
+      loads: [
+        { sessionId: 'c1', serverName: 'notion', toolName: 'notion-update-page', loadedTokens: null },
+        { sessionId: 'c1', serverName: 'notion', toolName: 'notion-create-pages', loadedTokens: null },
+      ],
+      sessions: [session('c1', 'claude-code')],
+    };
+    const server = buildTree(twoTools)[0].children[0];
+    expect(server.description).toContain('5,813tok');   // 3287 + 2526
+  });
 });
 
 describe('집계 표시', () => {
@@ -120,7 +139,8 @@ describe('집계 표시', () => {
   });
   it('서버 노드에 호출수·응답토큰 합이 들어간다', () => {
     const server = buildTree(input)[0].children[0];
-    expect(server.description).toBe('2회 · 100tok');
+    // 정의 토큰 미측정 — 자식 툴과 동일하게 응답분만 담고 미측정을 표시한다
+    expect(server.description).toBe('2회 · 100tok(정의 미측정)');
   });
 });
 

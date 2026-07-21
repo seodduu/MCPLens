@@ -67,10 +67,18 @@ export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set
     }
     const servers: LensNode[] = [...byServer.entries()].map(([server, rs]) => {
       const serverEnabled = client === 'claude-code' ? managed.get(server)?.enabled : undefined;
+      const serverCost = rs.reduce(
+        (acc, r) => {
+          const c = cumulativeCost(r, callSessions.get(toolCostKey(r.serverName, r.toolName)) ?? 0);
+          return { tokens: acc.tokens + c.tokens,
+            definitionMeasured: acc.definitionMeasured && c.definitionMeasured };
+        },
+        { tokens: 0, definitionMeasured: true },
+      );
       const desc = `${fmtCalls(
         rs.reduce((s, r) => s + r.callCount, 0),
         rs.reduce((s, r) => s + r.reliability.errorCount, 0),
-      )} · ${rs.reduce((s, r) => s + r.responseTokens, 0)}tok`;
+      )} · ${costText(serverCost)}`;
       return {
         kind: 'server' as const,
         id: `${client}/${server}`,
