@@ -60,6 +60,7 @@ export class IngestionCoordinator extends EventEmitter {
   private readonly setTimer: (callback: () => void, delayMs: number) => TimerHandle;
   private readonly drainDebounceMs: number;
   private pendingWatcher: PendingWatchHandle | null = null;
+  private drainTimer: TimerHandle | null = null;
   private drainScheduled = false;
   private drainInFlight = false;
   private drainQueued = false;
@@ -117,17 +118,22 @@ export class IngestionCoordinator extends EventEmitter {
     const watcher = this.pendingWatcher;
     this.pendingWatcher = null;
     this.drainScheduled = false;
+    if (this.drainTimer !== null) {
+      clearTimeout(this.drainTimer);
+      this.drainTimer = null;
+    }
     await watcher?.close();
   }
 
   private scheduleDrain(): void {
     if (this.drainScheduled) return;          // debounce 창이 이미 열림
     this.drainScheduled = true;
-    this.setTimer(() => { void this.runDrain(); }, this.drainDebounceMs);
+    this.drainTimer = this.setTimer(() => { void this.runDrain(); }, this.drainDebounceMs);
   }
 
   private async runDrain(): Promise<void> {
     this.drainScheduled = false;
+    this.drainTimer = null;
     if (!this.pendingWatcher) return;          // 창 도중 stop됨 → 스킵(강등 안전)
     if (this.drainInFlight) { this.drainQueued = true; return; }
     this.drainInFlight = true;
