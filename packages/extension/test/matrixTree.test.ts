@@ -55,6 +55,25 @@ describe('buildTree', () => {
     expect(tool.description).not.toContain('0tok');
   });
 
+  it('로드만 되고 호출 0인 툴은 searchedNotCalled로 표시한다', () => {
+    const loadedOnly: EngineInput = {
+      definitions: [{ serverName: 'notion', toolName: 'notion-update-page',
+        definitionTokens: 3287, scannedAt: '2026-07-19T00:00:00Z',
+        firstScannedAt: '2026-07-19T00:00:00Z' }],
+      calls: [],
+      loads: [{ sessionId: 'c1', serverName: 'notion', toolName: 'notion-update-page',
+        loadedTokens: null }],
+      sessions: [session('c1', 'claude-code')],
+    };
+    const tool = buildTree(loadedOnly)[0].children[0].children[0];
+    expect(tool.searchedNotCalled).toBe(true);
+  });
+
+  it('호출된 툴은 searchedNotCalled가 아니다', () => {
+    const tool = buildTree(input)[1].children[0].children[0]; // codex/node_repl/js (호출됨)
+    expect(tool.searchedNotCalled).toBeFalsy();
+  });
+
   it('로드 세션 수만큼 정의 비용을 곱한다', () => {
     const threeSessions: EngineInput = {
       definitions: [{ serverName: 'notion', toolName: 'notion-update-page',

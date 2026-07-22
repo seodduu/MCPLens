@@ -12,7 +12,8 @@ vi.mock('vscode', () => ({
     contextValue: string | undefined;
     constructor(public label: string) {}
   },
-  ThemeIcon: class { constructor(public id: string) {} },
+  ThemeIcon: class { constructor(public id: string, public color?: unknown) {} },
+  ThemeColor: class { constructor(public id: string) {} },
 }));
 
 import { HookStatusProvider, toRow } from '../src/hookStatusProvider.js';
@@ -63,6 +64,24 @@ describe('HookStatusProvider', () => {
     expect(item.contextValue).toBe('hook-installable');
     expect(item.description).toContain('설치 필요');
     expect(item.iconPath.id).toBe('warning');
+  });
+
+  it('색을 hook/로그 관측으로 정한다: hook 파랑 · 로그만 주황 · 없음 빨강', () => {
+    const provider = new HookStatusProvider();
+    const snap = (hookObserved: boolean, logObserved: boolean) => ({
+      health: 'healthy' as const, hookObserved, logObserved,
+      consecutiveMisses: 0, consecutiveMatches: 1, waitingForCorrelation: 0, lastEventAt: null });
+    provider.setClients([
+      { client: 'claude-code', install: 'installed', snapshot: snap(true, true) },
+      { client: 'codex', install: 'installed', snapshot: snap(false, true) },
+      { client: 'gemini-cli', install: 'installed', snapshot: snap(false, false) },
+    ]);
+    const [hook, logOnly, none] = provider.getChildren();
+    const color = (row: Parameters<typeof provider.getTreeItem>[0]) =>
+      (provider.getTreeItem(row).iconPath as { color: { id: string } }).color.id;
+    expect(color(hook)).toBe('charts.blue');
+    expect(color(logOnly)).toBe('charts.orange');
+    expect(color(none)).toBe('charts.red');
   });
 
   it('attaches the hooksDoctor command for warning/error severity rows', () => {

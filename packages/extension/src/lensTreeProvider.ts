@@ -6,6 +6,18 @@ const ACTION_ICON: Record<string, string> = {
   inspect: 'warning', remove: 'trash', 'filter-server': 'filter', keep: 'check',
 };
 
+/** 아이콘 강조색 — keep(체크) 파랑, inspect(위험) 빨강. 나머지는 기본색. */
+const ACTION_COLOR: Record<string, string> = {
+  keep: 'charts.blue', inspect: 'charts.red',
+};
+
+function actionIcon(action: string): vscode.ThemeIcon {
+  const color = ACTION_COLOR[action];
+  return new vscode.ThemeIcon(
+    ACTION_ICON[action] ?? 'circle-outline',
+    color ? new vscode.ThemeColor(color) : undefined);
+}
+
 export class LensTreeProvider implements vscode.TreeDataProvider<LensNode> {
   private emitter = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.emitter.event;
@@ -30,10 +42,15 @@ export class LensTreeProvider implements vscode.TreeDataProvider<LensNode> {
     else if (n.enabled === false) {
       item.iconPath = new vscode.ThemeIcon('close');
       item.contextValue = 'mcpTool-disabled';
+    } else if (n.searchedNotCalled) {
+      // 로드는 됐으나 호출 0회 — "검색만 되고 호출은 안 됨" 뉘앙스.
+      // 확신이 낮아 권고 아이콘은 억제되더라도 이 사실 자체는 항상 표시한다.
+      item.iconPath = new vscode.ThemeIcon('search', new vscode.ThemeColor('list.warningForeground'));
+      if (n.enabled === true) item.contextValue = 'mcpTool-enabled';
     } else {
       // 확신 낮은 권고는 아이콘으로 강조하지 않는다 (후보일 뿐 확정 아님)
       if (n.action && n.confidence !== 'low')
-        item.iconPath = new vscode.ThemeIcon(ACTION_ICON[n.action] ?? 'circle-outline');
+        item.iconPath = actionIcon(n.action);
       if (n.enabled === true) item.contextValue = 'mcpTool-enabled';
     }
     return item;

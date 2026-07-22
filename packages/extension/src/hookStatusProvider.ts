@@ -6,6 +6,13 @@ const ICON: Record<CollectionHealthPresentation['severity'], string> = {
   ok: 'pass', info: 'clock', warning: 'warning', error: 'error', idle: 'circle-outline',
 };
 
+/** 수집상태 색: hook 살아있으면 파랑, 로그만이면 주황, 모두 없으면 빨강. */
+function collectionColor(snapshot?: CollectionHealthSnapshot): string {
+  if (snapshot?.hookObserved) return 'charts.blue';
+  if (snapshot?.logObserved) return 'charts.orange';
+  return 'charts.red';
+}
+
 export interface ClientRowInput {
   client: HookClient;
   install: InstallState;
@@ -18,6 +25,8 @@ export interface ClientRow {
   description: string;
   tooltip: string;
   severity: CollectionHealthPresentation['severity'];
+  /** 아이콘 강조색 — hook 파랑 / 로그만 주황 / 없음 빨강 */
+  colorId: string;
   contextValue: 'hook-installable' | 'hook-installed';
 }
 
@@ -29,6 +38,7 @@ export function toRow(input: ClientRowInput): ClientRow {
     description: p.description,
     tooltip: p.tooltip,
     severity: p.severity,
+    colorId: collectionColor(input.snapshot),
     contextValue: input.install === 'not-installed' ? 'hook-installable' : 'hook-installed',
   };
 }
@@ -49,7 +59,7 @@ export class HookStatusProvider implements vscode.TreeDataProvider<ClientRow> {
     item.tooltip = row.tooltip;
     item.id = row.client;
     item.contextValue = row.contextValue;
-    item.iconPath = new vscode.ThemeIcon(ICON[row.severity]);
+    item.iconPath = new vscode.ThemeIcon(ICON[row.severity], new vscode.ThemeColor(row.colorId));
     if (row.severity === 'warning' || row.severity === 'error') {
       item.command = { command: 'mcp-lens.hooksDoctor', title: 'MCP Lens: Hook 진단', arguments: [row.client] };
     }

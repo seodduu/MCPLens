@@ -17,6 +17,8 @@ export interface LensNode {
   action?: MatrixRow['recommendation']['action'];
   /** 확신 등급 — low는 아이콘 강조에서 제외한다 */
   confidence?: RecommendationConfidence;
+  /** 로드는 됐으나 호출 0회(검색 공간 오염) — "검색만 됨" 표시용 */
+  searchedNotCalled?: boolean;
   /** deny/서버 토글용 — 서버·툴 노드에 채움 */
   client?: string;
   serverName?: string;
@@ -164,6 +166,7 @@ export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set
             tooltip: r.recommendation.reason,
             action,
             confidence,
+            searchedNotCalled: r.loadPattern === 'search-pollution',
             client, serverName: server, toolName: r.toolName,
             enabled,
             children: [],
