@@ -2,7 +2,7 @@
   "name": "mcp-context-lens",
   "displayName": "MCP Context Lens",
   "description": "Automatically accounts for MCP context usage across Claude Code, Codex, and Gemini CLI.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "seodduu",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -74,14 +74,38 @@
     ],
     "menus": {
       "commandPalette": [
-        { "command": "mcp-lens.removeTool", "when": "false" },
-        { "command": "mcp-lens.addTool", "when": "false" },
-        { "command": "mcp-lens.removeServer", "when": "false" },
-        { "command": "mcp-lens.addServer", "when": "false" },
-        { "command": "mcp-lens.installHooks", "when": "false" },
-        { "command": "mcp-lens.uninstallHooks", "when": "false" },
-        { "command": "mcp-lens.hooksPause", "when": "!mcpLens.hooksPaused" },
-        { "command": "mcp-lens.hooksResume", "when": "mcpLens.hooksPaused" }
+        {
+          "command": "mcp-lens.removeTool",
+          "when": "false"
+        },
+        {
+          "command": "mcp-lens.addTool",
+          "when": "false"
+        },
+        {
+          "command": "mcp-lens.removeServer",
+          "when": "false"
+        },
+        {
+          "command": "mcp-lens.addServer",
+          "when": "false"
+        },
+        {
+          "command": "mcp-lens.installHooks",
+          "when": "false"
+        },
+        {
+          "command": "mcp-lens.uninstallHooks",
+          "when": "false"
+        },
+        {
+          "command": "mcp-lens.hooksPause",
+          "when": "!mcpLens.hooksPaused"
+        },
+        {
+          "command": "mcp-lens.hooksResume",
+          "when": "mcpLens.hooksPaused"
+        }
       ],
       "view/item/context": [
         {
@@ -144,7 +168,10 @@
         },
         "mcpLens.reportDetail": {
           "type": "string",
-          "enum": ["summary", "full"],
+          "enum": [
+            "summary",
+            "full"
+          ],
           "default": "summary",
           "enumDescriptions": [
             "조치 목록 위주로 요약합니다. 후보·정상 툴 목록은 상위 5개까지만 표시 (기본)",
@@ -154,7 +181,11 @@
         },
         "mcpLens.autoScan": {
           "type": "string",
-          "enum": ["prompt", "always", "never"],
+          "enum": [
+            "prompt",
+            "always",
+            "never"
+          ],
           "default": "prompt",
           "enumDescriptions": [
             "스캔할 서버가 새로 감지되면 물어봅니다 (기본)",
@@ -165,13 +196,17 @@
         },
         "mcpLens.authIgnore": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "markdownDescription": "로그인 필요 알림을 다시 띄우지 않을 MCP 서버 이름 목록. `이 서버는 묻지 않음` 버튼으로 자동 추가됩니다."
         },
         "mcpLens.unsupportedServers": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "markdownDescription": "Lens가 지원하지 않는다고 판정한 MCP 서버 이름 목록(자동 클라이언트 등록을 거부하는 서버 등). 로그인 시도 중 자동 추가되며, 트리에서 숨겨지고 다시 로그인을 묻지 않습니다."
         }
