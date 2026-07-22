@@ -1,6 +1,6 @@
 {
-  "name": "mcp-lens",
-  "displayName": "MCP Lens",
+  "name": "mcp-context-lens",
+  "displayName": "MCP Context Lens",
   "description": "Automatically accounts for MCP context usage across Claude Code, Codex, and Gemini CLI.",
   "version": "0.1.0",
   "publisher": "seodduu",
