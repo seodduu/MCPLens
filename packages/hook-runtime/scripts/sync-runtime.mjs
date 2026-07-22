@@ -57,6 +57,9 @@ export function canonicalRuntimeEntries() {
     ['package.json', '{\n  "type": "module"\n}\n'],
     ['ingest/contracts.js', compiled('ingest/contracts.js')],
     ['ingest/identity.js', compiled('ingest/identity.js')],
+    // inbox.js가 import하므로 반드시 함께 복사한다. core가 lease를 별도 모듈로
+    // 분리했을 때 이 목록이 갱신되지 않아, 재동기화 시 런타임이 깨졌다.
+    ['ingest/lease.js', compiled('ingest/lease.js')],
     ['ingest/inbox.js', standaloneInbox()],
     ['ingest/clients/claude/decoder.js', compiled('ingest/clients/claude/decoder.js')],
     ['ingest/clients/codex/decoder.js', compiled('ingest/clients/codex/decoder.js')],

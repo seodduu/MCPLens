@@ -26,6 +26,7 @@ const runtimeFiles = [
   'package.json',
   'ingest/contracts.js',
   'ingest/identity.js',
+  'ingest/lease.js',
   'ingest/inbox.js',
   'ingest/clients/claude/decoder.js',
   'ingest/clients/codex/decoder.js',
@@ -211,15 +212,22 @@ function assertHookCommand(command, client, packageRoot, runner) {
 function expectedPendingEntry(entries) {
   assert.equal(entries.length, 1, `unexpected pending artifacts: ${JSON.stringify(entries)}`);
   assert.equal(entries[0].type, 'file', 'pending artifact must be a regular file');
-  assert.match(entries[0].path, /^[A-Za-z0-9][A-Za-z0-9._:-]*\.json$/);
+  // `~` 는 deliveryId의 `:` 를 파일명용으로 인코딩한 것이다(inbox.ts fileStem).
+  // Windows에서 `:` 가 예약 문자라 파일명에 그대로 쓸 수 없다.
+  assert.match(entries[0].path, /^[A-Za-z0-9][A-Za-z0-9._~-]*\.json$/);
   return entries[0];
+}
+
+/** inbox.ts의 fileStem과 같은 인코딩 — `:` 는 Windows 파일명 예약 문자다. */
+function fileStem(deliveryId) {
+  return deliveryId.replaceAll(':', '~');
 }
 
 function assertPendingArtifacts(pendingRoot) {
   const entry = expectedPendingEntry(entriesBelow(pendingRoot));
   const pendingPath = join(pendingRoot, entry.path);
   const envelope = readJson(pendingPath);
-  assert.equal(entry.path, `${envelope.deliveryId}.json`, 'pending filename must match deliveryId');
+  assert.equal(entry.path, `${fileStem(envelope.deliveryId)}.json`, 'pending filename must match deliveryId');
   return pendingPath;
 }
 
@@ -229,7 +237,7 @@ function assertPendingEnvelopeCount(pendingRoot, expectedCount) {
   const envelopes = entries.map((entry) => {
     assert.equal(entry.type, 'file', 'pending artifact must be a regular file');
     const envelope = readJson(join(pendingRoot, entry.path));
-    assert.equal(entry.path, `${envelope.deliveryId}.json`, 'pending filename must match deliveryId');
+    assert.equal(entry.path, `${fileStem(envelope.deliveryId)}.json`, 'pending filename must match deliveryId');
     return envelope;
   });
   assert.equal(new Set(envelopes.map((envelope) => envelope.deliveryId)).size, expectedCount);
