@@ -182,10 +182,24 @@ export async function activate(ctx: vscode.ExtensionContext) {
   let mode = chooseMode(lease.tryAcquire());
   let roPoll: ReturnType<typeof setInterval> | undefined;
   let watcherStarted = false; // 워처는 오직 enterWriter를 통해서만, 홀더당 한 번만 시작한다.
+  let stopping: Promise<void> | undefined; // enterReadOnly가 시작한 watcher.stop()이 아직 안 끝났으면 보관
 
   // 모드와 무관하게 최후 방어선으로 가드를 걸어 둔다: 비홀더가 어떤 경로로든
   // save()를 시도하면(예: 강등 경합 중 남은 콜백) StaleWriterError로 즉시 차단된다.
   store.setWriteGuard(() => lease!.isHolder());
+
+  const isStaleWriterError = (e: unknown): boolean =>
+    e instanceof Error && e.name === 'StaleWriterError';
+  const ignoreStaleWriterError = (e: unknown) => {
+    if (!isStaleWriterError(e)) console.error('MCP Lens: drain failed', e);
+  };
+
+  // writer/read-only 전환과 무관하게 refresh 리스너는 activation당 한 번만 등록한다.
+  // 반복되는 failover(enterWriter 재호출)마다 등록하면 중복 리스너가 누적된다.
+  // refresh는 읽기 전용이고, 이 이미터들은 writer 경로가 살아있을 때만 이벤트를 낸다.
+  coordinator?.on('ingested', refresh);
+  coordinator?.on('receipt', refresh);
+  watcher!.on('ingested', refresh);
 
   function enterWriter() {
     mode = 'writer';
@@ -194,18 +208,22 @@ export async function activate(ctx: vscode.ExtensionContext) {
     watcherStarted = true;
     void coordinator?.drainInbox()
       .then(() => watcher!.backfill()) // 시작 시 밀린 세션 따라잡기 (기능 2)
-      .then(() => { refresh(); });
-    coordinator?.on('ingested', refresh);
-    coordinator?.on('receipt', refresh);
-    watcher!.on('ingested', refresh);
-    watcher!.start();
+      .then(() => { refresh(); })
+      .catch(ignoreStaleWriterError);
+    // 직전 강등에서 시작한 watcher.stop()이 아직 닫히는 중이면, 새 start() 전에 끝나길 기다린다
+    // (LogWatcher.start()가 비멱등이라 stop 도중 재시작하면 경합이 생긴다).
+    const pending = stopping;
+    stopping = undefined;
+    const startWatcher = () => watcher!.start();
+    if (pending) void pending.catch(() => {}).then(startWatcher);
+    else startWatcher();
     lease!.startHeartbeat(() => enterReadOnly()); // renew 실패 → 강등
   }
 
   function enterReadOnly() {
     mode = 'read-only';
     watcherStarted = false;
-    void watcher?.stop(); // 쓰기 경로 정지: 워처를 멈춘다. 코디네이터 drain은 호출하지 않는다.
+    stopping = watcher?.stop(); // 쓰기 경로 정지: 워처를 멈춘다. 코디네이터 drain은 호출하지 않는다.
     let lastMtime = 0;
     if (!roPoll) roPoll = setInterval(() => {
       try {
