@@ -32,6 +32,7 @@ const runtimeFiles = [
   'ingest/clients/codex/decoder.js',
   'ingest/clients/gemini/decoder.js',
   'hook-capture.mjs',
+  'runtime-stamp.json',
 ];
 const runtimeTree = (() => {
   const entries = new Map();
