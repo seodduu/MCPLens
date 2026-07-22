@@ -217,3 +217,96 @@ describe('IngestionCoordinator pending watcher', () => {
     await coord.stopDraining();          // 두 번째는 no-op(예외 없음)
   });
 });
+
+describe('IngestionCoordinator pause/resume', () => {
+  it('pause() 후 isPaused가 true이고 주입된 워처의 close()가 호출된다', async () => {
+    const root = temporaryRoot();
+    const watch = fakeWatch();
+    const timer = manualTimer();
+    const coord = new IngestionCoordinator({
+      store: { upsertObservation: vi.fn().mockResolvedValue(undefined) }, inbox: { root },
+      watchFactory: () => watch, setTimer: timer.setTimer,
+    });
+    await coord.startDraining();
+
+    await coord.pause();
+
+    expect(coord.isPaused).toBe(true);
+    expect(watch.closed).toBe(true);
+  });
+
+  it('중지 중 startDraining()은 워처를 만들지 않는다', async () => {
+    const root = temporaryRoot();
+    let made = 0;
+    const timer = manualTimer();
+    const coord = new IngestionCoordinator({
+      store: { upsertObservation: vi.fn().mockResolvedValue(undefined) }, inbox: { root },
+      watchFactory: () => { made += 1; return fakeWatch(); }, setTimer: timer.setTimer,
+    });
+    await coord.startDraining();
+    made = 0; // 초기 시작분 제외
+    await coord.pause();
+
+    await coord.startDraining(); // failover 재승격 등으로 재호출되어도
+
+    expect(made).toBe(0);        // 워처는 새로 만들어지지 않는다
+  });
+
+  it('pause() → resume() → startDraining()이면 워처가 다시 생성된다', async () => {
+    const root = temporaryRoot();
+    const watches = [fakeWatch(), fakeWatch()];
+    let made = 0;
+    const timer = manualTimer();
+    const coord = new IngestionCoordinator({
+      store: { upsertObservation: vi.fn().mockResolvedValue(undefined) }, inbox: { root },
+      watchFactory: () => watches[made++]!, setTimer: timer.setTimer,
+    });
+    await coord.startDraining();
+    await coord.pause();
+
+    coord.resume();
+    await coord.startDraining();
+
+    expect(made).toBe(2);                 // 재개 후 새 워처 생성
+    expect(coord.isPaused).toBe(false);
+  });
+
+  it('pause() 2회 연속 호출이 안전하다(멱등)', async () => {
+    const root = temporaryRoot();
+    const watch = fakeWatch();
+    const timer = manualTimer();
+    const coord = new IngestionCoordinator({
+      store: { upsertObservation: vi.fn().mockResolvedValue(undefined) }, inbox: { root },
+      watchFactory: () => watch, setTimer: timer.setTimer,
+    });
+    await coord.startDraining();
+
+    await coord.pause();
+    await coord.pause(); // 두 번째 호출도 예외 없이 안전
+
+    expect(coord.isPaused).toBe(true);
+  });
+
+  it('중지 중 pending에 쌓인 봉투가 resume+startDraining 후 drain된다', async () => {
+    const root = temporaryRoot();
+    const watches = [fakeWatch(), fakeWatch()];
+    let made = 0;
+    const upsert = vi.fn().mockResolvedValue(undefined);
+    const timer = manualTimer();
+    const coord = new IngestionCoordinator({
+      store: { upsertObservation: upsert }, inbox: { root },
+      watchFactory: () => watches[made++]!, setTimer: timer.setTimer,
+    });
+    await coord.startDraining();
+    await coord.pause();
+    upsert.mockClear();
+
+    enqueueEnvelope(envelope('paused-1'), { root }); // 중지 중 발화한 훅 봉투
+
+    coord.resume();
+    await coord.startDraining(); // ready-후 1회 drain이 밀린 봉투를 흡수
+
+    expect(upsert).toHaveBeenCalledTimes(1);
+    await coord.stopDraining();
+  });
+});

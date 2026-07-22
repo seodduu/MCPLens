@@ -8,6 +8,7 @@ import { LensStore, LogWatcher, dbPath, dbWriterLockPath,
   buildReport, renderReport } from '@mcp-lens/core';
 import { WriterLeaseManager } from './writerLease.js';
 import { chooseMode } from './leaseMode.js';
+import { collectAction } from './pauseDecision.js';
 import { formatStatus, wasteTooltip } from './statusBar.js';
 import { buildTree } from './matrixTree.js';
 import type { LensNode } from './matrixTree.js';
@@ -26,13 +27,16 @@ import { pendingHookClients } from './nudge.js';
 let watcher: LogWatcher | undefined;
 let store: LensStore | undefined;
 let lease: WriterLeaseManager | undefined;
+let hooksPaused = false;
 
 type IngestionCoordinatorLike = {
   drainInbox(): Promise<unknown>;
   startDraining(): Promise<void>;
   stopDraining(): Promise<void>;
   on(event: 'ingested' | 'receipt' | 'drain-error', listener: (arg?: unknown) => void): unknown;
-  pause?: () => void | Promise<void>;
+  pause(): Promise<void>;
+  resume(): void;
+  readonly isPaused: boolean;
 };
 
 function coordinatorFor(store: LensStore): IngestionCoordinatorLike | undefined {
@@ -43,6 +47,7 @@ function coordinatorFor(store: LensStore): IngestionCoordinatorLike | undefined 
 }
 
 export async function activate(ctx: vscode.ExtensionContext) {
+  void vscode.commands.executeCommand('setContext', 'mcpLens.hooksPaused', false);
   const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   item.text = 'Lens: starting…'; item.command = 'mcp-lens.showReport'; item.show();
   ctx.subscriptions.push(item);
@@ -208,8 +213,11 @@ export async function activate(ctx: vscode.ExtensionContext) {
     mode = 'writer';
     if (roPoll) { clearInterval(roPoll); roPoll = undefined; }
     if (watcherStarted) return; // 이미 이 홀더로 writer 경로가 구동 중 — 중복 시작 방지
-    void coordinator?.startDraining()  // 즉시 1회 drain + pending 상시 감시
-      .then(() => watcher!.backfill()) // 시작 시 밀린 세션 따라잡기 (기능 2)
+    const hookStep = collectAction(hooksPaused, 'writer') === 'start'
+      ? (coordinator?.startDraining() ?? Promise.resolve())  // 즉시 1회 drain + pending 상시 감시
+      : Promise.resolve();                                   // 중지 중이면 훅 감시는 건너뛴다
+    void hookStep
+      .then(() => watcher!.backfill()) // 시작 시 밀린 세션 따라잡기 (기능 2), 중지 중에도 로그 백필은 돈다
       .then(() => { refresh(); })
       .catch(ignoreStaleWriterError);
     // 직전 강등에서 시작한 watcher.stop()이 아직 닫히는 중이면, 새 start() 전에 끝나길 기다린다
@@ -374,13 +382,25 @@ export async function activate(ctx: vscode.ExtensionContext) {
       void vscode.window.showInformationMessage(`MCP Lens 수집 상태 — ${summary}`);
     }),
     vscode.commands.registerCommand('mcp-lens.hooksPause', async () => {
-      if (coordinator?.pause) {
-        await coordinator.pause();
-        void vscode.window.showInformationMessage('MCP Lens Hook 수집을 일시 중지했습니다.');
-      } else {
-        void vscode.window.showWarningMessage(
-          '이 버전에서는 Hook 수집을 확장에서 일시 중지할 수 없습니다. 클라이언트의 Hook 또는 플러그인을 비활성화하세요.');
+      if (!coordinator) {
+        void vscode.window.showWarningMessage('MCP Lens: 수집기가 초기화되지 않아 중지할 수 없습니다.');
+        return;
       }
+      hooksPaused = true;
+      await coordinator.pause();
+      void vscode.commands.executeCommand('setContext', 'mcpLens.hooksPaused', true);
+      void vscode.window.showInformationMessage(
+        'MCP Lens: Hook 수집을 일시 중지했습니다. 중지 중 발생한 훅은 보관되었다가 재개 시 반영됩니다 (VS Code 재시작 시 자동 재개).');
+    }),
+    vscode.commands.registerCommand('mcp-lens.hooksResume', async () => {
+      if (!coordinator) return;
+      hooksPaused = false;
+      coordinator.resume();
+      void vscode.commands.executeCommand('setContext', 'mcpLens.hooksPaused', false);
+      if (collectAction(hooksPaused, mode) === 'start') {
+        await coordinator.startDraining().catch(ignoreStaleWriterError);
+      }
+      void vscode.window.showInformationMessage('MCP Lens: Hook 수집을 재개했습니다.');
     }));
 }
 
