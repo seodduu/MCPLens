@@ -64,6 +64,7 @@ export class IngestionCoordinator extends EventEmitter {
   private drainScheduled = false;
   private drainInFlight = false;
   private drainQueued = false;
+  private paused = false;
 
   constructor(private readonly options: IngestionCoordinatorOptions) {
     super();
@@ -100,6 +101,7 @@ export class IngestionCoordinator extends EventEmitter {
 
   /** pending 감시를 시작하고, chokidar 초기 스캔(ready) 완료 후 1회 drain(밀린 봉투 흡수). 멱등. */
   async startDraining(): Promise<void> {
+    if (this.paused) return;               // ← 중지 중 승격/재승격이 수집을 되살리지 못한다
     if (this.pendingWatcher) return;
     const pendingDir = inboxPaths(this.options.inbox ?? {}).pending; // 디렉토리 생성 보장
     const watcher = this.watchFactory([pendingDir], {
@@ -124,6 +126,22 @@ export class IngestionCoordinator extends EventEmitter {
     }
     await watcher?.close();
   }
+
+  /** 훅 수집을 일시 중지한다(세션 한정). pending 봉투는 inbox에 남고 재개 시 흡수된다. 멱등. */
+  async pause(): Promise<void> {
+    this.paused = true;
+    await this.stopDraining();
+  }
+
+  /**
+   * 일시 중지를 해제한다. 감시 재개는 호출자가 startDraining()으로 한다 —
+   * 재개해도 되는지(writer 리스 보유 여부)는 코어가 아니라 확장만 안다. 멱등.
+   */
+  resume(): void {
+    this.paused = false;
+  }
+
+  get isPaused(): boolean { return this.paused; }
 
   private scheduleDrain(): void {
     if (this.drainScheduled) return;          // debounce 창이 이미 열림
