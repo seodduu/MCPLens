@@ -22,6 +22,7 @@ import {
 import { CodexHookInstaller } from './installers/codex.js';
 import { GeminiHookInstaller } from './installers/gemini.js';
 import { findBinary, runBin, nodeFs } from './claudeCli.js';
+import { bundledStamp, installedStamp, needsRuntimeRefresh, recordInstalledStamp } from './runtimeFreshness.js';
 import { pendingHookClients } from './nudge.js';
 
 let watcher: LogWatcher | undefined;
@@ -59,15 +60,51 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
   const DISMISS_KEY = 'mcpLens.hookInstall.dismissed';
 
+  function bundledDirFor(client: HookClient): string {
+    return path.join(__dirname,
+      client === 'claude-code' ? 'claude-marketplace'
+      : client === 'codex' ? 'codex-marketplace' : 'gemini-extension');
+  }
+
+  const lensHomeDir = (): string => require('node:os').homedir() as string;
+
+  /**
+   * 설치된 훅 런타임이 번들과 다르면 조용히 재설치한다.
+   *
+   * 확장은 자동 업데이트되지만 런타임 사본은 훅 설치 시점에 고정된다. 둘이
+   * 어긋나면 수집이 아무 표시 없이 망가진다(실측: 툴 호출 봉투 전량 유실).
+   * 사용자가 스스로 알아낼 방법이 없으므로 확장이 감지해 되돌린다.
+   */
+  async function refreshStaleRuntimes(inputs: ClientRowInput[]): Promise<boolean> {
+    const home = lensHomeDir();
+    let refreshed = false;
+    for (const input of inputs) {
+      const bundled = bundledStamp(nodeFs, bundledDirFor(input.client), input.client);
+      if (!needsRuntimeRefresh(input.install, bundled, installedStamp(nodeFs, home, input.client))) continue;
+
+      const installer = installerFor(input.client);
+      await installer.uninstall();          // 실패해도 install이 멱등하게 덮는다
+      const result = await installer.install();
+      if (result.kind === 'ok') {
+        recordInstalledStamp(nodeFs, home, input.client, bundled!);
+        refreshed = true;
+        void vscode.window.showInformationMessage(
+          `MCP Lens: ${input.client} 훅 런타임을 최신으로 갱신했습니다 — 새 세션부터 적용됩니다.`);
+      } else {
+        void vscode.window.showWarningMessage(
+          `MCP Lens: ${input.client} 훅 런타임이 낡았습니다. 수집이 부정확할 수 있으니 훅을 제거 후 다시 설치해 주세요.`);
+      }
+    }
+    return refreshed;
+  }
+
   function installerFor(client: HookClient): ClientHookInstaller {
     const deps: InstallerDeps = {
       home: require('node:os').homedir(),
       findBinary,
       run: runBin,
       fs: nodeFs,
-      bundledDir: path.join(__dirname,
-        client === 'claude-code' ? 'claude-marketplace'
-        : client === 'codex' ? 'codex-marketplace' : 'gemini-extension'),
+      bundledDir: bundledDirFor(client),
     };
     return client === 'claude-code' ? new ClaudeHookInstaller(deps)
       : client === 'codex' ? new CodexHookInstaller(deps)
@@ -76,6 +113,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
   let lastCollectionInputs: ClientRowInput[] = [];
   let collectionGeneration = 0;
+  let runtimeChecked = false;
 
   ctx.subscriptions.push(
     vscode.commands.registerCommand('mcp-lens.installHooks', async (node?: { client?: HookClient }) => {
@@ -83,7 +121,11 @@ export async function activate(ctx: vscode.ExtensionContext) {
       const r = await installerFor(client).install();
       if (r.kind === 'client-missing') void vscode.window.showWarningMessage(`MCP Lens: ${client} CLI를 찾을 수 없습니다.`);
       else if (r.kind === 'failed') void vscode.window.showErrorMessage(`MCP Lens ${client} 훅 설치 실패 (${r.step}): ${r.stderr.slice(0, 300)}`);
-      else void vscode.window.showInformationMessage(`MCP Lens: ${client} 훅 설치 완료 — 새 세션부터 수집이 시작됩니다.`);
+      else {
+        const stamp = bundledStamp(nodeFs, bundledDirFor(client), client);
+        if (stamp !== null) recordInstalledStamp(nodeFs, lensHomeDir(), client, stamp);
+        void vscode.window.showInformationMessage(`MCP Lens: ${client} 훅 설치 완료 — 새 세션부터 수집이 시작됩니다.`);
+      }
       await computeCollection();
     }),
     vscode.commands.registerCommand('mcp-lens.uninstallHooks', async (node?: { client?: HookClient }) => {
@@ -138,6 +180,10 @@ export async function activate(ctx: vscode.ExtensionContext) {
     if (gen === collectionGeneration) {
       lastCollectionInputs = inputs;
       hookStatusProvider.setClients(inputs);
+    }
+    if (!runtimeChecked) {
+      runtimeChecked = true;               // 세션당 1회 — 매 refresh마다 CLI를 돌리지 않는다
+      if (await refreshStaleRuntimes(inputs)) void computeCollection();
     }
     return inputs;
   }

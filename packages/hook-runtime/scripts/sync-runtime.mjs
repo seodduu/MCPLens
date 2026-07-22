@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -52,7 +53,36 @@ function standaloneGeminiDecoder() {
   );
 }
 
+/**
+ * 런타임 내용 지문. 확장은 이 값으로 "설치된 훅 런타임이 번들과 같은가"를 판정한다.
+ *
+ * 확장이 마켓플레이스에서 자동 업데이트돼도 이미 설치된 런타임 사본은 그대로
+ * 남는다. 그 낡은 사본이 조용히 다른 형식을 만들어내면(실측: inbox 파일명)
+ * 수집이 망가진 채로 원인 표시 없이 방치된다 — 그걸 감지하는 유일한 수단이다.
+ * 버전 번호가 아니라 내용 해시인 이유: 런타임은 core에서 생성되므로 사람이
+ * 올려야 하는 번호는 반드시 잊힌다.
+ */
+function runtimeStamp(entries) {
+  const hash = createHash('sha256');
+  for (const [relative, content] of entries) {
+    hash.update(relative);
+    hash.update('\0');
+    hash.update(content);
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
+
 export function canonicalRuntimeEntries() {
+  const entries = baseRuntimeEntries();
+  const stamp = runtimeStamp(entries);
+  return new Map([
+    ...entries,
+    ['runtime-stamp.json', `${JSON.stringify({ stamp }, null, 2)}\n`],
+  ]);
+}
+
+function baseRuntimeEntries() {
   return new Map([
     ['package.json', '{\n  "type": "module"\n}\n'],
     ['ingest/contracts.js', compiled('ingest/contracts.js')],
