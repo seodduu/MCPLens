@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { acquireLease, renewLease, releaseLease, readLease } from '../../src/ingest/lease.js';
+import { acquireLease, renewLease, releaseLease, readLease, takeOverLease, installLease } from '../../src/ingest/lease.js';
 
 let dir: string; let lock: string;
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'lease-')); lock = join(dir, 'w.lock'); });
@@ -40,6 +40,28 @@ describe('lease', () => {
     t = 5000;
     const b = acquireLease(lock, 1000, now);
     expect(b).not.toBeNull();
+  });
+
+  it('split-brain: check와 write 사이 인수당하면 renew는 null이고 B의 정체성을 오염시키지 않는다', () => {
+    let t = 1000; const now = () => t;
+    const a = acquireLease(lock, 1000, now)!;
+    // check(readLease) 직후·write 직전에 경쟁자 B의 완전한 인수를 끼워넣는다.
+    let ran = false;
+    const r = renewLease(lock, a.token, 1000, now, {
+      beforeWrite: () => {
+        ran = true;
+        expect(takeOverLease(lock, a.token)).toBe(true);
+        expect(installLease(lock, { token: 'B', expiresAt: 9999 })).toBe(true);
+      },
+    });
+    expect(ran).toBe(true);
+    // 단언 1: A는 졌다.
+    expect(r).toBeNull();
+    // 단언 2: B의 정체성 토큰은 오염되지 않았다 (둘 다 홀더면 여기서 실패).
+    const after = readLease(lock)!;
+    expect(after.token).toBe('B');
+    // 단언 3: B의 만료도 A가 넣은 값으로 오염되지 않았다.
+    expect(after.expiresAt).toBe(9999);
   });
 
   it('release 후 재획득 가능', () => {

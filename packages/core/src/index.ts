@@ -3,6 +3,7 @@ export * from './types.js';
 export * from './ingest/contracts.js';
 export * from './ingest/identity.js';
 export * from './ingest/coordinator.js';
+export * from './ingest/lease.js';
 export * from './health/collectionHealth.js';
 export * from './paths.js';
 export { countTokens } from './tokenize.js';

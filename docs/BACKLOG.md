@@ -33,22 +33,20 @@
 | state 파라미터 | OAuth 콜백에 state 검증 없음 — PKCE+루프백이 1차 방어라 관례상 수용, 심층 방어로 추가 여지 |
 | 재로그인 redirect_uri | 로그인마다 임시 포트가 달라 등록된 client의 redirect_uri와 불일치 가능(RFC 8252 §7.3상 서버가 포트 무시해야 정상) — vercel 1회 로그인은 성공, **재로그인 반복 케이스는 미검증** |
 
-## 단일 writer 리스 Wave 1 이월 (renewLease 인수 레이스) — **Wave 2 선행 필수**
+## ~~단일 writer 리스 Wave 1 이월 (renewLease 인수 레이스)~~ — **해결됨 (2026-07-22, Task 4.0)**
 
-`renewLease`(`packages/core/src/ingest/lease.ts`)에 split-brain 레이스가 있다. 함수는
-owner를 읽어 토큰을 확인한 뒤(check), `lockPath` 안에 tmp를 쓰고 `owner.json`으로 rename
-(act)하는데, 이 사이(TOCTOU)에 경쟁자가 `acquireLease`→`takeOverLease`로 락 디렉토리를
-치우고 새 토큰 B로 재설치하면, A의 write가 **B의 새 디렉토리**에 떨어져 B의 owner.json을
-토큰 A로 덮어쓴다. 결과: 두 프로세스가 동시에 자신을 홀더로 착각 → 리스가 막으려던 바로 그
-lost-update 조건. (계획서가 지정한 코드 그대로이며, 최종 whole-branch 리뷰가 Important로 적발.)
-
-- **Wave 1 영향 없음**: `renewLease` 호출자가 이 브랜치에 없다(하트비트 배선은 Wave 2 Task 4·5).
-- **왜 즉수정 안 함**: inode 가드로 *탐지*는 되지만, 탐지 시점엔 이미 B의 owner.json을
-  훼손한 뒤다 — rename 기반 배타 불변식을 보존하는 올바른 renew(자기-인수/identity-keyed
-  atomic swap)는 실제 설계가 필요. 리뷰 압박 하 인라인 패치로 리스 알고리즘을 발명하지 않기로
-  사용자 결정(2026-07-22).
-- **Wave 2 착수 전 반드시**: 인터리브드-인수 레이스를 재현하는 실패 테스트 → 신뢰도 있는 renew
-  재설계 → 통과. `WriterLeaseManager` 하트비트(TTL 30s / 갱신 10s)가 이 renew에 의존한다.
+`renewLease`의 split-brain(TOCTOU) 레이스를 **정체성/만료 분리**로 재설계해 제거했다.
+- **무엇을**: renew가 정체성의 원천 `owner.json`을 통째로 덮어쓰던 것을 멈추고, 만료만 담은
+  별도 사이드카 `expiry.json`({token, expiresAt})을 tmp+rename으로 원자적 기록하도록 바꿨다.
+  `readLease`는 token을 항상 owner.json에서 읽고, expiry.json은 그 token이 owner의 token과
+  **일치할 때만** 만료를 반영한다.
+- **왜 race-free**: check와 write 사이 경쟁자 B가 인수해도 (1) B의 owner.json은 renew가 안 쓰므로
+  정체성 오염 불가, (2) A가 쓴 expiry.json의 token(A)은 B의 owner token과 불일치 → readLease가
+  무시(B 만료도 안전), (3) write 후 재확인에서 owner token이 B → A는 null(패배). inode 가드처럼
+  *탐지 후 훼손*이 아니라 **구조적으로 훼손 자체가 불가능**하다.
+- **어떻게 증명**: `lease.test.ts`에 beforeWrite seam으로 인터리브드-인수를 결정론적으로 재현하는
+  split-brain 실패 테스트 추가 → 재설계 후 통과. inbox 22개 포함 무회귀. lease API를 core 배럴로
+  export해 `WriterLeaseManager`(TTL 30s / 갱신 10s)가 소비 가능.
 
 ## 상태바 지표 재정의 (2026-07-21) — **착수 가능**
 

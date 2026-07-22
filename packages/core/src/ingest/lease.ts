@@ -30,6 +30,18 @@ export function installLease(lockPath: string, lease: Lease): boolean {
 }
 
 export function readLease(lockPath: string): Lease | null {
+  const owner = readOwner(lockPath);
+  if (!owner) return owner;
+  // 정체성(token)은 항상 owner.json에서. 만료(expiresAt)는 별도 사이드카(expiry.json)가
+  // 존재하고 그 token이 owner의 token과 일치할 때만 반영한다(renew 소유물임을 표식).
+  const expiry = readExpiry(lockPath);
+  return expiry && expiry.token === owner.token
+    ? { token: owner.token, expiresAt: expiry.expiresAt }
+    : owner;
+}
+
+/** owner.json만으로 결정되는 정체성 리스. expiry 사이드카는 보지 않는다. */
+function readOwner(lockPath: string): Lease | null {
   try {
     const raw = readFileSync(join(lockPath, 'owner.json'), 'utf8');
     let value: Partial<Lease>;
@@ -46,6 +58,19 @@ export function readLease(lockPath: string): Lease | null {
       return existsSync(lockPath) ? { token: lockInstanceToken(lockPath, ''), expiresAt: 0 } : null;
     }
     throw error;
+  }
+}
+
+/** 만료 사이드카를 읽는다. 없거나 형식이 어긋나면 null(=owner.json 만료를 사용). */
+function readExpiry(lockPath: string): Lease | null {
+  try {
+    const raw = readFileSync(join(lockPath, 'expiry.json'), 'utf8');
+    const value = JSON.parse(raw) as Partial<Lease>;
+    return typeof value.token === 'string' && typeof value.expiresAt === 'number'
+      ? { token: value.token, expiresAt: value.expiresAt }
+      : null;
+  } catch {
+    return null;
   }
 }
 
@@ -94,22 +119,35 @@ export function acquireLease(lockPath: string, ttlMs: number, nowMs: () => numbe
 }
 
 /**
- * 내가 여전히 홀더면 만료 연장(원자적 owner.json 교체). 인수당했으면 null.
+ * 내가 여전히 홀더면 만료를 연장한다. 인수당했으면 null.
  *
- * KNOWN RACE (Wave 2 선행 수정 필수 — docs/BACKLOG.md "renewLease 인수 레이스"):
- * readLease(check)와 owner.json write(act) 사이에 경쟁자가 takeOverLease로 락 dir을
- * 치우고 새 토큰으로 재설치하면, 이 write가 경쟁자의 새 dir에 떨어져 split-brain을
- * 유발한다. Wave 1에는 호출자가 없어 무해하나, WriterLeaseManager 하트비트가 붙기 전
- * identity-keyed atomic renew로 재설계해야 한다.
+ * RACE-FREE 불변식(정체성/만료 분리):
+ * renew는 정체성의 원천인 owner.json을 절대 건드리지 않고, 만료만 담은 사이드카
+ * expiry.json({token, expiresAt})을 tmp+rename으로 원자적 기록한다. check(readLease)와
+ * write 사이에 경쟁자 B가 takeOverLease+installLease로 인수해도:
+ *  - B의 owner.json은 renew가 안 쓰므로 정체성 오염 불가.
+ *  - A가 쓴 expiry.json의 token(A)은 B의 owner token과 불일치 → readLease가 무시(B 만료도 안전).
+ *  - write 후 재확인에서 owner token이 B이므로 A는 null을 받는다(A가 졌다).
+ * additive & inbox-inert: inbox는 renew를 호출하지 않아 expiry.json이 없고 readLease 동작 불변.
+ *
+ * hooks.beforeWrite는 check 직후·기록 직전에 호출되는 테스트 전용 seam(레이스 재현용).
+ * WriterLeaseManager는 이 인자를 넘기지 않으므로 무해하다.
  */
-export function renewLease(lockPath: string, token: string, ttlMs: number, nowMs: () => number = () => Date.now()): Lease | null {
+export function renewLease(
+  lockPath: string,
+  token: string,
+  ttlMs: number,
+  nowMs: () => number = () => Date.now(),
+  hooks?: { beforeWrite?: () => void },
+): Lease | null {
   const current = readLease(lockPath);
   if (!current || current.token !== token) return null;
-  const renewed: Lease = { token, expiresAt: nowMs() + ttlMs };
-  const tmp = join(lockPath, `.owner.${randomUUID()}.tmp`);
+  hooks?.beforeWrite?.();
+  const sidecar: Lease = { token, expiresAt: nowMs() + ttlMs };
+  const tmp = join(lockPath, `.expiry.${randomUUID()}.tmp`);
   try {
-    writeFileSync(tmp, JSON.stringify(renewed), { mode: 0o600 });
-    renameSync(tmp, join(lockPath, 'owner.json'));
+    writeFileSync(tmp, JSON.stringify(sidecar), { mode: 0o600 });
+    renameSync(tmp, join(lockPath, 'expiry.json'));
   } catch (error) {
     try { rmSync(tmp, { force: true }); } catch { /* ignore */ }
     if (isCode(error, 'ENOENT')) return null; // 락 디렉토리 사라짐(인수됨)
