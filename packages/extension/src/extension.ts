@@ -1,10 +1,13 @@
 import * as vscode from 'vscode';
 import * as path from 'node:path';
-import { LensStore, LogWatcher, dbPath,
+import * as fs from 'node:fs';
+import { LensStore, LogWatcher, dbPath, dbWriterLockPath,
   detectClients, ClaudeAdapter, CodexAdapter, GeminiAdapter,
   claudeSettingsPath, readDeniedMcpTools, denyMcpTool, allowMcpTool,
   defaultClaudeConfigPaths, listManagedServers, disableServer, enableServer, type ManagedServer,
   buildReport, renderReport } from '@mcp-lens/core';
+import { WriterLeaseManager } from './writerLease.js';
+import { chooseMode } from './leaseMode.js';
 import { formatStatus, wasteTooltip } from './statusBar.js';
 import { buildTree } from './matrixTree.js';
 import type { LensNode } from './matrixTree.js';
@@ -22,6 +25,7 @@ import { pendingHookClients } from './nudge.js';
 
 let watcher: LogWatcher | undefined;
 let store: LensStore | undefined;
+let lease: WriterLeaseManager | undefined;
 
 type IngestionCoordinatorLike = {
   drainInbox(): Promise<unknown>;
@@ -168,13 +172,53 @@ export async function activate(ctx: vscode.ExtensionContext) {
     treeProvider.setRoots(buildTree(input, readDeniedSafe(), listManagedSafe(), unsupportedServers()));
     void scheduleCollectionRefresh();
   };
-  await coordinator?.drainInbox();
-  await watcher.backfill(); // 시작 시 밀린 세션 따라잡기 (기능 2)
-  refresh();
-  coordinator?.on('ingested', refresh);
-  coordinator?.on('receipt', refresh);
-  watcher.on('ingested', refresh);
-  watcher.start();
+  // 전역 제약: DB 파일은 여러 확장 인스턴스(창)가 공유할 수 있으므로,
+  // 리스를 획득한 하나만 writer(백필/워처/코디네이터 구동)로 동작하고 나머지는
+  // read-only(폴링 reload)로 대기하다 홀더가 죽으면 승격한다. §6.2.
+  // LensStore.open()은 최초 save() 전까지 ~/.mcplens를 만들지 않으므로,
+  // 리스 파일을 그보다 먼저 놓을 수 있게 디렉터리를 미리 보장한다.
+  fs.mkdirSync(path.dirname(dbWriterLockPath()), { recursive: true });
+  lease = new WriterLeaseManager(dbWriterLockPath());
+  let mode = chooseMode(lease.tryAcquire());
+  let roPoll: ReturnType<typeof setInterval> | undefined;
+  let watcherStarted = false; // 워처는 오직 enterWriter를 통해서만, 홀더당 한 번만 시작한다.
+
+  // 모드와 무관하게 최후 방어선으로 가드를 걸어 둔다: 비홀더가 어떤 경로로든
+  // save()를 시도하면(예: 강등 경합 중 남은 콜백) StaleWriterError로 즉시 차단된다.
+  store.setWriteGuard(() => lease!.isHolder());
+
+  function enterWriter() {
+    mode = 'writer';
+    if (roPoll) { clearInterval(roPoll); roPoll = undefined; }
+    if (watcherStarted) return; // 이미 이 홀더로 writer 경로가 구동 중 — 중복 시작 방지
+    watcherStarted = true;
+    void coordinator?.drainInbox()
+      .then(() => watcher!.backfill()) // 시작 시 밀린 세션 따라잡기 (기능 2)
+      .then(() => { refresh(); });
+    coordinator?.on('ingested', refresh);
+    coordinator?.on('receipt', refresh);
+    watcher!.on('ingested', refresh);
+    watcher!.start();
+    lease!.startHeartbeat(() => enterReadOnly()); // renew 실패 → 강등
+  }
+
+  function enterReadOnly() {
+    mode = 'read-only';
+    watcherStarted = false;
+    void watcher?.stop(); // 쓰기 경로 정지: 워처를 멈춘다. 코디네이터 drain은 호출하지 않는다.
+    let lastMtime = 0;
+    if (!roPoll) roPoll = setInterval(() => {
+      try {
+        const m = fs.statSync(dbPath()).mtimeMs;
+        if (m !== lastMtime) { lastMtime = m; store!.reload(); refresh(); }
+      } catch { /* 파일 없음/일시 오류 무시 */ }
+      if (lease!.tryAcquire()) enterWriter(); // 홀더가 죽었으면 승격
+    }, 4_000);
+  }
+
+  if (mode === 'writer') enterWriter(); else { enterReadOnly(); refresh(); }
+
+  ctx.subscriptions.push({ dispose: () => { if (roPoll) clearInterval(roPoll); lease?.stop(); } });
 
   void (async () => {
     const inputs = await computeCollection();
@@ -311,4 +355,12 @@ export async function activate(ctx: vscode.ExtensionContext) {
     }));
 }
 
-export async function deactivate() { await watcher?.stop(); store?.save(); store?.close(); }
+export async function deactivate() {
+  await watcher?.stop();
+  try { store?.save(); }
+  catch (e) {
+    // read-only(비홀더)는 정상적으로 save()가 차단된다(StaleWriterError) — 무시.
+    if (!(e instanceof Error) || e.name !== 'StaleWriterError') throw e;
+  }
+  store?.close();
+}
