@@ -3,11 +3,23 @@
   "displayName": "MCP Lens",
   "description": "Automatically accounts for MCP context usage across Claude Code, Codex, and Gemini CLI.",
   "version": "0.1.0",
-  "publisher": "doohyun",
+  "publisher": "seodduu",
   "license": "MIT",
+  "icon": "media/icon.png",
+  "categories": [
+    "Other",
+    "Visualization"
+  ],
+  "keywords": [
+    "mcp",
+    "claude code",
+    "codex",
+    "gemini cli",
+    "token"
+  ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/doohyun/mcp-lens"
+    "url": "https://github.com/seodduu/MCPLens"
   },
   "engines": {
     "vscode": "^1.90.0"
