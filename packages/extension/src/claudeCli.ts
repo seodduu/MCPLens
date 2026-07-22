@@ -81,23 +81,17 @@ export function findBinary(name: string, probe: ProbeEnv = {}): string | null {
   const names = execNames(name, platform, env);
   const pathDelimiter = platform === 'win32' ? ';' : ':';
 
-  const dirs = [
-    ...binDirs(platform, env, home),
-    ...(env.PATH ?? '').split(pathDelimiter).filter((d) => d !== ''),
-  ];
-  // nvm 후보는 이름별 전체 경로라 디렉터리 목록과 별도로 처리한다.
+  // 탐색 순서는 기존(POSIX) 동작을 그대로 유지한다: 알려진 설치 위치 → nvm → PATH.
+  // nvm을 PATH보다 뒤로 미루면 nvm 사용자가 집던 바이너리가 바뀔 수 있다.
   const nvmRoot = nvmRootFor(platform, env, home);
-
-  for (const dir of dirs) {
-    for (const n of names) {
-      const candidate = join(dir, n);
-      if (existsSync(candidate)) return candidate;
-    }
-  }
-  for (const n of names) {
-    for (const candidate of nvmCandidates(n, nvmRoot, platform)) {
-      if (existsSync(candidate)) return candidate;
-    }
+  const candidates = [
+    ...binDirs(platform, env, home).flatMap((dir) => names.map((n) => join(dir, n))),
+    ...names.flatMap((n) => nvmCandidates(n, nvmRoot, platform)),
+    ...(env.PATH ?? '').split(pathDelimiter).filter((d) => d !== '')
+      .flatMap((dir) => names.map((n) => join(dir, n))),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
   }
   return null;
 }
