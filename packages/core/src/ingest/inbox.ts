@@ -133,10 +133,13 @@ export function enqueueEnvelope(
 }
 
 function deliveryExists(paths: InboxPaths, deliveryId: string): boolean {
-  const stem = fileStem(deliveryId);
-  return existsSync(join(paths.pending, `${stem}.json`))
+  // 구버전(콜론 파일명)이 남긴 항목도 같은 배달로 본다. 아니면 업그레이드 직후
+  // 같은 봉투가 두 이름으로 큐에 쌓인다. DB가 observation_id로 걸러 주긴 하지만,
+  // 중복 처리 자체를 만들 이유가 없다.
+  const stems = [fileStem(deliveryId), deliveryId];
+  return stems.some((stem) => existsSync(join(paths.pending, `${stem}.json`))
     || existsSync(join(paths.pending, `${stem}.processing`))
-    || existsSync(join(paths.processed, `${stem}.json`));
+    || existsSync(join(paths.processed, `${stem}.json`)));
 }
 
 function acquireDeliveryLock(lockPath: string, opts: InboxOptions, wait = false): Lease | null {
@@ -170,8 +173,10 @@ export function claimPending(opts: InboxOptions = {}): ClaimBatch {
   const claims: ClaimedEnvelope[] = [];
   let parseErrors = 0;
   for (const filename of readdirSync(paths.pending).filter((name) => name.endsWith('.json')).sort()) {
-    const stem = filename.slice(0, -'.json'.length);
-    const deliveryId = deliveryIdFromStem(stem);
+    const deliveryId = deliveryIdFromStem(filename.slice(0, -'.json'.length));
+    // 구버전이 남긴 콜론 파일명이라도 여기서 정규 이름으로 이관한다 — 그러지 않으면
+    // markProcessed가 만드는 정규 `.processing` 경로와 어긋나 완료 처리에 실패한다.
+    const stem = fileStem(deliveryId);
     const pendingPath = join(paths.pending, filename);
     const processingPath = join(paths.pending, `${stem}.processing`);
     const lockPath = join(paths.locks, `${stem}.lock`);
@@ -298,7 +303,8 @@ function serializeEnvelope(env: HookEnvelope): string {
 function recoverStaleProcessing(paths: InboxPaths, opts: InboxOptions): void {
   const now = (opts.now ?? (() => new Date()))();
   for (const filename of readdirSync(paths.pending).filter((name) => name.endsWith('.processing'))) {
-    const stem = filename.slice(0, -'.processing'.length);
+    // 구버전이 남긴 콜론 이름도 정규 이름 기준으로 복구한다.
+    const stem = fileStem(deliveryIdFromStem(filename.slice(0, -'.processing'.length)));
     const processingPath = join(paths.pending, filename);
     const lockPath = join(paths.locks, `${stem}.lock`);
     const lease = acquireDeliveryLock(lockPath, opts);

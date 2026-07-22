@@ -93,6 +93,29 @@ describe('inbox 파일명 — Windows 예약 문자', () => {
     expect(enqueueEnvelope(envelope({ deliveryId: 'native:dup' }), { root })).toBe('duplicate');
   });
 
+  it('구버전 콜론 파일이 pending에 남아 있으면 같은 봉투를 다시 큐에 넣지 않는다', () => {
+    const root = temporaryRoot();
+    const paths = inboxPaths({ root });
+    const legacy = envelope({ deliveryId: 'native:legacy' });
+    writeFileSync(join(paths.pending, 'native:legacy.json'), JSON.stringify(legacy));
+
+    expect(enqueueEnvelope(legacy, { root })).toBe('duplicate');
+    expect(readdirSync(paths.pending)).toEqual(['native:legacy.json']);
+  });
+
+  it('구버전 콜론 파일을 claim한 뒤 markProcessed까지 완주한다', () => {
+    const root = temporaryRoot();
+    const paths = inboxPaths({ root });
+    const legacy = envelope({ deliveryId: 'native:legacy' });
+    writeFileSync(join(paths.pending, 'native:legacy.json'), JSON.stringify(legacy));
+
+    const [claim] = claimPending({ root });
+    markProcessed(claim, { root });
+
+    expect(readdirSync(paths.pending)).toEqual([]);
+    expect(readdirSync(join(root, 'processed'))).toHaveLength(1);
+  });
+
   // macOS/Linux에 이미 쌓여 있는 콜론 파일명은 업그레이드 후에도 읽혀야 한다.
   it('구버전이 남긴 콜론 파일명도 그대로 claim된다', () => {
     const root = temporaryRoot();
