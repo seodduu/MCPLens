@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BaseHookInstaller } from '../../src/installers/base.js';
+import { absent, BaseHookInstaller } from '../../src/installers/base.js';
 import type { InstallerDeps, InstallResult, InstallState } from '../../src/hookInstall.js';
 
 const HOME = '/home/u';
@@ -58,5 +58,24 @@ describe('BaseHookInstaller never-throw guarantees', () => {
       findBinary: (name) => `/usr/local/bin/${name}`,
     }));
     expect(installer.callBin('testclient')).toBe('/usr/local/bin/testclient');
+  });
+});
+
+describe('absent', () => {
+  it('claude의 "not found in installed plugins" 문구를 true로 판정한다', () => {
+    expect(absent('Error: mcp-lens@mcplens not found in installed plugins')).toBe(true);
+  });
+
+  it('gemini의 \'Extension not found.\' 문구를 true로 판정한다', () => {
+    expect(absent('Failed to uninstall "mcp-lens": Extension not found.')).toBe(true);
+  });
+
+  it('codex의 "not installed" / "no such" 문구를 true로 판정한다', () => {
+    expect(absent('plugin is not installed')).toBe(true);
+    expect(absent('no such plugin')).toBe(true);
+  });
+
+  it('무관한 에러는 false로 판정한다', () => {
+    expect(absent('permission denied')).toBe(false);
   });
 });

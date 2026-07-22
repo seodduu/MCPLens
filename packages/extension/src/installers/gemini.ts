@@ -1,5 +1,5 @@
 import type { InstallResult, InstallState } from '../hookInstall.js';
-import { BaseHookInstaller } from './base.js';
+import { absent, BaseHookInstaller } from './base.js';
 
 /** `packages/gemini-extension/gemini-extension.json`의 `name`과 일치해야 한다. */
 export const GEMINI_EXT_NAME = 'mcp-lens';
@@ -73,4 +73,3 @@ export class GeminiHookInstaller extends BaseHookInstaller {
 }
 
 function alreadyInstalled(s: string): boolean { return /already installed/i.test(s); }
-function absent(s: string): boolean { return /not installed|not found|no such/i.test(s); }
