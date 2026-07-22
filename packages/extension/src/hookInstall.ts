@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { BaseHookInstaller, msg } from './installers/base.js';
+import { absent, BaseHookInstaller, msg } from './installers/base.js';
 
 export interface RunResult { stdout: string; stderr: string; code: number; }
 
@@ -73,7 +73,7 @@ export class ClaudeHookInstaller extends BaseHookInstaller {
     const bin = this.bin('claude');
     if (bin === null) return { kind: 'client-missing' };
     const un = await this.run(bin, ['plugin', 'uninstall', PLUGIN_ID]);
-    if (un.code !== 0 && !/not installed|no such/i.test(un.stderr)) return { kind: 'failed', step: 'uninstall', stderr: un.stderr };
+    if (un.code !== 0 && !absent(un.stderr)) return { kind: 'failed', step: 'uninstall', stderr: un.stderr };
     await this.run(bin, ['plugin', 'marketplace', 'remove', MARKETPLACE_NAME]);
     return { kind: 'ok', alreadyInstalled: false };
   }

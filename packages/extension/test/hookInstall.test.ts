@@ -143,6 +143,15 @@ describe('ClaudeHookInstaller', () => {
     const inst = new ClaudeHookInstaller(deps({ run }));
     await expect(inst.uninstall()).resolves.toEqual({ kind: 'failed', step: 'uninstall', stderr: 'spawn ENOENT' });
   });
+
+  it('uninstall이 "not found in installed plugins"를 반환하면 실패가 아니라 성공으로 취급한다', async () => {
+    const run = async (_b: string, a: string[]): Promise<RunResult> =>
+      a.includes('uninstall')
+        ? { stdout: '', stderr: 'Error: mcp-lens@mcplens not found in installed plugins', code: 1 }
+        : { stdout: '', stderr: '', code: 0 };
+    const inst = new ClaudeHookInstaller(deps({ run }));
+    expect(await inst.uninstall()).toEqual({ kind: 'ok', alreadyInstalled: false });
+  });
 });
 
 describe('stableDir', () => {

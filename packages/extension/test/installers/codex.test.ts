@@ -208,6 +208,11 @@ describe('CodexHookInstaller.uninstall', () => {
     expect(await new CodexHookInstaller(deps({ run })).uninstall())
       .toEqual({ kind: 'failed', step: 'uninstall', stderr: 'spawn ENOENT' });
   });
+
+  it('"not found" 메시지도 실패로 보지 않는다', async () => {
+    const run = async (): Promise<RunResult> => ({ stdout: '', stderr: 'plugin not found', code: 1 });
+    expect(await new CodexHookInstaller(deps({ run })).uninstall()).toEqual({ kind: 'ok', alreadyInstalled: false });
+  });
 });
 
 describe('codex-marketplace.json 에셋', () => {

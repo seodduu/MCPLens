@@ -4,6 +4,16 @@ import type { ClientHookInstaller, InstallerDeps, InstallResult, InstallState, R
 export function msg(e: unknown): string { return e instanceof Error ? e.message : String(e); }
 
 /**
+ * "대상이 이미 없다"는 CLI stderr를 판정한다. uninstall 멱등성의 단일 판정점 —
+ * 이미 제거된 대상의 재제거는 실패가 아니다. 3사 실측 문구를 모두 커버한다:
+ *   claude: "...not found in installed plugins"
+ *   gemini: 'Failed to uninstall "mcp-lens": Extension not found.'
+ *   codex : not installed / no such
+ * 새 문구를 만나면 각 설치기가 아니라 여기에 추가한다.
+ */
+export function absent(s: string): boolean { return /not installed|not found|no such/i.test(s); }
+
+/**
  * 모든 `ClientHookInstaller` 구현이 공유하는 never-throw 메커니즘.
  *
  * 수집기 설치·실패가 사용자의 MCP 호출로 전파되지 않는다: 설치기는 throw 대신

@@ -1,6 +1,6 @@
 import type { InstallResult, InstallState } from '../hookInstall.js';
 import { MARKETPLACE_NAME, PLUGIN_ID, stableDir } from '../hookInstall.js';
-import { BaseHookInstaller, msg } from './base.js';
+import { absent, BaseHookInstaller, msg } from './base.js';
 
 /** `codex plugin list --json`의 실측 스키마 (codex-cli 0.144.6). */
 interface CodexPluginEntry { pluginId?: string; installed?: boolean }
@@ -67,4 +67,3 @@ export class CodexHookInstaller extends BaseHookInstaller {
 }
 
 function alreadyPresent(s: string): boolean { return /already (exists|added|installed)/i.test(s); }
-function absent(s: string): boolean { return /not installed|no such/i.test(s); }
