@@ -252,6 +252,41 @@ describe('hook-first ingestion pipeline (E2E)', () => {
     expect(totalCallCount).toBe(shapes.length);
     store.close();
   });
+
+  it('startDraining이 실 chokidar로 pending 파일을 감지해 DB에 반영한다', async () => {
+    const root = temporaryRoot();
+    const store = await LensStore.open(':memory:');
+    const coordinator = new IngestionCoordinator({ store, inbox: { root } });
+    try {
+      await coordinator.startDraining(); // 감시 시작(backlog 없음)
+      // chokidar의 초기 스캔(ready)이 끝난 뒤에 파일을 만들어야 한다.
+      // ignoreInitial:true는 ready 이전에 존재하는 파일을 '초기'로 간주해 무시하므로,
+      // enqueue 전에 워처가 완전히 감시 상태에 진입하도록 정착 시간을 준다(단언 아님 — 아래는 폴링).
+      await new Promise((r) => setTimeout(r, 500));
+
+      const env: HookEnvelope = {
+        schemaVersion: 1, deliveryId: 'native:e2e-watch-1', client: 'codex',
+        phase: 'tool-after', receivedAt: NOW, externalSessionId: 's-watch',
+        externalTurnId: 't-watch', externalCallId: 'native:e2e-watch-1',
+        transcriptPath: null, serverName: 'github', toolName: 'get_issue',
+        observedAt: NOW, durationMs: 7, isError: false, inputFingerprint: null,
+      };
+      enqueueEnvelope(env, { root }); // pending에 실제 파일 write → chokidar 'add'
+
+      // 실 워처 발화까지 폴링(최대 10초; awaitWriteFinish stabilityThreshold 500ms + fsevents 지연 여유).
+      const deadline = Date.now() + 10_000;
+      let rows = 0;
+      while (Date.now() < deadline) {
+        rows = store.observationCount();
+        if (rows >= 1) break;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      expect(rows).toBe(1);
+    } finally {
+      await coordinator.stopDraining();
+      store.close();
+    }
+  }, 15_000); // 폴링 데드라인(10s) < vitest 테스트 타임아웃(15s) 보장.
 });
 
 // --- Rollout feature flags (test-scoped model) --------------------------------
