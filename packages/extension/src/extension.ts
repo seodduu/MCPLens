@@ -29,7 +29,9 @@ let lease: WriterLeaseManager | undefined;
 
 type IngestionCoordinatorLike = {
   drainInbox(): Promise<unknown>;
-  on(event: 'ingested' | 'receipt', listener: () => void): unknown;
+  startDraining(): Promise<void>;
+  stopDraining(): Promise<void>;
+  on(event: 'ingested' | 'receipt' | 'drain-error', listener: (arg?: unknown) => void): unknown;
   pause?: () => void | Promise<void>;
 };
 
@@ -199,13 +201,14 @@ export async function activate(ctx: vscode.ExtensionContext) {
   // refresh는 읽기 전용이고, 이 이미터들은 writer 경로가 살아있을 때만 이벤트를 낸다.
   coordinator?.on('ingested', refresh);
   coordinator?.on('receipt', refresh);
+  coordinator?.on('drain-error', ignoreStaleWriterError); // 강등 경합 중 stray drain 흡수
   watcher!.on('ingested', refresh);
 
   function enterWriter() {
     mode = 'writer';
     if (roPoll) { clearInterval(roPoll); roPoll = undefined; }
     if (watcherStarted) return; // 이미 이 홀더로 writer 경로가 구동 중 — 중복 시작 방지
-    void coordinator?.drainInbox()
+    void coordinator?.startDraining()  // 즉시 1회 drain + pending 상시 감시
       .then(() => watcher!.backfill()) // 시작 시 밀린 세션 따라잡기 (기능 2)
       .then(() => { refresh(); })
       .catch(ignoreStaleWriterError);
@@ -231,6 +234,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
     mode = 'read-only';
     watcherStarted = false;
     stopping = watcher?.stop(); // 쓰기 경로 정지: 워처를 멈춘다. 코디네이터 drain은 호출하지 않는다.
+    void coordinator?.stopDraining().catch(() => {}); // pending 감시 중지(인플라이트 drain은 자연 종료)
     let lastMtime = 0;
     if (!roPoll) roPoll = setInterval(() => {
       try {
