@@ -1,5 +1,64 @@
 # 실기기 스모크 기록
 
+## Pending 워처 — 훅 봉투 실시간 drain (2026-07-22, 통과)
+
+계획 `docs/superpowers/plans/2026-07-22-pending-watcher.md` / 설계 `docs/superpowers/specs/2026-07-22-pending-watcher-design.md`.
+main 병합 `640122f`. 확장 VSIX 재설치 후 실기기 검증 완주.
+
+### 검증 결과 (통과)
+
+| 항목 | 방법 | 결과 |
+|---|---|---|
+| 밀린 봉투 흡수(업프론트 drain) | 확장 리로드 → `startDraining()` | ✅ pending **33 → 0**, processed 34 → 70 |
+| **실시간 감시(리로드 없이)** | 확장 켠 채 Claude Code에서 MCP 3회 호출 | ✅ processed **70 → 76**(3×before/after), 수 초 내 처리, pending 0 유지 |
+| 훅↔로그 상관 | 3건 `correlationKey` 대조 | ✅ 전부 동일 `native:*` 키, 시각차 ~2s(유예 10s 이내) MATCH |
+| 수집 건강도 | `store.collectionHealth()` | ✅ `degraded` → **`healthy`**(claude-code·gemini-cli·codex 전부) |
+| 워처 유발 drain 시각 | processed mtime | ✅ 리로드(16:49:13) **이후** 16:50:04 추가 drain = 상시 감시 동작 |
+
+실측 예(3회 호출분): `hook tool-after 07:53:20.739 / log tool-after 07:53:18.635`,
+`correlation_key=native:723e6cc6…` 동일 → 매치. 회복 임계값 2회를 넘겨 `degraded` 해제.
+
+### 함정 1 — 구버전 확장이 리스를 쥐면 F5로 검증 불가 (중요)
+
+최초 시도에서 "MCP 호출해도 계속 로그 only" 증상. 원인은 **코드가 아니라 스모크 대상**이었다.
+
+- 설치본 `~/.vscode/extensions/doohyun.mcp-lens-0.1.0`이 **15:18 빌드**(기능 병합 전, `startDraining` 0건)였고,
+  그게 writer 리스를 쥔 채 하트비트 중(`owner.json` 15:28 고정, `expiry.json`만 계속 갱신).
+- 워처 없는 코드가 writer이므로 봉투가 영구 정체(pending 33건, processed 마지막 04:04).
+- **F5만으로는 해결 불가**: 리스를 구버전이 보유하면 dev host는 read-only로 떨어지고,
+  설계상 read-only는 `startDraining()`을 호출하지 않는다.
+
+**절차:** 확장 변경을 실기기 검증할 땐 반드시 새 빌드를 설치(`npx @vscode/vsce package --no-dependencies`
+→ `code --install-extension … --force`)한 뒤 **Reload Window**. 검증 전 다음을 확인할 것:
+
+```bash
+grep -c startDraining ~/.vscode/extensions/doohyun.mcp-lens-0.1.0/dist/extension.js  # 새 코드 포함?
+stat -f '%Sm' ~/.mcplens/db-writer.lock/owner.json                                   # 리스 재획득 시각
+```
+
+### 함정 2 — `lens.db` birth time은 "DB 리셋"의 증거가 아니다 (오진 기록)
+
+조사 중 "DB가 방금 생성됐다(birth 16:52)"고 판단했으나 **오진**이었다.
+`LensStore`는 `renameSync` 기반 원자적 저장이라 **매 저장마다 새 inode로 재생성**된다
+(관찰 중에도 16:52 → 16:56으로 변동). birth/inode로 DB 재생성을 추론하지 말 것.
+
+### 부수 발견 — 훅/로그 비대칭에 의한 유령 미스 (별개 백로그)
+
+검증 초기 claude-code가 `degraded`("연속 상관관계 불일치 3회")로 표시됐다. 조사 결과:
+
+- 훅 관측을 지우는 코드는 **없다**(`store.ts:89-92`, `:449-453` 두 DELETE 모두 `source='log'` 전용,
+  schema는 `IF NOT EXISTS`). 즉 삭제된 게 아니라 **애초에 실 DB에 들어온 적이 없었다**.
+- 원인: 2026-07-21 검증 때 실 inbox 복사본을 **임시 DB로 drain** → 봉투가 `processed/`로 소비되어
+  실 `lens.db`엔 미유입. 반면 로그 관측은 트랜스크립트에서 **재생성**된다(`store.ts:89-92`가
+  `source='log'`만 지우고 재삽입). → 로그만 있고 훅이 없는 유령 미스.
+- **정상 사용에서는 재현되지 않는다**(일회용 DB로 drain하는 일이 없음).
+
+다만 구조적으로 남는 시나리오: `collectionHealth()`는 **시간 창 없이 전체 이력**을 훑으므로
+(`store.ts:162-163`, `WHERE`/`LIMIT` 없음), **신규 사용자 첫 설치** 시 기존 트랜스크립트를
+`backfill()`이 흡수하는데 그 시절 훅 봉투는 존재하지 않아 초기 `degraded`가 뜰 수 있다.
+심각도 낮음 — MCP 2회 정상 호출로 자동 회복(`MATCHES_TO_RECOVER=2`), 영향은 권고 신뢰도 하향뿐.
+개선 방향(백로그): 상관 판정에 최근 N시간 창을 두어 설치 이전 이력을 미스로 세지 않기.
+
 ## Hook 우선 수집 파이프라인 (H12, 2026-07-21)
 
 H0~H11 병합 후 Hook 우선 수집 전 구간을 fixture·package runner 기반으로 검증하고,
