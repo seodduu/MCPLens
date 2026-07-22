@@ -258,11 +258,9 @@ describe('hook-first ingestion pipeline (E2E)', () => {
     const store = await LensStore.open(':memory:');
     const coordinator = new IngestionCoordinator({ store, inbox: { root } });
     try {
-      await coordinator.startDraining(); // 감시 시작(backlog 없음)
-      // chokidar의 초기 스캔(ready)이 끝난 뒤에 파일을 만들어야 한다.
-      // ignoreInitial:true는 ready 이전에 존재하는 파일을 '초기'로 간주해 무시하므로,
-      // enqueue 전에 워처가 완전히 감시 상태에 진입하도록 정착 시간을 준다(단언 아님 — 아래는 폴링).
-      await new Promise((r) => setTimeout(r, 500));
+      // startDraining()은 chokidar 초기 스캔(ready) 완료 후에야 resolve되므로,
+      // 반환 시점에 워처는 이미 감시 상태다. 별도 정착 대기 불필요.
+      await coordinator.startDraining();
 
       const env: HookEnvelope = {
         schemaVersion: 1, deliveryId: 'native:e2e-watch-1', client: 'codex',

@@ -8,7 +8,7 @@ import { inboxPaths, type ClaimedEnvelope, type InboxOptions } from './inbox.js'
 type MaybePromise<T> = T | Promise<T>;
 type TimerHandle = ReturnType<typeof setTimeout>;
 export type PendingWatchHandle = {
-  on(event: 'add', listener: (path: string) => void): PendingWatchHandle;
+  on(event: 'add' | 'ready', listener: (path?: string) => void): PendingWatchHandle;
   close(): Promise<void> | void;
 };
 
@@ -97,16 +97,19 @@ export class IngestionCoordinator extends EventEmitter {
     return { ingested, parseErrors: claims.parseErrors };
   }
 
-  /** 즉시 1회 drain(밀린 봉투 흡수) 후 pending 디렉토리 감시를 시작한다. 멱등. */
+  /** pending 감시를 시작하고, chokidar 초기 스캔(ready) 완료 후 1회 drain(밀린 봉투 흡수). 멱등. */
   async startDraining(): Promise<void> {
     if (this.pendingWatcher) return;
     const pendingDir = inboxPaths(this.options.inbox ?? {}).pending; // 디렉토리 생성 보장
-    await this.drainInbox();
-    this.pendingWatcher = this.watchFactory([pendingDir], {
+    const watcher = this.watchFactory([pendingDir], {
       ignoreInitial: true,
       awaitWriteFinish: { stabilityThreshold: 500 },
     });
-    this.pendingWatcher.on('add', () => this.scheduleDrain());
+    this.pendingWatcher = watcher;                        // await 이전에 세팅 → 멱등성 강화
+    watcher.on('add', () => this.scheduleDrain());        // ready await 이전에 배선 → ready 이후 add 무손실
+    await new Promise<void>((resolve) => watcher.on('ready', () => resolve())); // 초기 스캔 종료 대기
+    if (this.pendingWatcher !== watcher) return;          // startup 중 stopDraining 발생 → 닫힌 워처 drain/재배선 금지
+    await this.drainInbox();                              // ready 이후 실행 → 스캔 억제분 + 기존 파일 흡수
   }
 
   /** 감시를 멈춘다. 인플라이트 drain은 자연 종료시킨다. 멱등. */

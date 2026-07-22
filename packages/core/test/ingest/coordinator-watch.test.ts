@@ -24,12 +24,17 @@ function envelope(deliveryId: string): HookEnvelope {
   };
 }
 
-// 주입식 가짜 워처: add 리스너를 수동으로 발화, close 여부 노출.
+// 주입식 가짜 워처: add 리스너를 수동으로 발화, ready는 실 chokidar처럼
+// 비동기(마이크로태스크)로 자동 발화, close 여부 노출.
 function fakeWatch() {
   const listeners: Array<(p: string) => void> = [];
   let closed = false;
   const handle = {
-    on(_event: 'add', listener: (p: string) => void) { listeners.push(listener); return handle; },
+    on(event: 'add' | 'ready', listener: (p?: string) => void) {
+      if (event === 'ready') queueMicrotask(() => listener());
+      else listeners.push(listener as (p: string) => void);
+      return handle;
+    },
     close() { closed = true; },
     emitAdd(p: string) { for (const l of [...listeners]) l(p); },
     get closed() { return closed; },
@@ -65,6 +70,26 @@ describe('IngestionCoordinator pending watcher', () => {
 
     expect(upsert).toHaveBeenCalledTimes(1);       // 밀린 봉투 흡수
     expect(watch.closed).toBe(false);               // 감시 개시
+    await coord.stopDraining();
+  });
+
+  it('ready 시점에 존재하는 봉투를 add 이벤트 없이 초기 drain으로 흡수한다(레이스 차단)', async () => {
+    const root = temporaryRoot();
+    // ready 이전부터 pending에 존재하는 파일(초기 스캔에서 ignoreInitial로 억제됨).
+    enqueueEnvelope(envelope('present-at-ready'), { root });
+    const upsert = vi.fn().mockResolvedValue(undefined);
+    const watch = fakeWatch();
+    const timer = manualTimer();
+    const coord = new IngestionCoordinator({
+      store: { upsertObservation: upsert }, inbox: { root },
+      watchFactory: () => watch, setTimer: timer.setTimer,
+    });
+
+    await coord.startDraining();       // ready(마이크로태스크) 후 초기 drain 실행
+
+    // add 이벤트를 전혀 발화하지 않았음에도 봉투가 흡수됨.
+    expect(upsert).toHaveBeenCalledTimes(1);
+    expect(timer.count).toBe(0);       // scheduleDrain(=add 경로) 미사용
     await coord.stopDraining();
   });
 
