@@ -13,6 +13,10 @@ export interface InstallerDeps {
     copyDir: (from: string, to: string) => void;
     exists: (path: string) => boolean;
     readDir: (path: string) => string[];
+    /** 없거나 읽을 수 없으면 throw — 호출자가 fail-open으로 처리한다. */
+    readFile: (path: string) => string;
+    /** 상위 디렉터리가 없으면 만들고 쓴다. */
+    writeFile: (path: string, content: string) => void;
   };
   bundledDir: string; // dist/<...> 번들 경로
 }

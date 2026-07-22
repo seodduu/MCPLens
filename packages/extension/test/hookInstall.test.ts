@@ -1,3 +1,4 @@
+import { memFsStub } from './helpers/memFs.js';
 import { describe, expect, it, vi } from 'vitest';
 import {
   ClaudeHookInstaller, PLUGIN_ID, MARKETPLACE_NAME, stableDir,
@@ -11,7 +12,7 @@ function deps(over: Partial<InstallerDeps> = {}): InstallerDeps {
     home: HOME,
     findBinary: () => '/bin/claude',
     run: async () => ({ stdout: '[]', stderr: '', code: 0 }),
-    fs: { copyDir: () => {}, exists: () => false, readDir: () => [] },
+    fs: memFsStub(),
     bundledDir: '/bundle/claude-marketplace',
     ...over,
   };
@@ -87,7 +88,7 @@ describe('ClaudeHookInstaller', () => {
 
   it('copyDir이 던지면 failed(step=copy)로 변환한다', async () => {
     const inst = new ClaudeHookInstaller(deps({
-      fs: { copyDir: () => { throw new Error('disk full'); }, exists: () => false, readDir: () => [] },
+      fs: { ...memFsStub(), copyDir: () => { throw new Error("disk full"); } },
     }));
     expect(await inst.install()).toEqual({ kind: 'failed', step: 'copy', stderr: 'disk full' });
   });

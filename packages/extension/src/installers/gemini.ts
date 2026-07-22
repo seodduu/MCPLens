@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import type { InstallResult, InstallState } from '../hookInstall.js';
 import { absent, BaseHookInstaller } from './base.js';
 
@@ -44,6 +45,12 @@ export class GeminiHookInstaller extends BaseHookInstaller {
     if (bin === null) return { kind: 'client-missing' };
     if (await this.detect() === 'installed') return { kind: 'ok', alreadyInstalled: true };
 
+    // --consent 로도 프롬프트가 하나 더 남는다: 로컬 경로 설치는 "Do you trust the
+    // files in this folder? [y/N]" 를 띄우고, 이걸 끄는 플래그가 없다(0.51.0
+    // `extensions install --help` 실측). stdin을 닫아도 종료되지 않으므로 유일한
+    // 비대화형 경로는 소스 폴더를 미리 신뢰 목록에 넣는 것이다. 반드시 install 전에.
+    this.trustBundledDir();
+
     // --consent is required or `gemini extensions install` blocks on an
     // interactive [Y/n] prompt and hangs forever, even with stdin closed
     // (measured on gemini-cli 0.51.0) — see class JSDoc above.
@@ -59,6 +66,30 @@ export class GeminiHookInstaller extends BaseHookInstaller {
       return { kind: 'ok', alreadyInstalled: true };
     }
     return { kind: 'ok', alreadyInstalled: false };
+  }
+
+  /**
+   * 번들 디렉터리를 `~/.gemini/trustedFolders.json` 에 등록한다. 우리가 배포한
+   * 디렉터리 하나만 대상이고 다른 항목은 보존한다. 실패는 삼킨다 — 이미 신뢰된
+   * 폴더일 수도 있고, 이 단계 때문에 설치가 막히면 안 된다(fail-open).
+   */
+  private trustBundledDir(): void {
+    const path = join(this.deps.home, '.gemini', 'trustedFolders.json');
+    try {
+      let trusted: Record<string, string> = {};
+      try {
+        const parsed: unknown = JSON.parse(this.deps.fs.readFile(path));
+        if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          trusted = parsed as Record<string, string>;
+        }
+      } catch {
+        // 파일이 없거나 깨졌다 — 새로 쓴다. 기존 내용이 깨진 경우까지 살릴 수는 없다.
+      }
+      trusted[this.deps.bundledDir] = 'TRUST_FOLDER';
+      this.deps.fs.writeFile(path, `${JSON.stringify(trusted, null, 2)}\n`);
+    } catch {
+      // 쓰기 불가 — 설치를 계속 시도한다.
+    }
   }
 
   async uninstall(): Promise<InstallResult> {

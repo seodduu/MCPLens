@@ -1,3 +1,4 @@
+import { memFsStub } from '../helpers/memFs.js';
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -18,7 +19,7 @@ function deps(over: Partial<InstallerDeps> = {}): InstallerDeps {
     home: HOME,
     findBinary: () => '/bin/codex',
     run: async () => ({ stdout: listJson, stderr: '', code: 0 }),
-    fs: { copyDir: () => {}, exists: () => false, readDir: () => [] },
+    fs: memFsStub(),
     bundledDir: '/bundle/codex-marketplace',
     ...over,
   };
@@ -93,7 +94,7 @@ describe('CodexHookInstaller.install', () => {
   it('스냅샷 복사 → marketplace add → plugin add 순서로 실행', async () => {
     const copied: [string, string][] = [];
     const { calls, run } = recorder();
-    const d = deps({ run, fs: { copyDir: (f, t) => { copied.push([f, t]); }, exists: () => false, readDir: () => [] } });
+    const d = deps({ run, fs: { ...memFsStub(), copyDir: (f: string, t: string) => { copied.push([f, t]); } } });
     const res = await new CodexHookInstaller(d).install();
 
     expect(res).toEqual({ kind: 'ok', alreadyInstalled: false });
@@ -108,7 +109,7 @@ describe('CodexHookInstaller.install', () => {
   it('이미 설치돼 있으면 alreadyInstalled로 조기 반환하고 아무것도 실행하지 않는다', async () => {
     const { calls, run } = recorder(listJson);
     let copies = 0;
-    const d = deps({ run, fs: { copyDir: () => { copies += 1; }, exists: () => false, readDir: () => [] } });
+    const d = deps({ run, fs: { ...memFsStub(), copyDir: () => { copies += 1; } } });
 
     expect(await new CodexHookInstaller(d).install()).toEqual({ kind: 'ok', alreadyInstalled: true });
     expect(copies).toBe(0);

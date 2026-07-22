@@ -1,7 +1,7 @@
 import { spawn, type SpawnOptions } from 'node:child_process';
-import { cpSync, existsSync, readdirSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { RunResult } from './hookInstall.js';
 
 /**
@@ -15,6 +15,14 @@ export interface ProbeEnv {
 }
 
 const WIN_DEFAULT_PATHEXT = '.COM;.EXE;.BAT;.CMD';
+
+/**
+ * 자식 프로세스 상한. CLI가 대화형 프롬프트를 띄우면 stdin을 기다리며 영원히
+ * 살아 있고 close가 오지 않아 UI가 무한 대기한다(gemini-cli 0.51.0 실측).
+ * stdio.stdin을 'ignore'로 닫는 것만으로는 부족했다 — 프롬프트가 그대로 멈춘다.
+ * 설치 명령이 네트워크(git clone 등)를 타는 경우가 있어 넉넉히 잡는다.
+ */
+const DEFAULT_RUN_TIMEOUT_MS = 120_000;
 
 /**
  * 조회할 파일명 목록. win32에서는 PATHEXT 확장자를 **먼저** 본다 —
@@ -133,22 +141,45 @@ function quoteWin(s: string): string {
  * 호스트를 블로킹하지 않고 이벤트 루프에 양보해야 한다. 호출자를 fail-open으로
  * 유지하려고 reject하지 않고 항상 resolve한다.
  */
-export function runClaude(bin: string, args: string[]): Promise<RunResult> {
+export function runClaude(
+  bin: string,
+  args: string[],
+  options: { timeoutMs?: number } = {},
+): Promise<RunResult> {
+  const timeoutMs = options.timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS;
   return new Promise((resolve) => {
     const spec = spawnSpec(bin, args);
     let child;
     try {
-      child = spawn(spec.command, spec.args, spec.options);
+      child = spawn(spec.command, spec.args, { ...spec.options, stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (error) {
       resolve({ stdout: '', stderr: error instanceof Error ? error.message : String(error), code: 1 });
       return;
     }
     let stdout = '';
     let stderr = '';
+    let settled = false;
+    const finish = (result: RunResult): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      finish({
+        stdout,
+        stderr: `${stderr}\n[mcp-lens] 시간 초과 (${timeoutMs}ms) — CLI가 대화형 프롬프트를 기다리는 중일 수 있습니다.`,
+        code: 1,
+      });
+    }, timeoutMs);
+    // 확장 호스트가 이 타이머 때문에 종료를 못 하는 일은 없어야 한다.
+    timer.unref?.();
+
     child.stdout?.on('data', (chunk) => { stdout += chunk; });
     child.stderr?.on('data', (chunk) => { stderr += chunk; });
-    child.on('error', (error) => resolve({ stdout, stderr: stderr || error.message, code: 1 }));
-    child.on('close', (code) => resolve({ stdout, stderr, code: code ?? 1 }));
+    child.on('error', (error) => finish({ stdout, stderr: stderr || error.message, code: 1 }));
+    child.on('close', (code) => finish({ stdout, stderr, code: code ?? 1 }));
   });
 }
 
@@ -159,4 +190,9 @@ export const nodeFs = {
   copyDir: (from: string, to: string) => cpSync(from, to, { recursive: true }),
   exists: (path: string) => existsSync(path),
   readDir: (path: string) => readdirSync(path),
+  readFile: (path: string) => readFileSync(path, 'utf8'),
+  writeFile: (path: string, content: string) => {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, content);
+  },
 };

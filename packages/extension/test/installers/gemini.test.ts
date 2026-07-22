@@ -1,3 +1,4 @@
+import { memFsStub } from '../helpers/memFs.js';
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -22,7 +23,7 @@ function deps(over: Partial<InstallerDeps> = {}): InstallerDeps {
     home: '/home/u',
     findBinary: () => '/bin/gemini',
     run: async () => ({ stdout: listJson, stderr: '', code: 0 }),
-    fs: { copyDir: () => {}, exists: () => false, readDir: () => [] },
+    fs: memFsStub(),
     bundledDir: BUNDLE,
     ...over,
   };

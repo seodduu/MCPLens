@@ -1,3 +1,4 @@
+import { memFsStub } from '../helpers/memFs.js';
 import { describe, expect, it } from 'vitest';
 import { absent, BaseHookInstaller } from '../../src/installers/base.js';
 import type { InstallerDeps, InstallResult, InstallState } from '../../src/hookInstall.js';
@@ -9,7 +10,7 @@ function deps(over: Partial<InstallerDeps> = {}): InstallerDeps {
     home: HOME,
     findBinary: () => '/bin/testclient',
     run: async () => ({ stdout: '', stderr: '', code: 0 }),
-    fs: { copyDir: () => {}, exists: () => false, readDir: () => [] },
+    fs: memFsStub(),
     bundledDir: '/bundle/testclient',
     ...over,
   };
