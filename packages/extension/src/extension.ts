@@ -205,7 +205,6 @@ export async function activate(ctx: vscode.ExtensionContext) {
     mode = 'writer';
     if (roPoll) { clearInterval(roPoll); roPoll = undefined; }
     if (watcherStarted) return; // 이미 이 홀더로 writer 경로가 구동 중 — 중복 시작 방지
-    watcherStarted = true;
     void coordinator?.drainInbox()
       .then(() => watcher!.backfill()) // 시작 시 밀린 세션 따라잡기 (기능 2)
       .then(() => { refresh(); })
@@ -214,9 +213,17 @@ export async function activate(ctx: vscode.ExtensionContext) {
     // (LogWatcher.start()가 비멱등이라 stop 도중 재시작하면 경합이 생긴다).
     const pending = stopping;
     stopping = undefined;
-    const startWatcher = () => watcher!.start();
-    if (pending) void pending.catch(() => {}).then(startWatcher);
-    else startWatcher();
+    // 상태 재확인은 여기서만: 지연 실행 시점엔 이미 재강등되어 있을 수 있고,
+    // watcherStarted 설정도 sync/deferred 두 경로가 공유하는 단일 지점이어야 한다.
+    const startWatcher = () => {
+      if (mode !== 'writer' || watcherStarted) return;
+      watcherStarted = true;
+      watcher!.start();
+    };
+    if (pending) {
+      void pending.catch(() => {}).then(startWatcher)
+        .catch((e) => console.error('MCP Lens: watcher restart failed', e));
+    } else startWatcher();
     lease!.startHeartbeat(() => enterReadOnly()); // renew 실패 → 강등
   }
 
