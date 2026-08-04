@@ -28,6 +28,7 @@ import { GeminiHookInstaller } from './installers/gemini.js';
 import { findBinary, runBin, nodeFs } from './claudeCli.js';
 import { bundledStamp, installedStamp, needsRuntimeRefresh, recordInstalledStamp } from './runtimeFreshness.js';
 import { approvalPendingClients, pendingHookClients } from './nudge.js';
+import { claimFirstRun, WALKTHROUGH_CATEGORY_ID } from './firstRun.js';
 import { buildAnalysisRows } from './analysisTree.js';
 import { buildAnalysisDetails } from './analysisDetails.js';
 import { requestInferenceConsent, withdrawConsent } from './inferenceConsent.js';
@@ -484,6 +485,12 @@ export async function activate(ctx: vscode.ExtensionContext) {
   if (mode === 'writer') enterWriter(); else { enterReadOnly(); refresh(); }
 
   ctx.subscriptions.push({ dispose: () => { if (roPoll) clearInterval(roPoll); lease?.stop(); } });
+
+  if (await claimFirstRun(ctx.globalState)) {
+    // 실패해도 활성화를 막지 않는다 — 진실은 Setup Status 뷰다.
+    void vscode.commands.executeCommand('workbench.action.openWalkthrough', WALKTHROUGH_CATEGORY_ID)
+      .then(undefined, () => {});
+  }
 
   void (async () => {
     const dismissed = new Set<HookClient>(
