@@ -53,6 +53,31 @@ describe('buildSetupRows', () => {
     expect(row?.command).toBeUndefined();
   });
 
+  it('unsupported는 ok로 기록된 스캔 상태보다 우선한다', () => {
+    const scanStatuses = new Map([['notion',
+      { status: 'ok' as const, scannedAt: '2026-08-05T00:00:00.000Z' }]]);
+    const row = auth(buildSetupRows({ ...base, scanStatuses, unsupported: ['notion'] }))
+      .find((r) => r.label === 'notion');
+    expect(row?.description).toBe('not supported by Lens');
+    expect(row?.command).toBeUndefined();
+  });
+
+  it('같은 서버가 unsupported이자 authIgnore여도 unsupported가 이긴다', () => {
+    const row = auth(buildSetupRows({ ...base, unsupported: ['linear'], authIgnore: ['linear'] }))
+      .find((r) => r.label === 'linear');
+    expect(row?.description).toBe('not supported by Lens');
+    expect(row?.command).toBeUndefined();
+  });
+
+  it('authIgnore는 ok로 기록된 스캔 상태보다 우선한다', () => {
+    const scanStatuses = new Map([['notion',
+      { status: 'ok' as const, scannedAt: '2026-08-05T00:00:00.000Z' }]]);
+    const row = auth(buildSetupRows({ ...base, scanStatuses, authIgnore: ['notion'] }))
+      .find((r) => r.label === 'notion');
+    expect(row?.description).toBe('ignored');
+    expect(row?.command).toBeUndefined();
+  });
+
   it('failed 서버는 errorCode를 description으로 쓴다', () => {
     const scanStatuses = new Map([['notion',
       { status: 'failed' as const, scannedAt: '2026-08-05T00:00:00.000Z', errorCode: 'ETIMEDOUT' }]]);
