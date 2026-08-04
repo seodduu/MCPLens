@@ -9,8 +9,14 @@
  *
  * apply 콜백 하나로 "이번 실행 결과를 반영하는 모든 부수효과"를 묶어, 세대가 어긋나면
  * 전부 건너뛰거나 전부 반영하게 한다. 일부만 반영되는 경합을 원천적으로 막는 방식이다.
+ *
+ * 모듈 밖으로 export하지 않는다: applyCollectionResult를 유일한 진입점으로 만들어
+ * extension.ts의 computeCollection()이 refreshSetupKeys/refreshSetupRows를 가드 밖에서
+ * 직접 부르는 회귀(과거 버그)가 재발해도 applyCollectionResult를 거치지 않으면 아예
+ * 호출할 방법이 없게 한다. 이전에는 이 함수가 export돼 있어서 호출부가 가드를 우회해도
+ * 테스트가 이 함수를 직접 호출하는 한 초록불이 나오는 사각지대가 있었다.
  */
-export async function withGenerationGuard(
+async function withGenerationGuard(
   gen: number,
   currentGeneration: () => number,
   apply: () => Promise<void> | void,
