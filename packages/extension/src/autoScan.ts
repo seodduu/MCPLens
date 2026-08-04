@@ -23,6 +23,7 @@ async function runScan(store: LensStore, targets: McpServerSpec[],
   onDone: () => void, identities: readonly ServerIdentity[] = []): Promise<void> {
   let tools = 0, tokens = 0, failed: string[] = [], authFailed: McpServerSpec[] = [];
   for (const spec of targets) {
+    const observedAt = new Date().toISOString();
     try {
       const result = await scanServer(spec);
       store.upsertScanResult(
@@ -30,12 +31,18 @@ async function runScan(store: LensStore, targets: McpServerSpec[],
         result.bodies,
         identities.filter((identity) => identity.serverName === spec.name),
       );
+      store.recordServerScanStatus(spec.name, 'ok', observedAt);
       tools += result.definitions.length;
       tokens += result.definitions.reduce((s, d) => s + d.definitionTokens, 0);
     } catch (err) {
       failed.push(spec.name);
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('auth-required') || msg.includes('token-expired')) authFailed.push(spec);
+      const needsAuth = msg.includes('auth-required') || msg.includes('token-expired');
+      // errorCode를 120자로 자르는 이유는 트리 행 description에 들어가는 값이라서다.
+      store.recordServerScanStatus(
+        spec.name, needsAuth ? 'auth-required' : 'failed', observedAt,
+        needsAuth ? undefined : msg.slice(0, 120));
+      if (needsAuth) authFailed.push(spec);
     }
   }
   store.save();
@@ -44,6 +51,23 @@ async function runScan(store: LensStore, targets: McpServerSpec[],
   vscode.window.setStatusBarMessage(
     `$(check) Lens: ${targets.length - failed.length}개 서버 · 툴 ${tools}개 · ${tokens}tok 스캔 완료${failNote}`, 8000);
   if (authFailed.length) await maybeAuthPrompt(store, authFailed, onDone);
+}
+
+/**
+ * 사용자가 명시적으로 요청한 스캔. autoScan 설정이 'never'여도 실행한다 —
+ * 설정은 '자동으로 하지 말라'는 뜻이지 '눌러도 하지 말라'가 아니다.
+ */
+export async function scanNow(store: LensStore, onDone: () => void): Promise<void> {
+  const { specs, attribution, replaceable, identities } = collectAllSpecs();
+  store.upsertClientServers(attribution, replaceable);
+  const config = vscode.workspace.getConfiguration('mcpLens');
+  const skip = new Set(unsupportedServers(config));
+  const targets = specs.filter((s) => !skip.has(s.name));
+  if (targets.length === 0) {
+    void vscode.window.showInformationMessage('MCP Lens: no MCP servers to scan.');
+    return;
+  }
+  await runScan(store, targets, onDone, identities);
 }
 
 /** 스캔 후 auth-required/token-expired 실패 서버에 대해 로그인 동의창 1개를 띄운다. */

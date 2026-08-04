@@ -94,6 +94,18 @@
       {
         "command": "mcplens.withdrawInferenceConsent",
         "title": "MCP Lens: Withdraw Inference Consent"
+      },
+      {
+        "command": "mcp-lens.scanNow",
+        "title": "MCP Lens: Scan MCP Servers"
+      },
+      {
+        "command": "mcp-lens.installHooksAll",
+        "title": "MCP Lens: Install Hooks for All Clients"
+      },
+      {
+        "command": "mcp-lens.openRolloutSetting",
+        "title": "MCP Lens: Open Global Actions Setting"
       }
     ],
     "menus": {
@@ -144,6 +156,10 @@
         },
         {
           "command": "mcplens.restoreGlobally",
+          "when": "false"
+        },
+        {
+          "command": "mcp-lens.openRolloutSetting",
           "when": "false"
         }
       ],

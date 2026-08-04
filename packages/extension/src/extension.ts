@@ -35,6 +35,8 @@ import { readProviderConfig, resolveProvider, type ProviderResolution } from './
 import { runInference } from './inferenceCli.js';
 import { AnalysisCoordinator, ANALYSIS_RULES_VERSION, CONSENT_POLICY_VERSION } from './analysisCoordinator.js';
 import { currentActionEligibility, disableGlobally, restoreGlobally, restoreRecommended } from './globalActionCommand.js';
+import { registerScanNow, registerOpenRolloutSetting } from './setupCommands.js';
+import { evaluateSetupKeys, stepsToUncheck, type SetupKeys } from './setupContextKeys.js';
 
 let watcher: LogWatcher | undefined;
 let store: LensStore | undefined;
@@ -145,6 +147,32 @@ export async function activate(ctx: vscode.ExtensionContext) {
       if (r.kind === 'ok') void vscode.window.showInformationMessage(`MCP Lens: ${client} 훅을 제거했습니다.`);
       else if (r.kind === 'failed') void vscode.window.showErrorMessage(`MCP Lens ${client} 훅 제거 실패: ${r.stderr.slice(0, 300)}`);
       await computeCollection();
+    }),
+    // 온보딩 워크스루의 "Install hooks" 버튼: 감지된 클라이언트 전부에 한 번에 설치한다.
+    // 개별 클라이언트마다 알림을 띄우지 않는 이유는 워크스루 버튼 한 번에 최대 3개가 뜨기 때문이다.
+    vscode.commands.registerCommand('mcp-lens.installHooksAll', async () => {
+      const inputs = await computeCollection();
+      const targets = inputs.filter((input) => input.install === 'not-installed');
+      if (targets.length === 0) {
+        void vscode.window.showInformationMessage('MCP Lens: hooks are already installed.');
+        return;
+      }
+      const installed: HookClient[] = [];
+      let failedCount = 0;
+      for (const input of targets) {
+        const r = await installerFor(input.client).install();
+        if (r.kind === 'ok') {
+          const stamp = bundledStamp(nodeFs, bundledDirFor(input.client), input.client);
+          if (stamp !== null) recordInstalledStamp(nodeFs, lensHomeDir(), input.client, stamp);
+          installed.push(input.client);
+        } else {
+          failedCount++;
+        }
+      }
+      const failedNote = failedCount > 0 ? ` ${failedCount} failed.` : '';
+      void vscode.window.showInformationMessage(
+        `MCP Lens: installed hooks for ${installed.join(', ')}.${failedNote}`);
+      await computeCollection();
     }));
 
   store = await LensStore.open(dbPath()); // 전역 제약 2: 공유 경로
@@ -184,6 +212,39 @@ export async function activate(ctx: vscode.ExtensionContext) {
   const unsupportedServers = (): Set<string> => new Set(
     vscode.workspace.getConfiguration('mcpLens').get<string[]>('unsupportedServers', []));
 
+  let lastSetupKeys: SetupKeys | undefined;
+
+  /** 정의가 있는 서버 중 findDependencyAnalysis가 결과를 주는 서버 수. */
+  function analyzedServerCount(s: LensStore): number {
+    const serverNames = new Set(s.allDefinitions().map((definition) => definition.serverName));
+    let count = 0;
+    for (const serverName of serverNames) {
+      const body = s.definitionBodiesForServer(serverName)[0];
+      if (body && s.findDependencyAnalysis(body.definitionSetHash, ANALYSIS_RULES_VERSION)) count++;
+    }
+    return count;
+  }
+
+  async function refreshSetupKeys(inputs: ClientRowInput[]): Promise<void> {
+    const s = store!;
+    const next = evaluateSetupKeys({
+      installs: inputs,
+      definitionCount: s.allDefinitions().length,
+      consentAccepted: s.currentInferenceConsent(CONSENT_POLICY_VERSION)?.status === 'accepted',
+      analyzedServerCount: analyzedServerCount(s),
+    });
+    for (const [key, value] of Object.entries(next)) {
+      void vscode.commands.executeCommand('setContext', `mcpLens.${key}`, value);
+    }
+    for (const stepId of stepsToUncheck(lastSetupKeys, next)) {
+      try {
+        // 내부 커맨드다. 사라져도 나머지 동작을 막지 않는다 — 진실은 Setup Status 뷰다.
+        await vscode.commands.executeCommand('welcome.markStepIncomplete', stepId);
+      } catch { /* 무시 */ }
+    }
+    lastSetupKeys = next;
+  }
+
   async function computeCollection(): Promise<ClientRowInput[]> {
     const gen = ++collectionGeneration;
     const detected = detectClients().filter((c) => c.installed).map((c) => c.client);
@@ -201,6 +262,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
       runtimeChecked = true;               // 세션당 1회 — 매 refresh마다 CLI를 돌리지 않는다
       if (await refreshStaleRuntimes(inputs)) void computeCollection();
     }
+    await refreshSetupKeys(inputs);
     return inputs;
   }
 
@@ -444,6 +506,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
   void maybeAutoScan(store, refresh);                     // 시작 시 1회 판정
   ctx.subscriptions.push(watchConfigSources(store, refresh)); // 이후 설정 파일 감시
+  ctx.subscriptions.push(registerScanNow(() => store!, refresh), registerOpenRolloutSetting());
 
   const requestAnalysis = async (node?: LensNode, reanalyze = false) => {
     selectedProvider = undefined;

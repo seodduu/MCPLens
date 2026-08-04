@@ -6,6 +6,7 @@ const upsertClientServers = vi.fn();
 const upsertScanResult = vi.fn();
 const upsertDefinitions = vi.fn();
 const save = vi.fn();
+const recordServerScanStatus = vi.fn();
 
 const result = {
   definitions: [{
@@ -81,6 +82,7 @@ describe('maybeAutoScan', () => {
       serversWithDefinitionBodies: () => new Set(),
       upsertScanResult,
       upsertDefinitions,
+      recordServerScanStatus,
       save,
     } as any, vi.fn());
 
@@ -100,9 +102,56 @@ describe('maybeAutoScan', () => {
       serversWithDefinitionBodies: () => new Set(),
       upsertScanResult,
       upsertDefinitions,
+      recordServerScanStatus,
       save,
     } as any, vi.fn());
 
     expect(upsertScanResult).toHaveBeenCalledWith(result.definitions, result.bodies, identities);
+  });
+});
+
+describe('runScan의 서버별 스캔 상태 기록', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const store = () => ({
+    upsertClientServers,
+    allDefinitions: () => [],
+    serversWithDefinitionBodies: () => new Set(),
+    upsertScanResult,
+    upsertDefinitions,
+    recordServerScanStatus,
+    save,
+  } as any);
+
+  it('스캔에 성공한 서버는 ok로 기록된다', async () => {
+    const { maybeAutoScan } = await import('../src/autoScan.js');
+    await maybeAutoScan(store(), vi.fn());
+
+    expect(recordServerScanStatus).toHaveBeenCalledWith('srv', 'ok', expect.any(String));
+  });
+
+  it('auth-required 예외는 auth-required로 기록되고 errorCode가 없다', async () => {
+    const { scanServer } = await import('@mcp-lens/core');
+    (scanServer as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('auth-required'));
+
+    const { maybeAutoScan } = await import('../src/autoScan.js');
+    await maybeAutoScan(store(), vi.fn());
+
+    expect(recordServerScanStatus).toHaveBeenCalledWith('srv', 'auth-required', expect.any(String), undefined);
+  });
+
+  it('그 외 예외는 failed로 기록되고 errorCode가 120자 이하다', async () => {
+    const { scanServer } = await import('@mcp-lens/core');
+    const longMessage = 'boom'.repeat(50); // 200자
+    (scanServer as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error(longMessage));
+
+    const { maybeAutoScan } = await import('../src/autoScan.js');
+    await maybeAutoScan(store(), vi.fn());
+
+    expect(recordServerScanStatus).toHaveBeenCalledWith('srv', 'failed', expect.any(String), expect.any(String));
+    const errorCode = recordServerScanStatus.mock.calls[0][3] as string;
+    expect(errorCode.length).toBeLessThanOrEqual(120);
   });
 });
