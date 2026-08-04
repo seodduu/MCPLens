@@ -49,3 +49,11 @@ export function stepsToUncheck(prev: SetupKeys | undefined, next: SetupKeys): st
     .filter((key) => prev[key] && !next[key])
     .map((key) => SETUP_STEP_IDS[key]);
 }
+
+/** 거짓에서 참으로 바뀐 키의 스텝 id. onContext는 세션당 1회라 해제 뒤 재점등을 못 한다. */
+export function stepsToComplete(prev: SetupKeys | undefined, next: SetupKeys): string[] {
+  if (prev === undefined) return [];
+  return (Object.keys(SETUP_STEP_IDS) as (keyof SetupKeys)[])
+    .filter((key) => !prev[key] && next[key])
+    .map((key) => SETUP_STEP_IDS[key]);
+}

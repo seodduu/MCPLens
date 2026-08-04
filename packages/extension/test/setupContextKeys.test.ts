@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { evaluateSetupKeys, stepsToUncheck, SETUP_STEP_IDS } from '../src/setupContextKeys.js';
+import {
+  evaluateSetupKeys,
+  stepsToUncheck,
+  stepsToComplete,
+  SETUP_STEP_IDS,
+} from '../src/setupContextKeys.js';
 
 const base = {
   installs: [] as { install: string }[],
@@ -105,5 +110,40 @@ describe('stepsToUncheck', () => {
   it('globalActionsReady가 참에서 거짓이 되면 actions 스텝 id를 해제 대상으로 돌려준다', () => {
     expect(stepsToUncheck(on, { ...on, globalActionsReady: false }))
       .toEqual([SETUP_STEP_IDS.globalActionsReady]);
+  });
+});
+
+describe('stepsToComplete', () => {
+  const on = { scanReady: true, hooksReady: true, analysisReady: true, globalActionsReady: true };
+  const off = { scanReady: false, hooksReady: false, analysisReady: false, globalActionsReady: false };
+
+  it('거짓에서 참으로 바뀌면 해당 스텝 id를 돌려준다', () => {
+    expect(stepsToComplete(off, { ...off, hooksReady: true })).toEqual([SETUP_STEP_IDS.hooksReady]);
+  });
+
+  it('참에서 참이면 아무것도 돌려주지 않는다', () => {
+    expect(stepsToComplete(on, on)).toEqual([]);
+  });
+
+  it('참에서 거짓이면 아무것도 돌려주지 않는다', () => {
+    expect(stepsToComplete(on, { ...on, hooksReady: false })).toEqual([]);
+  });
+
+  it('이전 상태가 없으면 아무것도 돌려주지 않는다', () => {
+    expect(stepsToComplete(undefined, on)).toEqual([]);
+  });
+
+  it('여러 키가 동시에 켜지면 모두 돌려준다', () => {
+    const result = stepsToComplete(off, { ...off, hooksReady: true, scanReady: true });
+    expect(result.sort()).toEqual(
+      [SETUP_STEP_IDS.hooksReady, SETUP_STEP_IDS.scanReady].sort(),
+    );
+  });
+
+  it('stepsToComplete와 stepsToUncheck는 같은 전이에서 동시에 비지 않는다', () => {
+    const prev = { ...off, hooksReady: true };
+    const next = { ...off, scanReady: true };
+    expect(stepsToUncheck(prev, next)).toEqual([SETUP_STEP_IDS.hooksReady]);
+    expect(stepsToComplete(prev, next)).toEqual([SETUP_STEP_IDS.scanReady]);
   });
 });

@@ -37,7 +37,7 @@ import { runInference } from './inferenceCli.js';
 import { AnalysisCoordinator, ANALYSIS_RULES_VERSION, CONSENT_POLICY_VERSION } from './analysisCoordinator.js';
 import { currentActionEligibility, disableGlobally, restoreGlobally, restoreRecommended } from './globalActionCommand.js';
 import { registerScanNow, registerOpenRolloutSetting, registerAuthenticateServer } from './setupCommands.js';
-import { evaluateSetupKeys, stepsToUncheck, type SetupKeys } from './setupContextKeys.js';
+import { evaluateSetupKeys, stepsToUncheck, stepsToComplete, type SetupKeys } from './setupContextKeys.js';
 import { buildSetupRows } from './setupTree.js';
 import { SetupStatusProvider } from './setupTreeProvider.js';
 import { withGenerationGuard } from './collectionRefresh.js';
@@ -266,6 +266,11 @@ export async function activate(ctx: vscode.ExtensionContext) {
       // 진실은 Setup Status 뷰다. await하면 이 호출이 collection-refresh 임계 구역 안에 있어서
       // 응답 없는 커맨드가 세션 내내 모든 사이드바 refresh를 멈출 수 있으므로 fire-and-forget한다.
       void vscode.commands.executeCommand('welcome.markStepIncomplete', stepId).then(undefined, () => { /* 무시 */ });
+    }
+    for (const stepId of stepsToComplete(lastSetupKeys, next)) {
+      // 해제(markStepIncomplete)로 소진된 onContext 이벤트는 재점등을 못 하므로 직접 켠다.
+      // 같은 이유로 fire-and-forget한다: 내부 커맨드 실패가 refresh를 막으면 안 된다.
+      void vscode.commands.executeCommand('welcome.markStepComplete', stepId).then(undefined, () => { /* 무시 */ });
     }
     lastSetupKeys = next;
   }
