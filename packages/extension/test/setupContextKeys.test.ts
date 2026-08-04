@@ -60,8 +60,8 @@ describe('evaluateSetupKeys', () => {
     expect(evaluateSetupKeys({ ...base, consentAccepted: true }).analysisReady).toBe(false);
   });
 
-  it('rollout이 shadow면 globalActionsReady는 거짓', () => {
-    expect(evaluateSetupKeys({ ...base, rollout: 'shadow' }).globalActionsReady).toBe(false);
+  it('rollout이 off면 globalActionsReady는 거짓', () => {
+    expect(evaluateSetupKeys({ ...base, rollout: 'off' }).globalActionsReady).toBe(false);
   });
 
   it('rollout이 설정되지 않았으면 globalActionsReady는 거짓', () => {
@@ -72,7 +72,19 @@ describe('evaluateSetupKeys', () => {
     expect(evaluateSetupKeys({ ...base, rollout: 'claude' }).globalActionsReady).toBe(true);
   });
 
-  it('rollout이 stable이면 globalActionsReady는 참', () => {
+  it('rollout이 all이면 globalActionsReady는 참', () => {
+    expect(evaluateSetupKeys({ ...base, rollout: 'all' }).globalActionsReady).toBe(true);
+  });
+
+  it('구 값 shadow가 저장돼 있으면 globalActionsReady는 거짓', () => {
+    expect(evaluateSetupKeys({ ...base, rollout: 'shadow' }).globalActionsReady).toBe(false);
+  });
+
+  it('구 값 codex-beta가 저장돼 있으면 마이그레이션된 all 기준으로 globalActionsReady는 참', () => {
+    expect(evaluateSetupKeys({ ...base, rollout: 'codex-beta' }).globalActionsReady).toBe(true);
+  });
+
+  it('구 값 stable이 저장돼 있으면 마이그레이션된 all 기준으로 globalActionsReady는 참', () => {
     expect(evaluateSetupKeys({ ...base, rollout: 'stable' }).globalActionsReady).toBe(true);
   });
 });

@@ -8,7 +8,8 @@ import { LensStore, LogWatcher, dbPath, dbWriterLockPath,
   defaultClaudeConfigPaths, listManagedServers, type ManagedServer,
   buildReport, renderReport, applyClaudeGlobalDeny, restoreClaudeGlobalDeny,
   applyCodexDisabledTool, restoreCodexDisabledTool, estimateInferenceCost, type ActionFileSystem,
-  actionAllowedByRollout, isDependencyAnalysisRollout, type GlobalActionClient,
+  actionAllowedByRollout, migrateDependencyAnalysisRollout, DEFAULT_DEPENDENCY_ANALYSIS_ROLLOUT,
+  type GlobalActionClient,
   type DependencyAnalysisRollout, collectAllSpecs } from '@mcp-lens/core';
 import { WriterLeaseManager } from './writerLease.js';
 import { chooseMode } from './leaseMode.js';
@@ -193,7 +194,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
   const dependencyRollout = (): DependencyAnalysisRollout => {
     const configured = vscode.workspace.getConfiguration('mcplens')
       .get<unknown>('dependencyAnalysis.rollout');
-    return isDependencyAnalysisRollout(configured) ? configured : 'shadow';
+    // 구 값(shadow/codex-beta/stable)을 저장된 그대로 두고 읽을 때만 새 값으로 옮긴다.
+    return migrateDependencyAnalysisRollout(configured) ?? DEFAULT_DEPENDENCY_ANALYSIS_ROLLOUT;
   };
   const sinceIso = () => new Date(Date.now() - reportDays() * 86_400_000).toISOString();
 

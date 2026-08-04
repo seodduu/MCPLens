@@ -75,10 +75,10 @@ function analysisRow(input: BuildSetupRowsInput, serverName: string): SetupRow {
 }
 
 function globalActionsRow(input: BuildSetupRowsInput): SetupRow {
-  const locked = input.rollout === 'shadow';
+  const locked = input.rollout === 'off';
   return {
     group: 'Global actions', label: 'Global actions',
-    description: `${locked ? 'locked' : 'enabled'} (${input.rollout})`,
+    description: locked ? 'locked' : `enabled (${input.rollout})`,
     icon: locked ? 'lock' : 'unlock',
     command: 'mcp-lens.openRolloutSetting',
   };

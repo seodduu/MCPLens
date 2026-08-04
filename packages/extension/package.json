@@ -295,13 +295,19 @@
         "mcplens.dependencyAnalysis.rollout": {
           "type": "string",
           "enum": [
-            "shadow",
+            "off",
             "claude",
-            "codex-beta",
-            "stable"
+            "codex",
+            "all"
           ],
-          "default": "shadow",
-          "markdownDescription": "Controls which dependency-analysis action surfaces are available. Shadow allows analysis, cache, and details only."
+          "enumDescriptions": [
+            "Global actions are locked. Lens never edits your client config.",
+            "Allow global actions for Claude Code only.",
+            "Allow global actions for Codex only.",
+            "Allow global actions for Claude Code and Codex."
+          ],
+          "default": "off",
+          "markdownDescription": "Controls which client is allowed to use global actions (disabling an unused MCP tool by editing that client's config file). Analysis, cache, and details remain available for every value, including `off`. Gemini CLI is not supported by global actions and is never allowed."
         }
       }
     },

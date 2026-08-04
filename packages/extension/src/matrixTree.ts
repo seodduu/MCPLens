@@ -130,7 +130,7 @@ function zeroUsageServerNodes(managed: ManagedServer[], usedNames: Set<string>):
 export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set(),
   managedServers: ManagedServer[] = [], excludeServers: Set<string> = new Set(),
   analysisRows: readonly AnalysisRow[] = [],
-  rollout: DependencyAnalysisRollout = 'shadow',
+  rollout: DependencyAnalysisRollout = 'off',
   isCurrentlyEligible: (client: string, serverName: string, toolName: string) => boolean = () => false,
   hasActiveGlobalAction: (client: string, serverName: string, toolName: string) => boolean = () => false): LensNode[] {
   // Lens가 지원하지 않는 서버(DCR 거부 등)는 트리 어디에도 나타나지 않는다.

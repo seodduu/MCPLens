@@ -1,4 +1,5 @@
 import type { InstallState } from './hookInstall.js';
+import { migrateDependencyAnalysisRollout, DEFAULT_DEPENDENCY_ANALYSIS_ROLLOUT } from '@mcp-lens/core';
 
 export interface SetupKeys {
   scanReady: boolean;
@@ -34,8 +35,15 @@ export function evaluateSetupKeys(input: SetupKeyInput): SetupKeys {
     // needs-approval을 참으로 세면 수집 0건인데 체크가 켜지는 거짓 성공이 난다.
     hooksReady: present.length > 0 && present.every((row) => row.install === 'installed'),
     analysisReady: input.consentAccepted && input.analyzedServerCount > 0,
-    // 값이 없으면 VS Code 설정 기본값(shadow)과 같다. shadow는 잠금 상태이므로 거짓이어야 한다.
-    globalActionsReady: input.rollout !== undefined && input.rollout !== 'shadow',
+    // 값이 없으면 VS Code 설정 기본값(off)과 같다. off는 잠금 상태이므로 거짓이어야 한다.
+    // 구 값(shadow/codex-beta/stable)이 저장돼 있어도 migrateDependencyAnalysisRollout으로
+    // 옮겨서 판정한다 — 업그레이드 직후 사용자가 부여했던 권한이 순간적으로 사라지면 안 된다.
+    globalActionsReady: (() => {
+      const migrated = input.rollout === undefined
+        ? DEFAULT_DEPENDENCY_ANALYSIS_ROLLOUT
+        : migrateDependencyAnalysisRollout(input.rollout);
+      return migrated !== undefined && migrated !== 'off';
+    })(),
   };
 }
 

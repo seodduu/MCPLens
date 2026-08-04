@@ -9,7 +9,7 @@ const base = {
   analyzedServers: new Set<string>(),
   definitionServers: new Set<string>(),
   consent: undefined as { provider: string; model: string } | undefined,
-  rollout: 'shadow',
+  rollout: 'off',
 };
 const auth = (rows: ReturnType<typeof buildSetupRows>) =>
   rows.filter((r) => r.group === 'MCP authentication');
@@ -119,9 +119,9 @@ describe('buildSetupRows', () => {
     expect(row?.command).toBe('mcplens.reanalyzeServer');
   });
 
-  it('rollout이 shadow면 Global actions 행 description이 locked (shadow)', () => {
+  it('rollout이 off면 Global actions 행 description이 locked', () => {
     const row = buildSetupRows(base).find((r) => r.group === 'Global actions');
-    expect(row?.description).toBe('locked (shadow)');
+    expect(row?.description).toBe('locked');
     expect(row?.icon).toBe('lock');
   });
 

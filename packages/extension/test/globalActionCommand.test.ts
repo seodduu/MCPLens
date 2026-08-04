@@ -68,7 +68,7 @@ describe('global action commands', () => {
     expect(store.recordGlobalAction).toHaveBeenCalledWith(action);
   });
 
-  it('rejects shadow rollout for Claude and Codex before applying', async () => {
+  it('rejects a locked rollout for Claude and Codex before applying', async () => {
     for (const client of ['claude-code', 'codex'] as const) {
       const apply = vi.fn();
       const result = await disableGlobally({

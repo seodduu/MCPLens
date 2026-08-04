@@ -46,7 +46,7 @@ describe('buildTree', () => {
       { serverName: 'github', toolName: 'search', status: 'Independent' as const, summary: 'Searches repositories.', action: 'Disable globally…' as const, canDisableGlobally: true },
       { serverName: 'github', toolName: 'get_file', status: 'Dependent' as const, canDisableGlobally: false },
     ];
-    const tools = buildTree(input, new Set(), [], new Set(), rows, 'stable', () => true)[0].children[0].children;
+    const tools = buildTree(input, new Set(), [], new Set(), rows, 'all', () => true)[0].children[0].children;
     const search = tools.find((tool) => tool.toolName === 'search')!;
     const getFile = tools.find((tool) => tool.toolName === 'get_file')!;
     expect(search).toMatchObject({ analysisStatus: 'Independent', analysisSummary: 'Searches repositories.', analysisAction: 'Disable globally…', canDisableGlobally: true });
@@ -54,10 +54,10 @@ describe('buildTree', () => {
     expect(getFile.analysisAction).toBeUndefined();
   });
 
-  it('hides action rows during shadow rollout', () => {
+  it('hides action rows during off rollout', () => {
     const rows = [{ serverName: 'github', toolName: 'search', status: 'Independent' as const,
       action: 'Disable globally…' as const, canDisableGlobally: true }];
-    const tool = buildTree(input, new Set(), [], new Set(), rows, 'shadow')[0].children[0].children
+    const tool = buildTree(input, new Set(), [], new Set(), rows, 'off')[0].children[0].children
       .find((row) => row.toolName === 'search')!;
     expect(tool.canDisableGlobally).toBe(false);
     expect(tool.analysisAction).toBeUndefined();
@@ -67,7 +67,7 @@ describe('buildTree', () => {
   ('hides the action context for %s eligibility failure', (reason) => {
     const rows = [{ serverName: 'github', toolName: 'search', status: 'Independent' as const,
       action: 'Disable globally…' as const, canDisableGlobally: true }];
-    const tool = buildTree(input, new Set(), [], new Set(), rows, 'stable', () => false)[0].children[0].children
+    const tool = buildTree(input, new Set(), [], new Set(), rows, 'all', () => false)[0].children[0].children
       .find((row) => row.toolName === 'search')!;
     expect(tool.canDisableGlobally, reason).toBe(false);
     expect(tool.analysisAction, reason).toBeUndefined();
@@ -76,7 +76,7 @@ describe('buildTree', () => {
   it('exposes the action context for a currently eligible candidate', () => {
     const rows = [{ serverName: 'github', toolName: 'search', status: 'Independent' as const,
       action: 'Disable globally…' as const, canDisableGlobally: true }];
-    const tool = buildTree(input, new Set(), [], new Set(), rows, 'stable', () => true)[0].children[0].children
+    const tool = buildTree(input, new Set(), [], new Set(), rows, 'all', () => true)[0].children[0].children
       .find((row) => row.toolName === 'search')!;
     expect(tool.canDisableGlobally).toBe(true);
     expect(tool.analysisAction).toBe('Disable globally…');
@@ -85,16 +85,16 @@ describe('buildTree', () => {
   it('exposes restore only for an active Lens-owned action, even when disable eligibility changed', () => {
     const rows = [{ serverName: 'github', toolName: 'search', status: 'Independent' as const,
       action: 'Disable globally…' as const, canDisableGlobally: true }];
-    const tool = buildTree(input, new Set(), [], new Set(), rows, 'stable', () => false,
+    const tool = buildTree(input, new Set(), [], new Set(), rows, 'all', () => false,
       (client, server, toolName) => client === 'claude-code' && server === 'github' && toolName === 'search')
       [0].children[0].children.find((row) => row.toolName === 'search')!;
     expect(tool).toMatchObject({ canDisableGlobally: false, canRestoreGlobally: true, analysisAction: 'Restore globally' });
   });
 
-  it('hides both global action contexts for active actions during shadow rollout', () => {
+  it('hides both global action contexts for active actions during off rollout', () => {
     const rows = [{ serverName: 'github', toolName: 'search', status: 'Independent' as const,
       action: 'Disable globally…' as const, canDisableGlobally: true }];
-    const tool = buildTree(input, new Set(), [], new Set(), rows, 'shadow', () => true, () => true)
+    const tool = buildTree(input, new Set(), [], new Set(), rows, 'off', () => true, () => true)
       [0].children[0].children.find((row) => row.toolName === 'search')!;
     expect(tool).toMatchObject({ canDisableGlobally: false, canRestoreGlobally: false });
     expect(tool.analysisAction).toBeUndefined();
