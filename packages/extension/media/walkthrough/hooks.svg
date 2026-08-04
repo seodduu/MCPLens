@@ -1,9 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
-  <g fill="none" stroke="#8b8b8b" stroke-width="2">
-    <circle cx="300" cy="180" r="50" />
-    <path d="M300 230 C300 260, 340 260, 340 290 C340 320, 300 320, 300 350" />
-    <circle cx="500" cy="180" r="50" />
-    <path d="M500 230 C500 260, 460 260, 460 290 C460 320, 500 320, 500 350" />
+  <!-- 호출 이벤트가 깔때기를 지나 DB에 쌓인다: 훅 수집 -->
+  <g fill="none" stroke="#8b8b8b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <!-- 떨어지는 호출 점들 -->
+    <circle cx="340" cy="88" r="6" fill="#8b8b8b" stroke="none" />
+    <circle cx="400" cy="70" r="6" fill="#8b8b8b" stroke="none" />
+    <circle cx="460" cy="92" r="6" fill="#8b8b8b" stroke="none" />
+    <circle cx="372" cy="112" r="6" fill="#8b8b8b" stroke="none" />
+    <circle cx="432" cy="116" r="6" fill="#8b8b8b" stroke="none" />
+    <!-- 깔때기 -->
+    <path d="M300 140 H500 L428 218 V262 H372 V218 Z" />
+    <!-- 낙하선 -->
+    <line x1="400" y1="268" x2="400" y2="292" stroke-dasharray="2 8" stroke-width="4" />
+    <!-- DB 실린더 -->
+    <ellipse cx="400" cy="308" rx="72" ry="16" />
+    <path d="M328 308 V346 A72 16 0 0 0 472 346 V308" />
   </g>
   <text x="400" y="400" text-anchor="middle" font-family="sans-serif" font-size="28" fill="#8b8b8b">Collect</text>
 </svg>
