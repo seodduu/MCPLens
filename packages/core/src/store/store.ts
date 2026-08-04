@@ -104,12 +104,11 @@ export class LensStore {
         // A hook and its transcript record can share native identity. Delivery
         // idempotency is source-local, while the ordinal preserves occurrences
         // whose fallback correlation identities are intentionally identical.
-        const attributed = this.attributeCodexExactLoad(observation);
         this.insertObservation({
-          ...attributed,
-          deliveryId: `log:${index}:${attributed.deliveryId}`,
+          ...observation,
+          deliveryId: `log:${index}:${observation.deliveryId}`,
         });
-        for (const signal of directClaudeRegretSignals(this.activeActions(), attributed)) {
+        for (const signal of directClaudeRegretSignals(this.activeActions(), observation)) {
           this.recordRegretSignal(signal);
         }
       }
@@ -139,30 +138,6 @@ export class LensStore {
         }
       }
     });
-  }
-
-  /** Codex가 남긴 exposed exact name은 현재 스캔·설정에 유일하게 맞을 때만 분해한다. */
-  private attributeCodexExactLoad(observation: ToolObservation): ToolObservation {
-    if (
-      observation.client !== 'codex'
-      || observation.source !== 'log'
-      || observation.phase !== 'tool-before'
-      || observation.serverName !== null
-      || observation.toolName === null
-      || observation.toolName === '(code-mode-search)'
-    ) return observation;
-
-    const candidates = this.select(
-      `SELECT d.server_name, d.tool_name FROM tool_definitions d
-       JOIN client_servers c ON c.server_name=d.server_name
-       WHERE c.client='codex'`, [],
-    ).filter((row) => `mcp__${row.server_name as string}__${row.tool_name as string}` === observation.toolName);
-    if (candidates.length !== 1) return observation;
-    return {
-      ...observation,
-      serverName: candidates[0]!.server_name as string,
-      toolName: candidates[0]!.tool_name as string,
-    };
   }
 
   begin(): void {
@@ -262,6 +237,7 @@ export class LensStore {
                  first_scanned_at=COALESCE(tool_definitions.first_scanned_at,
                                            excluded.first_scanned_at)`,
           [d.serverName, d.toolName, d.definitionTokens, d.scannedAt, d.firstScannedAt]);
+      this.reattributePendingCodexLoads();
     });
   }
 
@@ -574,6 +550,9 @@ export class LensStore {
            ON CONFLICT(client, server_name) DO NOTHING`,
           [client, serverName]);
       }
+    // 매 활성화마다 실행되는 경로다. 스캔이 정착해 건너뛰어지는 DB에서도
+    // 귀속 실패로 굳은 과거 load가 여기서 회복된다.
+    this.reattributePendingCodexLoads();
   }
 
   /** 클라이언트 → 그 클라이언트에 설정된 서버 이름 집합. 매핑이 없으면 빈 맵. */
@@ -802,9 +781,44 @@ export class LensStore {
       `INSERT INTO tool_calls(session_id, server_name, tool_name, called_at, duration_ms, is_error, response_tokens)
        VALUES(?,?,?,?,?,?,?)`, [sessionId, call.serverName, call.toolName, call.calledAt,
         call.durationMs, Number(call.isError), call.responseTokens]);
-    for (const load of materialized.toolLoads) this.run(
-      `INSERT INTO tool_loads(session_id, server_name, tool_name, loaded_tokens) VALUES(?,?,?,?)`,
-      [sessionId, load.serverName, load.toolName, load.loadedTokens]);
+    for (const load of materialized.toolLoads) {
+      const attributed = this.attributeCodexLoadName(session.client, load);
+      this.run(
+        `INSERT INTO tool_loads(session_id, server_name, tool_name, loaded_tokens) VALUES(?,?,?,?)`,
+        [sessionId, attributed.serverName, attributed.toolName, attributed.loadedTokens]);
+    }
+  }
+
+  /** Codex가 남긴 canonical 이름은 현재 스캔·설정에 유일하게 맞을 때만 분해한다. */
+  private attributeCodexLoadName(client: string, load: ToolLoadEvent): ToolLoadEvent {
+    if (
+      client !== 'codex'
+      || load.serverName !== null
+      || load.toolName === '(code-mode-search)'
+      || !load.toolName.startsWith('mcp__')
+    ) return load;
+    const candidates = this.select(
+      `SELECT d.server_name, d.tool_name FROM tool_definitions d
+       JOIN client_servers c ON c.server_name=d.server_name
+       WHERE c.client='codex'`, [],
+    ).filter((row) => `mcp__${row.server_name as string}__${row.tool_name as string}` === load.toolName);
+    if (candidates.length !== 1) return load;
+    return {
+      ...load,
+      serverName: candidates[0]!.server_name as string,
+      toolName: candidates[0]!.tool_name as string,
+    };
+  }
+
+  /** 스캔이 나중에 들어와 귀속에 실패했던 codex load를 회복시킨다. */
+  private reattributePendingCodexLoads(): void {
+    const rows = this.select(
+      `SELECT DISTINCT l.session_id FROM tool_loads l
+       JOIN sessions s ON s.session_id = l.session_id
+       WHERE s.client = 'codex' AND l.server_name IS NULL
+         AND l.tool_name LIKE 'mcp\\_\\_%' ESCAPE '\\'`, [],
+    );
+    for (const row of rows) this.rebuildSession(row.session_id as string);
   }
   private refreshDisplacedSession(sessionId: string): void {
     const aliases = this.select(

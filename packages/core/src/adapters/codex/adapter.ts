@@ -252,7 +252,7 @@ function outputParts(output: unknown): { texts: string[]; hasUnsupportedPart: bo
  * 검색이었으면) definition.name 자체가 canonical `mcp__server__tool` 형태인지만
  * 검증한다. 서버/툴을 여기서 분리하지 않는 이유: `mcp__atlas__deep__lookup`처럼
  * 두 가지로 나뉠 수 있는 이름은 실제 설정된 서버 목록과 대조해야만 안전하게 풀 수
- * 있고, 그 대조는 store.attributeCodexExactLoad가 이미 한다.
+ * 있고, 그 대조는 store.attributeCodexLoadName이 이미 한다.
  */
 function validDefinitionName(value: unknown, expectedExactToolName: string | null): string | null {
   if (value === null || typeof value !== 'object') return null;
