@@ -1,11 +1,15 @@
 import * as vscode from 'vscode';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import { LensStore, LogWatcher, dbPath, dbWriterLockPath,
   detectClients, ClaudeAdapter, CodexAdapter, GeminiAdapter,
-  claudeSettingsPath, readDeniedMcpTools, denyMcpTool, allowMcpTool,
-  defaultClaudeConfigPaths, listManagedServers, disableServer, enableServer, type ManagedServer,
-  buildReport, renderReport } from '@mcp-lens/core';
+  claudeSettingsPath, readDeniedMcpTools,
+  defaultClaudeConfigPaths, listManagedServers, type ManagedServer,
+  buildReport, renderReport, applyClaudeGlobalDeny, restoreClaudeGlobalDeny,
+  applyCodexDisabledTool, restoreCodexDisabledTool, estimateInferenceCost, type ActionFileSystem,
+  actionAllowedByRollout, isDependencyAnalysisRollout, type GlobalActionClient,
+  type DependencyAnalysisRollout } from '@mcp-lens/core';
 import { WriterLeaseManager } from './writerLease.js';
 import { chooseMode } from './leaseMode.js';
 import { collectAction } from './pauseDecision.js';
@@ -23,7 +27,14 @@ import { CodexHookInstaller } from './installers/codex.js';
 import { GeminiHookInstaller } from './installers/gemini.js';
 import { findBinary, runBin, nodeFs } from './claudeCli.js';
 import { bundledStamp, installedStamp, needsRuntimeRefresh, recordInstalledStamp } from './runtimeFreshness.js';
-import { pendingHookClients } from './nudge.js';
+import { approvalPendingClients, pendingHookClients } from './nudge.js';
+import { buildAnalysisRows } from './analysisTree.js';
+import { buildAnalysisDetails } from './analysisDetails.js';
+import { requestInferenceConsent, withdrawConsent } from './inferenceConsent.js';
+import { readProviderConfig, resolveProvider, type ProviderResolution } from './providerConfig.js';
+import { runInference } from './inferenceCli.js';
+import { AnalysisCoordinator, ANALYSIS_RULES_VERSION, CONSENT_POLICY_VERSION } from './analysisCoordinator.js';
+import { currentActionEligibility, disableGlobally, restoreGlobally, restoreRecommended } from './globalActionCommand.js';
 
 let watcher: LogWatcher | undefined;
 let store: LensStore | undefined;
@@ -146,6 +157,11 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
   const reportDays = () =>
     Math.max(1, vscode.workspace.getConfiguration('mcpLens').get<number>('reportDays', 30));
+  const dependencyRollout = (): DependencyAnalysisRollout => {
+    const configured = vscode.workspace.getConfiguration('mcplens')
+      .get<unknown>('dependencyAnalysis.rollout');
+    return isDependencyAnalysisRollout(configured) ? configured : 'shadow';
+  };
   const sinceIso = () => new Date(Date.now() - reportDays() * 86_400_000).toISOString();
 
   const readDeniedSafe = (): Set<string> => {
@@ -222,9 +238,89 @@ export async function activate(ctx: vscode.ExtensionContext) {
     const wasteTokens = totals.actPerSessionTokens + totals.candidatePerSessionTokens;
     item.text = formatStatus(wasteToolCount, wasteTokens);
     item.tooltip = wasteTooltip(wasteToolCount, wasteTokens);
-    treeProvider.setRoots(buildTree(input, readDeniedSafe(), listManagedSafe(), unsupportedServers()));
+    const analysisRows = store!.allDefinitions().flatMap((definition) => {
+      const bodies = store!.definitionBodiesForServer(definition.serverName)
+        .filter((body) => body.toolName === definition.toolName);
+      const body = bodies[0];
+      if (!body) return [];
+      const identities = store!.serverIdentities(definition.serverName);
+      if (identities.some((identity) => identity.conflictState !== 'clear')
+        || new Set(identities.map((identity) => identity.endpointHash)).size > 1) {
+        return buildAnalysisRows([], [{ serverName: definition.serverName, toolName: definition.toolName,
+          state: 'Identity conflict', rationale: 'Server identity differs across client settings.' }]);
+      }
+      const analysis = store!.findDependencyAnalysis(body.definitionSetHash, ANALYSIS_RULES_VERSION);
+      if (!analysis) return buildAnalysisRows([], [{ serverName: definition.serverName, toolName: definition.toolName,
+        state: 'Not analyzed' }]);
+      if (analysis.status === 'failed') return buildAnalysisRows([], [{ serverName: definition.serverName, toolName: definition.toolName,
+        state: 'Analysis failed', rationale: analysis.errorCode ?? undefined }]);
+      return buildAnalysisRows(analysis.results.map((result) => {
+        const recommended = store!.activeActions().some((action) =>
+          action.serverName === result.serverName && action.toolName === result.toolName
+          && restoreRecommended(store!, action));
+        return { ...result, displaySummary: recommended
+          ? [result.displaySummary, 'Restore recommended'].filter(Boolean).join(' · ')
+          : result.displaySummary };
+      }));
+    });
+    treeProvider.setRoots(buildTree(
+      input, readDeniedSafe(), listManagedSafe(), unsupportedServers(), analysisRows, dependencyRollout(),
+      (client, serverName, toolName) => {
+        if (client !== 'claude-code' && client !== 'codex') return false;
+        const body = store!.definitionBodiesForServer(serverName)
+          .find((row) => row.toolName === toolName);
+        return body !== undefined && currentActionEligibility(store!, {
+          client, serverName, toolName, definitionSetHash: body.definitionSetHash,
+        }, ANALYSIS_RULES_VERSION).eligible;
+      }, (client, serverName, toolName) => store!.activeActionFor(
+        client as GlobalActionClient, serverName, toolName) !== null));
     void scheduleCollectionRefresh();
   };
+
+  const actionFs: ActionFileSystem = {
+    readFile: (filePath) => fs.promises.readFile(filePath, 'utf8'),
+    writeFile: (filePath, content) => fs.promises.writeFile(filePath, content, 'utf8'),
+    copyFile: (sourcePath, destinationPath) => fs.promises.copyFile(sourcePath, destinationPath),
+    rename: (sourcePath, destinationPath) => fs.promises.rename(sourcePath, destinationPath),
+    mkdir: (directoryPath) => fs.promises.mkdir(directoryPath, { recursive: true }).then(() => undefined),
+    fsync: async (filePath) => { const handle = await fs.promises.open(filePath, 'r'); try { await handle.sync(); } finally { await handle.close(); } },
+    listFiles: (directoryPath) => fs.promises.readdir(directoryPath).then((names) => names.map((name) => path.join(directoryPath, name))),
+    remove: (filePath) => fs.promises.unlink(filePath),
+  };
+
+  let selectedProvider: { provider: 'claude' | 'codex'; model: string } | undefined;
+  const providerResolution = (): ProviderResolution => {
+    if (selectedProvider) return { kind: 'resolved', ...selectedProvider };
+    return resolveProvider(readProviderConfig(vscode.workspace.getConfiguration('mcpLens')),
+      { claude: findBinary('claude') !== null, codex: findBinary('codex') !== null });
+  };
+  const analysisCoordinator = new AnalysisCoordinator({
+    store: () => store!, serverNames: () => [...new Set(store!.allDefinitions().map((row) => row.serverName))],
+    resolve: providerResolution,
+    run: async (request) => {
+      const result = await runInference({
+        provider: request.provider,
+        model: request.model,
+        batch: request.batch,
+        signal: request.signal,
+      });
+      return result.ok ? { ok: true, value: result.value } : { ok: false, errorCode: result.errorCode };
+    },
+    requestConsent: async ({ provider, model }) => {
+      const bodies = store!.allDefinitions().flatMap((definition) => store!.definitionBodiesForServer(definition.serverName));
+      const estimate = estimateInferenceCost(provider, bodies.reduce((sum, body) => sum + body.definitionTokens, 0), bodies.length);
+      const consent = await requestInferenceConsent(
+        { provider, model, estimate },
+        (title, options, acceptLabel) => vscode.window.showInformationMessage(title, options, acceptLabel),
+        () => new Date().toISOString(),
+      );
+      if (!consent) return;
+      store!.saveInferenceConsent(consent);
+      store!.save();
+      await analysisCoordinator.analyze();
+    },
+    onRefresh: refresh,
+  });
   // 전역 제약: DB 파일은 여러 확장 인스턴스(창)가 공유할 수 있으므로,
   // 리스를 획득한 하나만 writer(백필/워처/코디네이터 구동)로 동작하고 나머지는
   // read-only(폴링 reload)로 대기하다 홀더가 죽으면 승격한다. §6.2.
@@ -304,19 +400,41 @@ export async function activate(ctx: vscode.ExtensionContext) {
   ctx.subscriptions.push({ dispose: () => { if (roPoll) clearInterval(roPoll); lease?.stop(); } });
 
   void (async () => {
-    const inputs = await computeCollection();
-    const detected = new Set(inputs.map((i) => i.client));
-    const states = new Map(inputs.map((i) => [i.client, i.install] as const));
     const dismissed = new Set<HookClient>(
       (['claude-code', 'codex', 'gemini-cli'] as HookClient[])
         .filter((c) => ctx.globalState.get<boolean>(`${DISMISS_KEY}.${c}`)));
+
+    const announce = async (): Promise<void> => {
+      const inputs = await computeCollection();
+      const detected = new Set(inputs.map((i) => i.client));
+      const states = new Map(inputs.map((i) => [i.client, i.install] as const));
+      const awaiting = approvalPendingClients(detected, states, dismissed);
+      if (awaiting.length === 0) return;
+      const pick = await vscode.window.showWarningMessage(
+        `MCP Lens: ${awaiting.join('·')} 훅을 켰습니다. codex를 한 번 실행해 뜨는 동의를 승인하면 수집이 시작됩니다.`,
+        '수집 뷰 열기', '다시 안 보기');
+      if (pick === '수집 뷰 열기') void vscode.commands.executeCommand('mcpLens.collection.focus');
+      else if (pick === '다시 안 보기') {
+        for (const c of awaiting) await ctx.globalState.update(`${DISMISS_KEY}.${c}`, true);
+      }
+    };
+
+    const inputs = await computeCollection();
+    const detected = new Set(inputs.map((i) => i.client));
+    const states = new Map(inputs.map((i) => [i.client, i.install] as const));
     const pending = pendingHookClients(detected, states, dismissed);
-    if (pending.length === 0) return;
+    if (pending.length === 0) { await announce(); return; }
+
     const choice = await vscode.window.showInformationMessage(
       `MCP Lens: ${pending.join('·')} 훅 수집이 꺼져 있어요`, '모두 설치', '수집 뷰 열기', '다시 안 보기');
-    if (choice === '모두 설치') { for (const c of pending) await installerFor(c).install(); await computeCollection(); }
-    else if (choice === '수집 뷰 열기') void vscode.commands.executeCommand('mcpLens.collection.focus');
-    else if (choice === '다시 안 보기') for (const c of pending) await ctx.globalState.update(`${DISMISS_KEY}.${c}`, true);
+    if (choice === '모두 설치') {
+      for (const c of pending) await installerFor(c).install();
+      await announce();                       // 설치로 needs-approval이 됐는지 다시 본다
+    } else if (choice === '수집 뷰 열기') {
+      void vscode.commands.executeCommand('mcpLens.collection.focus');
+    } else if (choice === '다시 안 보기') {
+      for (const c of pending) await ctx.globalState.update(`${DISMISS_KEY}.${c}`, true);
+    }
   })();
 
   ctx.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
@@ -327,55 +445,91 @@ export async function activate(ctx: vscode.ExtensionContext) {
   void maybeAutoScan(store, refresh);                     // 시작 시 1회 판정
   ctx.subscriptions.push(watchConfigSources(store, refresh)); // 이후 설정 파일 감시
 
-  // deny 토글: settings.json이 원본 — 커맨드는 파일만 수정, 워처가 트리에 반영
-  const toggleTool = (node: LensNode, action: 'deny' | 'allow') => {
+  const requestAnalysis = async (node?: LensNode, reanalyze = false) => {
+    selectedProvider = undefined;
+    const resolution = providerResolution();
+    if (resolution.kind === 'unavailable') {
+      void vscode.window.showErrorMessage('No supported inference provider is available.');
+      return;
+    }
+    if (resolution.kind === 'choose') {
+      const pick = await vscode.window.showInformationMessage('Choose a provider for dependency analysis.', 'Claude', 'Codex');
+      if (!pick) return;
+      const config = readProviderConfig(vscode.workspace.getConfiguration('mcpLens'));
+      selectedProvider = pick === 'Claude' ? { provider: 'claude', model: config.claudeModel } : { provider: 'codex', model: config.codexModel };
+    }
+    await analysisCoordinator.analyze(reanalyze && node?.serverName ? [node.serverName] : []);
+    selectedProvider = undefined;
+  };
+  const openAnalysisDetails = async (node?: LensNode) => {
     if (!node?.serverName || !node.toolName) return;
-    try {
-      if (action === 'deny') {
-        denyMcpTool(claudeSettingsPath(), node.serverName, node.toolName);
-        void vscode.window.showInformationMessage(
-          `${node.serverName}/${node.toolName} 차단됨 — 새 Claude Code 세션부터 적용됩니다.`);
-      } else {
-        allowMcpTool(claudeSettingsPath(), node.serverName, node.toolName);
-        void vscode.window.showInformationMessage(
-          `${node.serverName}/${node.toolName} 차단 해제됨 — 새 Claude Code 세션부터 적용됩니다.`);
-      }
-    } catch (e) {
-      void vscode.window.showErrorMessage(
-        `settings.json을 수정하지 못했습니다 (파일은 변경되지 않음): ${e instanceof Error ? e.message : String(e)}`);
-    }
-    refresh();
+    const body = store!.definitionBodiesForServer(node.serverName).find((row) => row.toolName === node.toolName);
+    const result = body && store!.findDependencyAnalysis(body.definitionSetHash, ANALYSIS_RULES_VERSION)?.results
+      .find((row) => row.serverName === node.serverName && row.toolName === node.toolName);
+    if (!result) { void vscode.window.showInformationMessage('This tool has not been analyzed yet.'); return; }
+    const details = buildAnalysisDetails(result, JSON.stringify(body));
+    const content = [`# ${details.title}`, ...details.sections.map((section) => `## ${section.label}\n${section.value}`), ...details.notices].join('\n\n');
+    const doc = await vscode.workspace.openTextDocument({ content, language: 'markdown' });
+    await vscode.window.showTextDocument(doc);
+  };
+  const actionClient = (node: LensNode): GlobalActionClient | undefined => node.client === 'claude-code' || node.client === 'codex' ? node.client : undefined;
+  const settingsPathFor = (client: GlobalActionClient): string => client === 'claude-code' ? claudeSettingsPath() : path.join(os.homedir(), '.codex', 'config.toml');
+  const disable = async (node?: LensNode) => {
+    if (!node?.canDisableGlobally || !node.serverName || !node.toolName) return;
+    const client = actionClient(node); const body = store!.definitionBodiesForServer(node.serverName).find((row) => row.toolName === node.toolName);
+    if (!client || !body) return;
+    const rolloutAllowed = actionAllowedByRollout(dependencyRollout(), client);
+    const result = await disableGlobally({ store: store!, target: { client, serverName: node.serverName, toolName: node.toolName, definitionSetHash: body.definitionSetHash },
+      rolloutAllowed, analysisRulesVersion: ANALYSIS_RULES_VERSION,
+      apply: () => client === 'claude-code' ? applyClaudeGlobalDeny({ serverName: node.serverName!, toolName: node.toolName!, settingsPath: settingsPathFor(client), actions: store!.activeActions() }, actionFs) : applyCodexDisabledTool({ serverName: node.serverName!, toolName: node.toolName!, settingsPath: settingsPathFor(client), actions: store!.activeActions() }, actionFs), refresh });
+    if (result.ok) void vscode.window.showInformationMessage('Global action applied. It takes effect in new sessions.'); else void vscode.window.showErrorMessage(result.message);
+  };
+  const restore = async (node?: LensNode) => {
+    const client = node ? actionClient(node) : undefined;
+    if (!client || !node?.serverName || !node.toolName) return;
+    const action = store!.activeActionFor(client, node.serverName, node.toolName); if (!action) return;
+    const result = await restoreGlobally({ store: store!, action,
+      rolloutAllowed: actionAllowedByRollout(dependencyRollout(), client),
+      restore: () => client === 'claude-code' ? restoreClaudeGlobalDeny(action, actionFs) : restoreCodexDisabledTool(action, actionFs) });
+    if (result.ok) { refresh(); void vscode.window.showInformationMessage('Global action restored.'); } else void vscode.window.showErrorMessage(result.message);
   };
   ctx.subscriptions.push(
-    vscode.commands.registerCommand('mcp-lens.removeTool', (n: LensNode) => toggleTool(n, 'deny')),
-    vscode.commands.registerCommand('mcp-lens.addTool', (n: LensNode) => toggleTool(n, 'allow')));
+    vscode.commands.registerCommand('mcplens.openAnalysisDetails', openAnalysisDetails),
+    vscode.commands.registerCommand('mcplens.analyzeDependencies', () => requestAnalysis()),
+    vscode.commands.registerCommand('mcplens.reanalyzeServer', (node: LensNode) => requestAnalysis(node, true)),
+    vscode.commands.registerCommand('mcplens.disableGlobally', disable),
+    vscode.commands.registerCommand('mcplens.restoreGlobally', restore),
+    vscode.commands.registerCommand('mcplens.withdrawInferenceConsent', () => {
+      const consent = store!.currentInferenceConsent(CONSENT_POLICY_VERSION); if (!consent || consent.status !== 'accepted') return;
+      store!.saveInferenceConsent(withdrawConsent(consent, new Date().toISOString())); store!.save();
+      void vscode.window.showInformationMessage('Inference consent withdrawn. Cached analyses and global actions were kept.');
+    }));
 
-  // 서버 단위 토글: 설정 파일들이 원본 — 커맨드는 파일만 수정, 워처가 트리에 반영
-  const toggleServer = async (node: LensNode, action: 'disable' | 'enable') => {
-    if (node?.kind !== 'server' || !node.serverName) return;
-    try {
-      if (action === 'disable') {
-        const pick = await vscode.window.showWarningMessage(
-          `${node.serverName} 서버를 Claude Code에서 차단할까요? 서버 연결과 툴 정의 로드가 모두 중단됩니다.`,
-          { modal: true }, '차단');
-        if (pick !== '차단') return;
-        disableServer(configPaths, node.serverName);
-        void vscode.window.showInformationMessage(
-          `${node.serverName} 서버 차단됨 — 새 Claude Code 세션부터 적용됩니다.`);
-      } else {
-        enableServer(configPaths, node.serverName);
-        void vscode.window.showInformationMessage(
-          `${node.serverName} 서버 차단 해제됨 — 새 Claude Code 세션부터 적용됩니다.`);
-      }
-    } catch (e) {
-      void vscode.window.showErrorMessage(
-        `서버 설정을 수정하지 못했습니다: ${e instanceof Error ? e.message : String(e)}`);
+  // Legacy IDs remain callable for compatibility but must use the v2 guarded path.
+  const legacyRemoveTool = async (node?: LensNode) => {
+    if (node?.kind !== 'tool' || node.client !== 'claude-code') {
+      void vscode.window.showErrorMessage('This legacy command only supports Claude Code tools.');
+      return;
     }
-    refresh();
+    await disable(node);
+  };
+  const legacyAddTool = async (node?: LensNode) => {
+    if (node?.kind !== 'tool' || node.client !== 'claude-code') {
+      void vscode.window.showErrorMessage('This legacy command only supports Claude Code tools.');
+      return;
+    }
+    await restore(node);
   };
   ctx.subscriptions.push(
-    vscode.commands.registerCommand('mcp-lens.removeServer', (n: LensNode) => toggleServer(n, 'disable')),
-    vscode.commands.registerCommand('mcp-lens.addServer', (n: LensNode) => toggleServer(n, 'enable')));
+    vscode.commands.registerCommand('mcp-lens.removeTool', legacyRemoveTool),
+    vscode.commands.registerCommand('mcp-lens.addTool', legacyAddTool));
+
+  const rejectLegacyServerAction = () => {
+    void vscode.window.showErrorMessage('Server-wide global actions are not supported.');
+  };
+  ctx.subscriptions.push(
+    vscode.commands.registerCommand('mcp-lens.removeServer', rejectLegacyServerAction),
+    vscode.commands.registerCommand('mcp-lens.addServer', rejectLegacyServerAction));
 
   const watchFile = (absPath: string) => {
     const w = vscode.workspace.createFileSystemWatcher(

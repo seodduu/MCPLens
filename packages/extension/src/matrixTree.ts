@@ -4,8 +4,10 @@ import type {
 } from '@mcp-lens/core';
 import {
   buildMatrix, callSessionCounts, cumulativeCost, dominantMode, mcpDenyRule,
-  splitByClient, toolCostKey, visibleMatrixRows,
+  splitByClient, toolCostKey, visibleMatrixRows, actionAllowedByRollout,
+  type DependencyAnalysisRollout,
 } from '@mcp-lens/core';
+import type { AnalysisRow } from './analysisTree.js';
 
 export interface LensNode {
   kind: 'client' | 'server' | 'tool';
@@ -25,12 +27,18 @@ export interface LensNode {
   toolName?: string;
   /** claude-code 하위에만 존재. false = 차단됨(✕). undefined = 토글 불가 */
   enabled?: boolean;
+  analysisStatus?: AnalysisRow['status'];
+  analysisSummary?: string;
+  canDisableGlobally?: boolean;
+  canRestoreGlobally?: boolean;
+  analysisAction?: 'Disable globally…' | 'Restore globally';
   children: LensNode[];
 }
 
 /** 성공은 기본값 — 실패가 있을 때만 괄호로 표기 */
 function fmtCalls(calls: number, errors: number): string {
-  return errors > 0 ? `${calls}회(실패 ${errors})` : `${calls}회`;
+  const label = calls === 1 ? 'call' : 'calls';
+  return errors > 0 ? `${calls} ${label} (${errors} failed)` : `${calls} ${label}`;
 }
 
 /** 낭비로 판단한 툴 = remove | filter-server (확신 무관, 상태바 ②와 동일 정의) */
@@ -42,7 +50,7 @@ function isWaste(r: MatrixRow): boolean {
 /** 낭비 툴 수 꼬리표 — 0이면 빈 문자열(붙이지 않음) */
 function wasteSuffix(rows: MatrixRow[]): string {
   const n = rows.filter(isWaste).length;
-  return n > 0 ? ` · 낭비 ${n}툴` : '';
+  return n > 0 ? ` · ${n} waste tools` : '';
 }
 
 /** 천단위 구분자 — report/markdown.ts:18과 동일 규칙 */
@@ -57,7 +65,7 @@ function fmtTok(n: number): string {
 function costText(cost: CumulativeCost): string {
   return cost.definitionMeasured
     ? fmtTok(cost.tokens)
-    : `${fmtTok(cost.tokens)}(정의 미측정)`;
+    : `${fmtTok(cost.tokens)} (definition not measured)`;
 }
 
 /**
@@ -87,9 +95,9 @@ function costSegment(
     const def = sumCosts(rows.map(perSessionCost));
     // 정의 미측정이면 0tok/세션은 거짓 신호 — 토큰·세션 표기 없이 미측정임만 밝힌다.
     const defText = showUnmeasured && !def.definitionMeasured
-      ? '정의 미측정'
-      : `정의 ${fmtTok(def.tokens)}/세션`;
-    return `호출 ${fmtTok(call)} · ${defText}`;
+      ? 'definition not measured'
+      : `definition ${fmtTok(def.tokens)}/session`;
+    return `calls ${fmtTok(call)} · ${defText}`;
   }
   const cost = sumCosts(rows.map(
     (r) => cumulativeCost(r, callSessions.get(toolCostKey(r.serverName, r.toolName)) ?? 0)));
@@ -113,17 +121,22 @@ function zeroUsageServerNodes(managed: ManagedServer[], usedNames: Set<string>):
     kind: 'server',
     id: `claude-code/${s.name}`,
     label: s.name,
-    description: s.enabled ? '0회 · 0tok' : '0회 · 0tok · 차단됨',
+    description: s.enabled ? '0 calls · 0tok' : '0 calls · 0tok · Disabled',
     client: 'claude-code', serverName: s.name, enabled: s.enabled,
     children: [],
   }));
 }
 
 export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set(),
-  managedServers: ManagedServer[] = [], excludeServers: Set<string> = new Set()): LensNode[] {
+  managedServers: ManagedServer[] = [], excludeServers: Set<string> = new Set(),
+  analysisRows: readonly AnalysisRow[] = [],
+  rollout: DependencyAnalysisRollout = 'shadow',
+  isCurrentlyEligible: (client: string, serverName: string, toolName: string) => boolean = () => false,
+  hasActiveGlobalAction: (client: string, serverName: string, toolName: string) => boolean = () => false): LensNode[] {
   // Lens가 지원하지 않는 서버(DCR 거부 등)는 트리 어디에도 나타나지 않는다.
   managedServers = managedServers.filter((s) => !excludeServers.has(s.name));
   const managed = new Map(managedServers.map((s) => [s.name, s]));
+  const analysisByTool = new Map(analysisRows.map((row) => [`${row.serverName}\u0000${row.toolName}`, row]));
   const roots = splitByClient(input).map(({ client, input: sub }) => {
     // 모드 인지 표시: 지연 로딩 클라이언트에서는 실비용 0인 미사용 툴을 숨긴다
     const rows = visibleMatrixRows(buildMatrix(sub), sub.sessions)
@@ -146,7 +159,7 @@ export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set
         kind: 'server' as const,
         id: `${client}/${server}`,
         label: server,
-        description: serverEnabled === false ? `${desc} · 차단됨` : desc,
+        description: serverEnabled === false ? `${desc} · Disabled` : desc,
         client, serverName: server, enabled: serverEnabled,
         children: rs.map((r): LensNode => {
           // 서버가 꺼져 있으면 툴 단위 토글은 무의미 — 메뉴 숨김(enabled 미부여)
@@ -156,19 +169,33 @@ export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set
           const { action, confidence } = r.recommendation;
           const actionLabel =
             confidence === 'low' && (action === 'remove' || action === 'filter-server')
-              ? `${action} (후보)` : action;
+              ? `${action} (candidate)` : action;
           const toolDesc = `${fmtCalls(r.callCount, r.reliability.errorCount)} · ${costSegment([r], callSessions, perSession, true)} · ${actionLabel}`;
+          const analysis = analysisByTool.get(`${server}\u0000${r.toolName}`);
+          const analysisText = analysis
+            ? ` · ${analysis.status}${analysis.summary ? ` · ${analysis.summary}` : ''}` : '';
+          const rolloutAllowed = actionAllowedByRollout(rollout, client);
+          const activeAction = hasActiveGlobalAction(client, server, r.toolName);
+          const canDisableGlobally = !activeAction && analysis?.canDisableGlobally === true
+            && rolloutAllowed && isCurrentlyEligible(client, server, r.toolName);
+          const canRestoreGlobally = activeAction && rolloutAllowed;
           return {
             kind: 'tool',
             id: `${client}/${server}/${r.toolName}`,
             label: r.toolName,
-            description: enabled === false ? `${toolDesc} · 차단됨` : toolDesc,
+            description: enabled === false ? `${toolDesc}${analysisText} · Disabled` : `${toolDesc}${analysisText}`,
             tooltip: r.recommendation.reason,
             action,
             confidence,
             searchedNotCalled: r.loadPattern === 'search-pollution',
             client, serverName: server, toolName: r.toolName,
             enabled,
+            analysisStatus: analysis?.status,
+            analysisSummary: analysis?.summary,
+            canDisableGlobally,
+            canRestoreGlobally,
+            analysisAction: canDisableGlobally ? analysis?.action
+              : canRestoreGlobally ? 'Restore globally' : undefined,
             children: [],
           };
         }),
@@ -183,7 +210,7 @@ export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set
     return {
       kind: 'client' as const, id: client, label: client,
       description:
-        `세션 ${sub.sessions.length}개 · 총 ${fmtCalls(totalCalls, totalErrors)} · ${costSegment(rows, callSessions, perSession, false)}${wasteSuffix(rows)}`,
+        `${sub.sessions.length} sessions · total ${fmtCalls(totalCalls, totalErrors)} · ${costSegment(rows, callSessions, perSession, false)}${wasteSuffix(rows)}`,
       children: servers,
     };
   });
@@ -191,7 +218,7 @@ export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set
   if (managedServers.length > 0 && !roots.some((r) => r.id === 'claude-code')) {
     roots.push({
       kind: 'client', id: 'claude-code', label: 'claude-code',
-      description: '세션 0개 · 총 0회 · 0tok',
+      description: '0 sessions · total 0 calls · 0tok',
       children: zeroUsageServerNodes(managedServers, new Set()),
     });
   }

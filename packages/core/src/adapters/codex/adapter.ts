@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
-import type { LogAdapter, SessionMeta, ToolCallEvent,
+import type { LogAdapter, SessionMeta, ToolCallEvent, ToolSearchAttempt,
   ToolLoadEvent, TokenUsageEvent } from '../../types.js';
 import { clientLogRoots } from '../../paths.js';
 import { countTokens } from '../../tokenize.js';
@@ -21,6 +21,7 @@ export class CodexAdapter implements LogAdapter {
     const sessionId = crypto.createHash('sha256').update(filePath).digest('hex').slice(0, 16);
     const toolCalls: ToolCallEvent[] = [];
     const toolLoads: ToolLoadEvent[] = [];
+    const toolSearchAttempts: ToolSearchAttempt[] = [];
     const usage: TokenUsageEvent[] = [];
     let parseErrors = 0;
     let startedAt: string | null = null;
@@ -31,6 +32,7 @@ export class CodexAdapter implements LogAdapter {
     // call_id → toolLoads index, for correlating custom_tool_call (ALL_TOOLS search
     // script) with its later custom_tool_call_output that carries the loaded text.
     const codeModeCallIds = new Map<string, number>();
+    const exactSearchCallIds = new Map<string, string>();
     const toolCallTurnIds: (string | null)[] = [];
 
     for (const line of content.split('\n')) {
@@ -76,13 +78,31 @@ export class CodexAdapter implements LogAdapter {
             loadedTokens: null,
           }) - 1;
           if (typeof callId === 'string') codeModeCallIds.set(callId, idx);
+          const exactToolName = extractExactCanonicalSearch(inputText);
+          if (typeof callId === 'string' && exactToolName) {
+            exactSearchCallIds.set(callId, exactToolName);
+          }
         }
       } else if (t === 'custom_tool_call_output') {
         const callId = p.call_id ?? rec.call_id;
         const idx = typeof callId === 'string' ? codeModeCallIds.get(callId) : undefined;
-        if (idx !== undefined) {
-          const text = extractOutputText(p.output ?? rec.output);
-          if (text) toolLoads[idx].loadedTokens = countTokens(text);
+        if (idx === undefined) continue;
+        const text = extractOutputText(p.output ?? rec.output);
+        if (text) toolLoads[idx].loadedTokens = countTokens(text);
+
+        const expectedExactToolName = typeof callId === 'string'
+          ? exactSearchCallIds.get(callId) ?? null : null;
+        const output = p.output ?? rec.output;
+        const classification = classifySearchOutput(output, expectedExactToolName);
+        if (classification.kind === 'success') {
+          toolLoads[idx].toolName = classification.toolName;
+        } else if (classification.kind === 'no-match') {
+          toolSearchAttempts.push({
+            sessionId,
+            exactToolName: expectedExactToolName!,
+            observedAt: rec.timestamp ?? startedAt ?? '1970-01-01T00:00:00.000Z',
+            noMatch: true,
+          });
         }
       } else if (t === 'token_count') {
         // 턴별(last_token_usage)만 채택. total_token_usage는 누적이라 이중계상됨.
@@ -105,8 +125,147 @@ export class CodexAdapter implements LogAdapter {
       mode: sawCodeModeSearch ? 'DEFERRED_MEASURABLE'
           : toolCalls.length > 0 ? 'UPFRONT' : 'DEFERRED_OPAQUE',
     };
-    return { session, toolCalls, toolLoads, usage, parseErrors, toolCallTurnIds };
+    return {
+      session,
+      toolCalls,
+      toolLoads,
+      usage,
+      parseErrors,
+      toolCallTurnIds,
+      ...(toolSearchAttempts.length > 0 ? { toolSearchAttempts } : {}),
+    };
   }
+}
+
+type SearchOutputClassification =
+  | { kind: 'success'; toolName: string }
+  | { kind: 'no-match' }
+  | { kind: 'generic' };
+
+/** Output은 block별 구조만 분류한다. 원문 연결이나 sentinel 부분 문자열 탐색은 하지 않는다. */
+function classifySearchOutput(
+  output: unknown, expectedExactToolName: string | null,
+): SearchOutputClassification {
+  const parts = outputParts(output);
+  let malformed = false;
+  let cancellationOrError = false;
+  let ambiguousJson = parts.hasUnsupportedPart;
+  const evidence: Array<'definition' | 'empty-array' | 'sentinel'> = [];
+  let definition: unknown[] | null = null;
+
+  for (const text of parts.texts) {
+    const trimmed = text.trim();
+    if (!trimmed) continue;
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      if (evidence.length > 0) { ambiguousJson = true; continue; }
+      try {
+        const parsed: unknown = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          if (parsed.length === 0) evidence.push('empty-array');
+          else { evidence.push('definition'); definition = parsed; }
+        } else {
+          // object wrapper와 nested metadata name은 definition 증거가 아니다.
+          ambiguousJson = true;
+        }
+      } catch { malformed = true; }
+    } else {
+      // JSON definition의 description은 error/cancelled라는 일반 단어를 가질 수 있다.
+      if (hasCancellationOrError(text)) cancellationOrError = true;
+      else if (isNeutralExecutionMetadata(text)) {
+        if (evidence.length > 0) ambiguousJson = true;
+      } else if (isAllowedNoMatchSentinel(text)) {
+        if (evidence.length > 0) ambiguousJson = true;
+        else evidence.push('sentinel');
+      }
+      else ambiguousJson = true;
+    }
+  }
+
+  if (malformed || cancellationOrError || ambiguousJson) return { kind: 'generic' };
+  if (evidence.length !== 1) return { kind: 'generic' };
+  if (evidence[0] === 'definition') {
+    if (definition?.length !== 1) return { kind: 'generic' };
+    const name = validDefinitionName(definition[0], expectedExactToolName);
+    return name !== null ? { kind: 'success', toolName: name } : { kind: 'generic' };
+  }
+  // sentinel(TOOL_NOT_FOUND) evidence는 "무엇을 찾다가 없었는지"를 알 때만 의미가 있다.
+  // 입력 패턴을 몰라 expectedExactToolName이 없으면 no-match로 기록할 대상이 없다.
+  return expectedExactToolName !== null ? { kind: 'no-match' } : { kind: 'generic' };
+}
+
+function outputParts(output: unknown): { texts: string[]; hasUnsupportedPart: boolean } {
+  if (typeof output === 'string') return { texts: [output], hasUnsupportedPart: false };
+  if (!Array.isArray(output)) return { texts: [], hasUnsupportedPart: true };
+  if (output.length === 0) return { texts: [], hasUnsupportedPart: true };
+  const texts: string[] = [];
+  let hasUnsupportedPart = false;
+  for (const part of output) {
+    if (part && typeof part === 'object'
+      && (part as any).type === 'input_text' && typeof (part as any).text === 'string') {
+      texts.push((part as any).text);
+    } else {
+      hasUnsupportedPart = true;
+    }
+  }
+  return {
+    texts,
+    hasUnsupportedPart,
+  };
+}
+
+/**
+ * 반환된 정의가 유효한 단일 MCP 툴 정의인지 확인하고, 유효하면 그 이름을 돌려준다.
+ *
+ * expectedExactToolName이 있으면(입력이 단일 리터럴 exact 검색이었으면) 그 이름과
+ * 정확히 같아야 한다 — 기존 동작 그대로. 없으면(입력 인식이 실패했거나 애초에 넓은
+ * 검색이었으면) definition.name 자체가 canonical `mcp__server__tool` 형태인지만
+ * 검증한다. 서버/툴을 여기서 분리하지 않는 이유: `mcp__atlas__deep__lookup`처럼
+ * 두 가지로 나뉠 수 있는 이름은 실제 설정된 서버 목록과 대조해야만 안전하게 풀 수
+ * 있고, 그 대조는 store.attributeCodexExactLoad가 이미 한다.
+ */
+function validDefinitionName(value: unknown, expectedExactToolName: string | null): string | null {
+  if (value === null || typeof value !== 'object') return null;
+  const definition = value as Record<string, unknown>;
+  if (typeof definition.name !== 'string') return null;
+  if (expectedExactToolName !== null) {
+    if (definition.name !== expectedExactToolName) return null;
+  } else if (!isCanonicalMcpToolName(definition.name)) {
+    return null;
+  }
+  const hasSchema = typeof definition.description === 'string'
+    || hasObjectSchema(definition.inputSchema) || hasObjectSchema(definition.input_schema)
+    || hasObjectSchema(definition.schema);
+  return hasSchema ? definition.name : null;
+}
+
+function hasObjectSchema(value: unknown): boolean {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isAllowedNoMatchSentinel(text: string): boolean {
+  const lines = text.trim().split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  return lines.length > 0 && lines.at(-1) === 'TOOL_NOT_FOUND'
+    && lines.slice(0, -1).every(isNeutralExecutionMetadataLine);
+}
+
+function isNeutralExecutionMetadata(text: string): boolean {
+  const lines = text.trim().split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  return lines.length > 0 && lines.every(isNeutralExecutionMetadataLine);
+}
+
+function isNeutralExecutionMetadataLine(line: string): boolean {
+  return line === 'Script completed' || line === 'Output:' || line === 'Process exited with code 0'
+    // 실기기 Codex는 콜론 없이 "Wall time 0.0 seconds"로 출력한다. 콜론을 강제하면
+    // 이 줄이 중립 메타데이터로 인정되지 않아 exact lookup 성공이 통째로 generic으로 떨어진다.
+    || /^Wall time:? \d+(?:\.\d+)? (?:ms|milliseconds|s|seconds)$/.test(line);
+}
+
+function hasCancellationOrError(text: string): boolean {
+  return /\b(cancelled|canceled|error)\b/i.test(text);
+}
+
+function isCanonicalMcpToolName(value: string): boolean {
+  return /^mcp__[A-Za-z0-9][A-Za-z0-9_-]*__[A-Za-z0-9][A-Za-z0-9_-]*$/.test(value);
 }
 
 function nativeId(value: unknown): string | null {
@@ -148,6 +307,79 @@ function extractOutputText(output: unknown): string {
   }
   if (output == null) return '';
   return JSON.stringify(output);
+}
+
+/** 실제 ALL_TOOLS.filter/find arrow search의 literal equality 하나만 허용한다. */
+function extractExactCanonicalSearch(inputText: string): string | null {
+  const { code, literals } = maskJavaScript(inputText);
+  const matches = [...code.matchAll(/\bALL_TOOLS\s*\.\s*(?:filter|find)\s*\(\s*\(?\s*([A-Za-z_$][\w$]*)\s*\)?\s*=>\s*\1\s*\.\s*name\s*={2,3}\s*(__LIT\d+__)\s*\)/g)];
+  if (matches.length !== 1) return null;
+  const index = Number(matches[0]![2].slice('__LIT'.length, -'__'.length));
+  const name = literals[index];
+  const normalized = name === undefined ? null : normalizeExactToolName(name);
+  return normalized !== null && isCanonicalMcpToolName(normalized) ? normalized : null;
+}
+
+function maskJavaScript(input: string): { code: string; literals: string[] } {
+  const literals: string[] = [];
+  let code = '';
+  for (let i = 0; i < input.length;) {
+    const current = input[i]!;
+    const next = input[i + 1];
+    if (current === '/' && next === '/') {
+      while (i < input.length && input[i] !== '\n') { code += ' '; i++; }
+      continue;
+    }
+    if (current === '/' && next === '*') {
+      code += '  '; i += 2;
+      while (i < input.length && !(input[i] === '*' && input[i + 1] === '/')) {
+        code += input[i] === '\n' ? '\n' : ' '; i++;
+      }
+      if (i >= input.length) return { code: '', literals: [] };
+      code += '  '; i += 2;
+      continue;
+    }
+    if (current === '`') {
+      code += ' ';
+      i++;
+      while (i < input.length && input[i] !== '`') {
+        if (input[i] === '\\' && i + 1 < input.length) { code += '  '; i += 2; }
+        else { code += input[i] === '\n' ? '\n' : ' '; i++; }
+      }
+      if (input[i] !== '`') return { code: '', literals: [] };
+      code += ' '; i++;
+      continue;
+    }
+    if (current === '/') {
+      // regex/division을 안전하게 구분하지 않는다. 문자열 밖 slash는 extractor 전체를 거부한다.
+      return { code: '', literals: [] };
+    }
+    if (current === '"' || current === "'") {
+      const quote = current;
+      let literal = '';
+      i++;
+      while (i < input.length && input[i] !== quote) {
+        if (input[i] === '\\' && i + 1 < input.length) i++;
+        literal += input[i]!;
+        i++;
+      }
+      if (input[i] !== quote) return { code: '', literals: [] };
+      i++;
+      const marker = `__LIT${literals.length}__`;
+      literals.push(literal);
+      code += marker;
+      continue;
+    }
+    code += current;
+    i++;
+  }
+  return { code, literals };
+}
+
+function normalizeExactToolName(value: string): string | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > 128 || /\s/.test(trimmed)) return null;
+  return trimmed;
 }
 
 function stringifyOrNull(v: unknown): string | null {

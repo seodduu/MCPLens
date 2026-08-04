@@ -1,6 +1,9 @@
+import { join } from 'node:path';
 import type { InstallResult, InstallState } from '../hookInstall.js';
 import { MARKETPLACE_NAME, PLUGIN_ID, stableDir } from '../hookInstall.js';
 import { absent, BaseHookInstaller, msg } from './base.js';
+import type { CodexHookState } from './codexHookState.js';
+import { readCodexHookStates, withCodexHooksEnabled } from './codexHookState.js';
 
 /** `codex plugin list --json`의 실측 스키마 (codex-cli 0.144.6). */
 interface CodexPluginEntry { pluginId?: string; installed?: boolean }
@@ -26,17 +29,39 @@ export class CodexHookInstaller extends BaseHookInstaller {
     if (bin === null) return 'client-missing';
     const r = await this.run(bin, ['plugin', 'list', '--json']);
     if (r.code !== 0) return 'not-installed';
+    let present = false;
     try {
       const parsed = JSON.parse(r.stdout) as CodexPluginList;
-      const has = (parsed.installed ?? []).some((p) => p.pluginId === PLUGIN_ID && p.installed !== false);
-      return has ? 'installed' : 'not-installed';
+      present = (parsed.installed ?? []).some(
+        (p) => p.pluginId === PLUGIN_ID && p.installed !== false);
     } catch { return 'not-installed'; }
+    if (!present) return 'not-installed';
+
+    const states = this.readHookStates();
+    // config를 못 읽으면 판단 근거가 없다 — fail-open(base.ts의 never-throw 원칙).
+    // 여기서 not-installed로 기울면 매 기동마다 재설치를 시도하게 된다.
+    if (states === null) return 'installed';
+    // enabled가 빠졌으면 설치로 고칠 수 있다 → 설치 대상으로 되돌린다.
+    if (!states.every((s) => s.enabled)) return 'not-installed';
+    return states.every((s) => s.trusted) ? 'installed' : 'needs-approval';
   }
+
+  /** 읽을 수 없으면 null — 호출자가 fail-open으로 처리한다. */
+  private readHookStates(): CodexHookState[] | null {
+    try { return readCodexHookStates(this.deps.fs.readFile(this.configPath())); }
+    catch { return null; }
+  }
+
+  private configPath(): string { return join(this.deps.home, '.codex', 'config.toml'); }
 
   async install(): Promise<InstallResult> {
     const bin = this.bin('codex');
     if (bin === null) return { kind: 'client-missing' };
-    if (await this.detect() === 'installed') return { kind: 'ok', alreadyInstalled: true };
+    const before = await this.detect();
+    // needs-approval은 설치로 더 나아갈 수 없다 — 남은 것은 사용자 승인뿐이다.
+    if (before === 'installed' || before === 'needs-approval') {
+      return { kind: 'ok', alreadyInstalled: true };
+    }
 
     const target = stableDir(this.deps.home, 'codex-marketplace');
     try { this.deps.fs.copyDir(this.deps.bundledDir, target); }
@@ -50,7 +75,25 @@ export class CodexHookInstaller extends BaseHookInstaller {
     if (ins.code !== 0 && !alreadyPresent(ins.stderr)) {
       return { kind: 'failed', step: 'install', stderr: ins.stderr };
     }
+    const enabled = this.enableHooks();
+    if (!enabled.ok) return { kind: 'failed', step: 'enable-hooks', stderr: enabled.stderr };
     return { kind: 'ok', alreadyInstalled: false };
+  }
+
+  /**
+   * config.toml에 `enabled = true`를 기록한다. 쓰기 전에 백업을 남긴다 —
+   * 사용자 CLI 설정이므로 되돌릴 근거를 남겨야 한다(저장소의 `.mcplens.bak` 관례).
+   */
+  private enableHooks(): { ok: true } | { ok: false; stderr: string } {
+    const path = this.configPath();
+    try {
+      const current = this.deps.fs.exists(path) ? this.deps.fs.readFile(path) : '';
+      const next = withCodexHooksEnabled(current);
+      if (next === current) return { ok: true };
+      if (current !== '') this.deps.fs.writeFile(`${path}.mcplens.bak`, current);
+      this.deps.fs.writeFile(path, next);
+      return { ok: true };
+    } catch (e) { return { ok: false, stderr: msg(e) }; }
   }
 
   async uninstall(): Promise<InstallResult> {

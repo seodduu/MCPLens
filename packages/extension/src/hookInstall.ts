@@ -28,7 +28,12 @@ export interface ClientHookInstaller {
   uninstall(): Promise<InstallResult>;
 }
 
-export type InstallState = 'installed' | 'not-installed' | 'client-missing';
+/**
+ * `needs-approval`: 플러그인이 설치되고 `enabled = true`도 기록됐지만 codex의
+ * `trusted_hash` 승인이 남은 상태. 훅은 아직 실행되지 않는다. 설치로는 해소할 수
+ * 없고 사용자가 codex를 한 번 실행해 뜨는 동의를 승인해야 한다.
+ */
+export type InstallState = 'installed' | 'needs-approval' | 'not-installed' | 'client-missing';
 
 export type InstallResult =
   | { kind: 'ok'; alreadyInstalled: boolean }

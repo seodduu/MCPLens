@@ -89,11 +89,12 @@ export function takeOverLease(lockPath: string, token: string): boolean {
   const reaping = reapingPath(lockPath, token);
   try {
     renameSync(lockPath, reaping);
-    return true;
   } catch (error) {
     if (isBusy(error) || isCode(error, 'ENOENT')) return false;
     throw error;
   }
+  rmSync(reaping, { recursive: true, force: true });
+  return true;
 }
 
 export function isCode(error: unknown, code: string): boolean {

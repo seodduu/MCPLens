@@ -3,9 +3,10 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { countTokens } from '../tokenize.js';
-import type { ToolDefinition } from '../types.js';
+import type { ToolDefinition, ToolDefinitionBody } from '../types.js';
 import { specTransport, type McpServerSpec } from './configs.js';
 import { storedTokenProvider } from './oauth.js';
+import { canonicalJson, computeDefinitionSetHash, toolToRawBody } from './serverIdentity.js';
 
 type AuthProvider = NonNullable<ReturnType<typeof storedTokenProvider>>;
 
@@ -46,7 +47,7 @@ function createTransport(spec: McpServerSpec, authProvider: AuthProvider | undef
 export async function scanServer(
   spec: McpServerSpec,
   timeoutMs = 15000,
-): Promise<ToolDefinition[]> {
+): Promise<{ definitions: ToolDefinition[]; bodies: ToolDefinitionBody[] }> {
   // 저장된 Lens 명의 토큰이 있으면 자동 첨부 (비인터랙티브 — redirect는 throw).
   // catch 블록의 token-expired 힌트에도 재사용해 이중 read를 피한다.
   const authProvider: AuthProvider | undefined = storedTokenProvider(spec) ?? undefined;
@@ -57,7 +58,9 @@ export async function scanServer(
     await client.connect(transport);
     const { tools } = await client.listTools();
     const now = new Date().toISOString();
-    return tools.map((t) => ({
+    const rawBodies = tools.map(toolToRawBody);
+    const definitionSetHash = computeDefinitionSetHash(spec.name, rawBodies);
+    const definitions: ToolDefinition[] = tools.map((t) => ({
       serverName: spec.name,
       toolName: t.name,
       definitionTokens: countTokens(
@@ -66,6 +69,16 @@ export async function scanServer(
       scannedAt: now,
       firstScannedAt: now, // 저장 시 COALESCE가 기존 최초값을 지켜준다
     }));
+    const bodies: ToolDefinitionBody[] = definitions.map((definition, index) => ({
+      serverName: definition.serverName,
+      toolName: definition.toolName,
+      description: rawBodies[index].description ?? null,
+      inputSchemaJson: canonicalJson(rawBodies[index].inputSchema),
+      definitionTokens: definition.definitionTokens,
+      definitionSetHash,
+      scannedAt: now,
+    }));
+    return { definitions, bodies };
   } catch (err) {
     // 인증 요구는 정상 실패 — 표면이 "인증 필요 — 스킵"으로 안내하도록 신호를 담는다.
     if (isAuthRequired(err)) {

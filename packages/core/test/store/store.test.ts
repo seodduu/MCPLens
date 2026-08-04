@@ -20,6 +20,51 @@ function fakeResult(sessionId: string, calls = 2): AdapterResult {
 }
 
 describe('LensStore', () => {
+  it('finds only recent restored actions with the same identity and definition', async () => {
+    const s = await LensStore.open(':memory:');
+    const base = {
+      actionId: 'restored-1', client: 'claude-code' as const, serverName: 'github', toolName: 'search',
+      identityHash: 'identity', definitionSetHash: 'definition-a', ownedRule: 'mcp__github__search',
+      backupPath: '/tmp/backup', preFingerprint: 'before', postFingerprint: 'after',
+      status: 'restored' as const, createdAt: '2026-08-01T00:00:00.000Z', restoredAt: '2026-08-08T00:00:00.000Z',
+    };
+    s.recordGlobalAction(base);
+    expect(s.hasRestoredActionSince('claude-code', 'github', 'search', 'definition-a', '2026-08-02T00:00:00.000Z')).toBe(true);
+    expect(s.hasRestoredActionSince('claude-code', 'github', 'search', 'definition-a', '2026-08-09T00:00:00.000Z')).toBe(false);
+    expect(s.hasRestoredActionSince('claude-code', 'github', 'search', 'definition-b', '2026-08-02T00:00:00.000Z')).toBe(false);
+  });
+
+  it('matches restored-action cooldown on client, server, tool, hash, status, restoredAt, and cutoff', async () => {
+    const s = await LensStore.open(':memory:');
+    const base = {
+      client: 'claude-code' as const, serverName: 'github', toolName: 'search', identityHash: 'identity',
+      definitionSetHash: 'definition-a', ownedRule: 'mcp__github__search', backupPath: '/tmp/backup',
+      preFingerprint: 'before', postFingerprint: 'after', createdAt: '2026-08-01T00:00:00.000Z',
+    };
+    s.recordGlobalAction({ ...base, actionId: 'matching', status: 'restored', restoredAt: '2026-08-08T00:00:00.000Z' });
+    s.recordGlobalAction({ ...base, actionId: 'other-client', client: 'codex', status: 'restored', restoredAt: '2026-08-08T00:00:00.000Z' });
+    s.recordGlobalAction({ ...base, actionId: 'other-server', serverName: 'gitlab', status: 'restored', restoredAt: '2026-08-08T00:00:00.000Z' });
+    s.recordGlobalAction({ ...base, actionId: 'other-tool', toolName: 'get_file', status: 'restored', restoredAt: '2026-08-08T00:00:00.000Z' });
+    s.recordGlobalAction({ ...base, actionId: 'other-hash', definitionSetHash: 'definition-b', status: 'restored', restoredAt: '2026-08-08T00:00:00.000Z' });
+    s.recordGlobalAction({ ...base, actionId: 'active', status: 'active', restoredAt: null });
+    s.recordGlobalAction({ ...base, actionId: 'restored-null', status: 'restored', restoredAt: null });
+    expect(s.hasRestoredActionSince('claude-code', 'github', 'search', 'definition-a', '2026-08-08T00:00:00.000Z')).toBe(true);
+    expect(s.hasRestoredActionSince('claude-code', 'github', 'search', 'definition-a', '2026-08-08T00:00:00.001Z')).toBe(false);
+    expect(s.hasRestoredActionSince('claude-code', 'gitlab', 'get_file', 'definition-a', '2026-08-02T00:00:00.000Z')).toBe(false);
+  });
+
+  it('does not treat active or restored-at-null actions as a restored cooldown', async () => {
+    const s = await LensStore.open(':memory:');
+    const base = {
+      client: 'claude-code' as const, serverName: 'github', toolName: 'search', identityHash: 'identity',
+      definitionSetHash: 'definition-a', ownedRule: 'mcp__github__search', backupPath: '/tmp/backup',
+      preFingerprint: 'before', postFingerprint: 'after', createdAt: '2026-08-01T00:00:00.000Z',
+    };
+    s.recordGlobalAction({ ...base, actionId: 'active', status: 'active', restoredAt: null });
+    s.recordGlobalAction({ ...base, actionId: 'restored-null', status: 'restored', restoredAt: null });
+    expect(s.hasRestoredActionSince('claude-code', 'github', 'search', 'definition-a', '2026-08-02T00:00:00.000Z')).toBe(false);
+  });
+
   it('ingest 후 조회된다', async () => {
     const s = await LensStore.open(':memory:');
     s.ingest(fakeResult('s1'));
@@ -102,6 +147,26 @@ describe('LensStore', () => {
     expect(d.toolName).toBe('old');
     expect(d.firstScannedAt).toBe('2026-02-02T00:00:00Z'); // scanned_at으로 백필
     s.close();
+  });
+
+  it('body가 적재된 서버명만 돌려준다', async () => {
+    const s = await LensStore.open(':memory:');
+    // upsertScanResult로 a만 body까지 적재하고, b는 upsertDefinitions로 definition만 넣는다
+    s.upsertScanResult(
+      [{ serverName: 'a', toolName: 'tool', definitionTokens: 10,
+        scannedAt: '2026-08-01T00:00:00Z', firstScannedAt: '2026-08-01T00:00:00Z' }],
+      [{ serverName: 'a', toolName: 'tool', description: 'd', inputSchemaJson: '{}',
+        definitionTokens: 10, definitionSetHash: 'a'.repeat(64), scannedAt: '2026-08-01T00:00:00Z' }],
+      [],
+    );
+    s.upsertDefinitions([{ serverName: 'b', toolName: 'tool', definitionTokens: 10,
+      scannedAt: '2026-08-01T00:00:00Z', firstScannedAt: '2026-08-01T00:00:00Z' }]);
+    expect([...s.serversWithDefinitionBodies()]).toEqual(['a']);
+  });
+
+  it('body 테이블이 비면 빈 집합을 돌려준다', async () => {
+    const s = await LensStore.open(':memory:');
+    expect(s.serversWithDefinitionBodies().size).toBe(0);
   });
 
   it('lastCallByTool은 전 기간 기준 툴별 마지막 호출 시각을 준다', async () => {

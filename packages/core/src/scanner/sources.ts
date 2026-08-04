@@ -4,7 +4,10 @@ import path from 'node:path';
 import { parse as parseToml } from 'smol-toml';
 import { readClaudeMcpConfig, collectServerSpecs, type CollectResult, type McpServerSpec } from './configs.js';
 import { attributeServers, type SourceRead } from './attribution.js';
-import type { ClientId } from '../types.js';
+import { clientForSourceKind } from './attribution.js';
+import { computeEndpointHash, computeSourcePathHash } from './serverIdentity.js';
+import type { ClientId, ConfigSourceKind, ServerIdentity } from '../types.js';
+import { specTransport } from './configs.js';
 
 /** 설정 소스 종류: 'claude-user' | 'claude-project' | 'codex' | 'gemini' */
 export interface ConfigSource {
@@ -116,6 +119,7 @@ export function collectFromSources(
   sources: ConfigSource[];
   attribution: Map<string, Set<ClientId>>;
   replaceable: Set<ClientId>;
+  identities: ServerIdentity[];
 } {
   const priority: Record<string, number> = {
     'claude-user': 0,
@@ -128,6 +132,8 @@ export function collectFromSources(
   const byName = new Map<string, McpServerSpec>();
   const skippedSet = new Set<string>();
   const reads: SourceRead[] = [];
+  const identities: ServerIdentity[] = [];
+  const observedAt = new Date().toISOString();
 
   for (const source of ordered) {
     let text: string;
@@ -141,6 +147,23 @@ export function collectFromSources(
     }
     const { specs, skipped } = collectFromSource(source.kind, text);
     reads.push({ kind: source.kind, servers: specs.map((s) => s.name), failed: 'none' });
+    const client = clientForSourceKind(source.kind);
+    if (client !== null) {
+      for (const spec of specs) {
+        const transport = specTransport(spec);
+        if (transport === 'unknown') continue;
+        identities.push({
+          client,
+          serverName: spec.name,
+          sourceKind: source.kind as ConfigSourceKind,
+          sourcePathHash: computeSourcePathHash(source.filePath),
+          transport,
+          endpointHash: computeEndpointHash(spec),
+          conflictState: 'clear',
+          observedAt,
+        });
+      }
+    }
     for (const spec of specs) {
       if (!byName.has(spec.name)) byName.set(spec.name, spec);
     }
@@ -148,8 +171,9 @@ export function collectFromSources(
   }
 
   const { attribution, replaceable } = attributeServers(reads);
+  markEndpointConflicts(identities);
   return { specs: [...byName.values()], skipped: [...skippedSet], sources,
-    attribution, replaceable };
+    attribution, replaceable, identities };
 }
 
 /** 모든 소스 파일을 읽어 병합 (읽기 전용, 없는 파일은 무시). 우선순위: claude-user > claude-project > codex > gemini (이름 충돌 시 먼저 온 것). */
@@ -157,6 +181,24 @@ export function collectAllSpecs(): CollectResult & {
   sources: ConfigSource[];
   attribution: Map<string, Set<ClientId>>;
   replaceable: Set<ClientId>;
+  identities: ServerIdentity[];
 } {
   return collectFromSources(configSources(), (p) => fs.readFileSync(p, 'utf-8'));
+}
+
+function markEndpointConflicts(identities: ServerIdentity[]): void {
+  const hashesByName = new Map<string, Set<string>>();
+  for (const identity of identities) {
+    let hashes = hashesByName.get(identity.serverName);
+    if (hashes === undefined) {
+      hashes = new Set();
+      hashesByName.set(identity.serverName, hashes);
+    }
+    hashes.add(identity.endpointHash);
+  }
+  for (const identity of identities) {
+    if ((hashesByName.get(identity.serverName)?.size ?? 0) > 1) {
+      identity.conflictState = 'conflict';
+    }
+  }
 }

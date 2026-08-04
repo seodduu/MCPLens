@@ -33,6 +33,14 @@ export class LensTreeProvider implements vscode.TreeDataProvider<LensNode> {
     item.id = n.id;
     item.description = n.description;
     item.tooltip = n.tooltip;
+    if (n.kind === 'tool' && n.analysisStatus) {
+      item.command = {
+        command: 'mcplens.openAnalysisDetails',
+        title: 'Open analysis details',
+        arguments: [n],
+      };
+      item.tooltip = n.analysisSummary ?? n.tooltip;
+    }
     if (n.kind === 'client') item.iconPath = new vscode.ThemeIcon('device-desktop');
     else if (n.kind === 'server') {
       item.iconPath = new vscode.ThemeIcon(n.enabled === false ? 'close' : 'server');
@@ -53,6 +61,8 @@ export class LensTreeProvider implements vscode.TreeDataProvider<LensNode> {
         item.iconPath = actionIcon(n.action);
       if (n.enabled === true) item.contextValue = 'mcpTool-enabled';
     }
+    if (n.kind === 'tool' && n.canDisableGlobally) item.contextValue = 'mcpAnalysis-disable';
+    else if (n.kind === 'tool' && n.canRestoreGlobally) item.contextValue = 'mcpAnalysis-restore';
     return item;
   }
   getChildren(n?: LensNode): LensNode[] { return n ? n.children : this.roots; }

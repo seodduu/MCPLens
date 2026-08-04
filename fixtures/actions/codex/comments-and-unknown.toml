@@ -1,0 +1,10 @@
+﻿# keep this comment
+[mcp_servers."github.enterprise"]
+command = "npx" # keep command comment
+disabled_tools = [
+  "issues",
+]
+unknown_key = { retained = true }
+
+[unrelated]
+answer = 42

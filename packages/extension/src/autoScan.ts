@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 import { watchFile, unwatchFile } from 'node:fs';
 import {
   collectAllSpecs, configSources, scanServer, authenticateServer,
-  type LensStore, type McpServerSpec,
+  type LensStore, type McpServerSpec, type ServerIdentity,
 } from '@mcp-lens/core';
 import { decideScanAction, type AutoScanSetting } from './scanDecision.js';
 import { decideAuthPrompt, friendlyAuthError, isDcrRejected } from './authDecision.js';
@@ -20,14 +20,18 @@ const unsupportedServers = (config: vscode.WorkspaceConfiguration): string[] =>
 const sessionAuthSnooze = new Set<string>();
 
 async function runScan(store: LensStore, targets: McpServerSpec[],
-  onDone: () => void): Promise<void> {
+  onDone: () => void, identities: readonly ServerIdentity[] = []): Promise<void> {
   let tools = 0, tokens = 0, failed: string[] = [], authFailed: McpServerSpec[] = [];
   for (const spec of targets) {
     try {
-      const defs = await scanServer(spec);
-      store.upsertDefinitions(defs);
-      tools += defs.length;
-      tokens += defs.reduce((s, d) => s + d.definitionTokens, 0);
+      const result = await scanServer(spec);
+      store.upsertScanResult(
+        result.definitions,
+        result.bodies,
+        identities.filter((identity) => identity.serverName === spec.name),
+      );
+      tools += result.definitions.length;
+      tokens += result.definitions.reduce((s, d) => s + d.definitionTokens, 0);
     } catch (err) {
       failed.push(spec.name);
       const msg = err instanceof Error ? err.message : String(err);
@@ -67,8 +71,8 @@ export async function maybeAuthPrompt(
         await authenticateServer(spec, {
           openUrl: async (url) => { await vscode.env.openExternal(vscode.Uri.parse(url)); },
         });
-        const defs = await scanServer(spec);
-        store.upsertDefinitions(defs);
+        const result = await scanServer(spec);
+        store.upsertScanResult(result.definitions, result.bodies, []);
       } catch (err) {
         // DCR 거부 서버(예: Figma)는 브라우저가 열리기도 전에 실패한다 — Lens가 지원할 수 없으므로
         // '지원하지 않는 서버'로 영구 등록해 트리에서 숨기고 다시는 로그인을 묻지 않는다.
@@ -95,7 +99,7 @@ export async function maybeAuthPrompt(
 }
 
 export async function maybeAutoScan(store: LensStore, onDone: () => void): Promise<void> {
-  const { specs, attribution, replaceable } = collectAllSpecs();
+  const { specs, attribution, replaceable, identities } = collectAllSpecs();
   // 귀속은 설정 파일만 읽으면 되므로 서버 스캔 성공 여부와 무관하게 저장한다.
   // 자동 스캔을 건너뛰는 경우(action.kind === 'skip')에도 매핑은 최신이어야 한다.
   store.upsertClientServers(attribution, replaceable);
@@ -103,12 +107,12 @@ export async function maybeAutoScan(store: LensStore, onDone: () => void): Promi
                 // 매핑이 디스크에 반영되지 않고 다음 활성화 때 다시 빈 매핑으로 보인다.
   const config = vscode.workspace.getConfiguration('mcpLens');
   const setting = config.get<AutoScanSetting>('autoScan', 'prompt');
-  const knownServers = new Set(store.allDefinitions().map((d) => d.serverName));
+  const scannedServers = store.serversWithDefinitionBodies();
   const action = decideScanAction({
-    setting, specs, knownServers, unsupported: new Set(unsupportedServers(config)) });
+    setting, specs, scannedServers, unsupported: new Set(unsupportedServers(config)) });
 
   if (action.kind === 'skip') return;
-  if (action.kind === 'scan') return runScan(store, action.targets, onDone);
+  if (action.kind === 'scan') return runScan(store, action.targets, onDone, identities);
 
   // kind === 'prompt' — 합의된 동의창
   const names = action.targets.map((t) => t.name).join(', ');
@@ -118,7 +122,7 @@ export async function maybeAutoScan(store: LensStore, onDone: () => void): Promi
     '스캔', '나중에', '다시 묻지 않음');
   if (pick === '스캔') {
     await config.update('autoScan', 'always', vscode.ConfigurationTarget.Global);
-    await runScan(store, action.targets, onDone);
+    await runScan(store, action.targets, onDone, identities);
   } else if (pick === '다시 묻지 않음') {
     await config.update('autoScan', 'never', vscode.ConfigurationTarget.Global);
   } // '나중에'/닫기 → 아무것도 저장 안 함 → 다음 시작 때 재질문

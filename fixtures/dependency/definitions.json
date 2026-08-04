@@ -1,0 +1,29 @@
+[
+  {
+    "serverName": "github",
+    "toolName": "search_repos",
+    "description": "Search repositories before calling get_repo.",
+    "inputSchemaJson": "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"Exact search query\"}}}",
+    "definitionTokens": 11,
+    "definitionSetHash": "definitions-v1",
+    "scannedAt": "2026-08-03T00:00:00.000Z"
+  },
+  {
+    "serverName": "github",
+    "toolName": "get_repo",
+    "description": "Fetch repository details.",
+    "inputSchemaJson": "{\"type\":\"object\",\"properties\":{\"search_repos\":{\"type\":\"string\"},\"note\":{\"type\":\"string\",\"description\":\"Use search_repos first\"}}}",
+    "definitionTokens": 13,
+    "definitionSetHash": "definitions-v1",
+    "scannedAt": "2026-08-03T00:00:00.000Z"
+  },
+  {
+    "serverName": "github",
+    "toolName": "repo",
+    "description": "Short name should not match xget_repo substrings.",
+    "inputSchemaJson": "{\"type\":\"object\"}",
+    "definitionTokens": 7,
+    "definitionSetHash": "definitions-v1",
+    "scannedAt": "2026-08-03T00:00:00.000Z"
+  }
+]

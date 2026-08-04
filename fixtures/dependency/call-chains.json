@@ -1,0 +1,10 @@
+[
+  { "sequence": 1, "sessionId": "s1", "serverName": "github", "toolName": "search_repos", "calledAt": "2026-08-01T00:00:00.000Z", "isError": false },
+  { "sequence": 2, "sessionId": "s1", "serverName": "github", "toolName": "get_repo", "calledAt": "2026-08-01T00:01:00.000Z", "isError": false },
+  { "sequence": 3, "sessionId": "s2", "serverName": "github", "toolName": "search_repos", "calledAt": "2026-08-02T00:00:00.000Z", "isError": false },
+  { "sequence": 4, "sessionId": "s2", "serverName": "github", "toolName": "get_repo", "calledAt": "2026-08-02T00:01:00.000Z", "isError": false },
+  { "sequence": 5, "sessionId": "s3", "serverName": "github", "toolName": "search_repos", "calledAt": "2026-08-03T00:00:00.000Z", "isError": false },
+  { "sequence": 6, "sessionId": "s3", "serverName": "github", "toolName": "get_repo", "calledAt": "2026-08-03T00:01:00.000Z", "isError": false },
+  { "sequence": 7, "sessionId": "old", "serverName": "github", "toolName": "search_repos", "calledAt": "2026-01-01T00:00:00.000Z", "isError": false },
+  { "sequence": 8, "sessionId": "old", "serverName": "github", "toolName": "get_repo", "calledAt": "2026-01-01T00:01:00.000Z", "isError": false }
+]

@@ -16,3 +16,16 @@ export function pendingHookClients(
   return [...detected].filter((c) =>
     states.get(c) === 'not-installed' && !dismissed.has(c));
 }
+
+/**
+ * 훅은 켰지만 codex 승인이 남은 클라이언트. 설치 안내와 문구가 달라야 한다 —
+ * 여기서 "설치"를 다시 권하면 사용자가 눌러도 아무 변화가 없어 같은 거짓 성공이 반복된다.
+ */
+export function approvalPendingClients(
+  detected: ReadonlySet<HookClient>,
+  states: ReadonlyMap<HookClient, InstallState>,
+  dismissed: ReadonlySet<HookClient>,
+): HookClient[] {
+  return [...detected].filter((c) =>
+    states.get(c) === 'needs-approval' && !dismissed.has(c));
+}

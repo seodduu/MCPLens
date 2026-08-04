@@ -138,6 +138,27 @@ describe('decodeClaudeHook', () => {
     });
   });
 
+  test('normalizes anonymized PreToolUse fixture without storing tool input', () => {
+    const result = decodeClaudeHook(
+      fixture('../../../fixtures/regret/claude-active-deny-pre-tool-use.json'),
+      receivedAt,
+    );
+
+    expect(result).toEqual({
+      kind: 'observation',
+      observation: expect.objectContaining({
+        phase: 'tool-before',
+        externalSessionId: 'claude-session-regret-001',
+        externalCallId: 'toolu_anon_pre_001',
+        serverName: 'github',
+        toolName: 'search_issues',
+        inputFingerprint: null,
+        correlationConfidence: 'high',
+      }),
+    });
+    expect(JSON.stringify(result)).not.toContain('tool_input');
+  });
+
   test.each([
     'Read',
     'mcp__github',

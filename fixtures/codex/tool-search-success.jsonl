@@ -1,0 +1,3 @@
+{"timestamp":"2026-07-20T00:20:00.000Z","type":"session_meta","payload":{"type":"session_meta","session_id":"codex-session-tool-search-success"}}
+{"timestamp":"2026-07-20T00:20:01.000Z","type":"response_item","payload":{"type":"custom_tool_call","call_id":"call_exact_success","name":"exec","input":"const matches = ALL_TOOLS.filter(x => x.name === \"mcp__atlas__lookup\");\ntext(JSON.stringify(matches));"}}
+{"timestamp":"2026-07-20T00:20:01.100Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call_exact_success","output":[{"type":"input_text","text":"Wall time: 0.1 seconds\nProcess exited with code 0\nOutput:"},{"type":"input_text","text":"[{\"name\":\"mcp__atlas__lookup\",\"description\":\"anonymous definition\"}]"}]}}

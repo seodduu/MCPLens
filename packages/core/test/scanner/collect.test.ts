@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { collectServerSpecs } from '../../src/scanner/configs.js';
+import { computeDefinitionSetHash } from '../../src/scanner/serverIdentity.js';
 
 describe('collectServerSpecs', () => {
   it('top-level 과 projects mcpServers 를 병합한다', () => {
@@ -52,5 +53,25 @@ describe('collectServerSpecs', () => {
 
   it('잘못된 JSON 은 throw 하지 않고 빈 결과를 반환한다', () => {
     expect(collectServerSpecs('{not json')).toEqual({ specs: [], skipped: [] });
+  });
+});
+
+describe('computeDefinitionSetHash', () => {
+  it('서버명과 정렬된 tool body로 결정론적 hash를 만든다', () => {
+    const first = computeDefinitionSetHash('srv', [
+      { toolName: 'b', description: null, inputSchema: { z: 1, a: { y: 2, x: 1 } } },
+      { toolName: 'a', description: 'uses b', inputSchema: { list: [{ b: 1, a: 2 }] } },
+    ]);
+    const second = computeDefinitionSetHash('srv', [
+      { toolName: 'a', description: 'uses b', inputSchema: { list: [{ a: 2, b: 1 }] } },
+      { toolName: 'b', description: null, inputSchema: { a: { x: 1, y: 2 }, z: 1 } },
+    ]);
+
+    expect(first).toBe(second);
+    expect(first).toMatch(/^[a-f0-9]{64}$/);
+    expect(computeDefinitionSetHash('other', [
+      { toolName: 'a', description: 'uses b', inputSchema: { list: [{ a: 2, b: 1 }] } },
+      { toolName: 'b', description: null, inputSchema: { a: { x: 1, y: 2 }, z: 1 } },
+    ])).not.toBe(first);
   });
 });

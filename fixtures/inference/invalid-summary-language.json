@@ -1,0 +1,14 @@
+{
+  "results": [
+    {
+      "serverName": "github",
+      "toolName": "list_issues",
+      "status": "Independent",
+      "dependedOnBy": [],
+      "rationale": "No dependency evidence was found.",
+      "displaySummary": "이 도구는 독립적입니다.",
+      "whatYouLose": "You lose direct access to issue listing from this MCP server.",
+      "riskWithoutTool": "Future issue triage may require restoring the tool manually."
+    }
+  ]
+}

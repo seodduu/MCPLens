@@ -1,0 +1,4 @@
+{
+  "permissions": { "deny": ["Read(.env)", "mcp__github__search"] },
+  "model": "haiku"
+}

@@ -63,6 +63,11 @@ export function clientRowPresentation(
     return present('미연결', '설치 필요',
       '훅이 설치되지 않았습니다. 설치하면 이 클라이언트의 MCP 호출을 수집합니다.', 'warning');
   }
+  if (install === 'needs-approval') {
+    return present('승인 대기', 'codex 동의 필요',
+      '훅을 켰지만 codex의 신뢰 승인이 남았습니다. codex를 한 번 실행하면 동의 프롬프트가 뜹니다. '
+      + '승인하기 전까지 이 클라이언트의 MCP 호출은 로그로만 수집됩니다.', 'warning');
+  }
   // installed: 관측이 있으면 그 건강도, 없으면 idle(첫 이벤트 대기)
   return formatCollectionHealth(
     snapshot ?? { health: 'idle', hookObserved: false, logObserved: false,

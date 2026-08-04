@@ -58,11 +58,21 @@ describe('scanServer — http transport', () => {
       { name: 'echo', description: 'Echo back text for http scan test' },
     ]);
     try {
-      const defs = await scanServer({ name: 'httptest', url });
-      expect(defs).toHaveLength(1);
-      expect(defs[0].serverName).toBe('httptest');
-      expect(defs[0].toolName).toBe('echo');
-      expect(defs[0].definitionTokens).toBeGreaterThan(0);
+      const result = await scanServer({ name: 'httptest', url });
+      expect(result.definitions).toHaveLength(1);
+      expect(result.definitions[0].serverName).toBe('httptest');
+      expect(result.definitions[0].toolName).toBe('echo');
+      expect(result.definitions[0].definitionTokens).toBeGreaterThan(0);
+      expect(result.bodies).toEqual([
+        expect.objectContaining({
+          serverName: 'httptest',
+          toolName: 'echo',
+          description: 'Echo back text for http scan test',
+          definitionTokens: result.definitions[0].definitionTokens,
+        }),
+      ]);
+      expect(result.bodies[0].inputSchemaJson).toContain('"text"');
+      expect(result.bodies[0].definitionSetHash).toMatch(/^[a-f0-9]{64}$/);
     } finally {
       await close();
     }

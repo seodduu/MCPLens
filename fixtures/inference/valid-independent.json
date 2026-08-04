@@ -1,0 +1,14 @@
+{
+  "results": [
+    {
+      "serverName": "github",
+      "toolName": "list_issues",
+      "status": "Independent",
+      "dependedOnBy": [],
+      "rationale": "No static references or repeated call-chain evidence connect this tool to other tools.",
+      "displaySummary": "No observed workflow depends on this tool.",
+      "whatYouLose": "You lose direct access to issue listing from this MCP server.",
+      "riskWithoutTool": "Future issue triage may require restoring the tool manually."
+    }
+  ]
+}
