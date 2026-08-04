@@ -24,4 +24,20 @@ describe('classifyScanFailure', () => {
     expect(record.errorCode).toHaveLength(120);
     expect(record.errorCode).toBe(longMessage.slice(0, 120));
   });
+
+  it('문자열 예외도 분류된다', () => {
+    const record = classifyScanFailure('spawn ENOENT');
+    expect(record).toEqual({ status: 'failed', errorCode: 'spawn ENOENT' });
+  });
+
+  it('Error가 아닌 객체도 분류된다', () => {
+    // scanServer가 SDK 예외를 그대로 재던지므로 Error가 아닌 값이 들어올 수 있다.
+    // 이 경우에도 String(err)로 정규화해 TypeError 없이 분류해야 한다.
+    const record = classifyScanFailure({ code: 'ECONNRESET' });
+    expect(record.status).toBe('failed');
+    expect(record.errorCode).toBeTruthy();
+
+    const authRecord = classifyScanFailure('auth-required: token missing');
+    expect(authRecord).toEqual({ status: 'auth-required' });
+  });
 });
