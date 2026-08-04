@@ -206,7 +206,10 @@ async function runAuth(args: string[]) {
   try {
     await authenticateServer(target.spec, { openUrl });
   } catch (e) {
-    const msg = (e as Error).message;
+    // authenticateServer가 SDK 예외를 그대로 재던질 수 있어 Error가 아닌 값도 들어온다.
+    // (e as Error).message로 단정하면 이 catch 블록 안에서 TypeError가 나
+    // DCR 안내 메시지 대신 처리되지 않은 크래시가 사용자에게 노출된다.
+    const msg = e instanceof Error ? e.message : String(e);
     console.log(`${name}: 로그인 실패 — ${msg}`);
     if (/dynamic client registration/i.test(msg)) {
       console.log(
