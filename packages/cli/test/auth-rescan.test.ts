@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { runAuthRescan } from '../src/main.js';
+import { runAuthRescan } from '../src/auth-rescan.js';
 import type { LensStore, McpServerSpec, scanServer } from '@mcp-lens/core';
 
 type ScanResult = Awaited<ReturnType<typeof scanServer>>;
@@ -32,7 +32,7 @@ describe('runAuthRescan', () => {
       definitions: [], bodies: [],
     } as unknown as ScanResult));
 
-    await runAuthRescan(store, spec, 'srv', '2026-08-05T00:00:00.000Z', scan);
+    await runAuthRescan(store, spec, '2026-08-05T00:00:00.000Z', scan);
 
     expect(mocks.save).toHaveBeenCalledTimes(1);
     expect(mocks.close).toHaveBeenCalledTimes(1);
@@ -46,7 +46,7 @@ describe('runAuthRescan', () => {
       throw new Error('auth-required: 401');
     });
 
-    await runAuthRescan(store, spec, 'srv', '2026-08-05T00:00:00.000Z', scan);
+    await runAuthRescan(store, spec, '2026-08-05T00:00:00.000Z', scan);
 
     expect(mocks.save).toHaveBeenCalledTimes(1);
     expect(mocks.close).toHaveBeenCalledTimes(1);

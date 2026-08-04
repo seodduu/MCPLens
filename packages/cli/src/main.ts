@@ -2,14 +2,15 @@
 // packages/cli/src/main.ts
 import { readFileSync } from 'node:fs';
 import { LensStore, LogWatcher, buildMatrix, sessionSavings, dbPath,
-  scanServer, ClaudeAdapter, CodexAdapter, GeminiAdapter,
+  ClaudeAdapter, CodexAdapter, GeminiAdapter,
   collectAllSpecs, configSources, collectFromSource,
   authenticateServer, clearStoredOAuth,
   type McpServerSpec, type ClientId, type ServerIdentity } from '@mcp-lens/core';
 import { formatReport } from './report.js';
 import { collectServerSpecs } from './scan-config.js';
-import { scanFailureLine, formatSourceCounts } from './scan-report.js';
-import { classifyScanFailure } from './scan-status.js';
+import { formatSourceCounts } from './scan-report.js';
+import { scanOneServer } from './scan-run.js';
+import { runAuthRescan } from './auth-rescan.js';
 import { openUrl } from './auth-open.js';
 import { resolveAuthTarget } from './auth-target.js';
 import { captureHook } from './hook-capture.js';
@@ -165,20 +166,11 @@ async function runScan(args: string[]) {
   }
   for (const spec of specs) {
     const scannedAt = new Date().toISOString();
-    try {
-      const result = await scanServer(spec);
-      store.upsertScanResult(
-        result.definitions,
-        result.bodies,
-        identities.filter((identity) => identity.serverName === spec.name),
-      );
-      store.recordServerScanStatus(spec.name, 'ok', scannedAt);
-      const total = result.definitions.reduce((n, d) => n + d.definitionTokens, 0);
-      console.log(`- ${spec.name}: ${result.definitions.length}개 툴, ${total} 토큰`);
-    } catch (e) {
-      const record = classifyScanFailure(e as Error);
-      store.recordServerScanStatus(spec.name, record.status, scannedAt, record.errorCode);
-      console.log(scanFailureLine(spec.name, e as Error));
+    const result = await scanOneServer(store, spec, scannedAt, identities);
+    if (result.ok) {
+      console.log(`- ${spec.name}: ${result.toolCount}개 툴, ${result.totalTokens} 토큰`);
+    } else {
+      console.log(result.line);
     }
   }
   store.save();
@@ -228,36 +220,7 @@ async function runAuth(args: string[]) {
 
   const store = await LensStore.open(dbPath());
   const scannedAt = new Date().toISOString();
-  await runAuthRescan(store, target.spec, name, scannedAt);
-}
-
-/**
- * 로그인 직후 서버 1개를 재스캔하고 성공/실패와 무관하게 store를 저장·종료한다.
- * scan을 인자로 받아 테스트에서 실패를 주입할 수 있게 한다(기본값은 실제 scanServer).
- * save/close를 finally 하나로 모아 두 분기(성공/실패) 모두 recordServerScanStatus로
- * 기록한 값이 디스크에 남게 한다 — 이 함수를 만든 이유가 바로 그 보장이다.
- */
-export async function runAuthRescan(
-  store: LensStore,
-  spec: McpServerSpec,
-  name: string,
-  scannedAt: string,
-  scan: typeof scanServer = scanServer,
-): Promise<void> {
-  try {
-    const result = await scan(spec);
-    store.upsertScanResult(result.definitions, result.bodies, []);
-    store.recordServerScanStatus(name, 'ok', scannedAt);
-    const total = result.definitions.reduce((n, d) => n + d.definitionTokens, 0);
-    console.log(`${name}: 로그인 완료, 툴 ${result.definitions.length}개 · ${total}토큰`);
-  } catch (e) {
-    const record = classifyScanFailure(e as Error);
-    store.recordServerScanStatus(name, record.status, scannedAt, record.errorCode);
-    console.log(scanFailureLine(name, e as Error));
-  } finally {
-    store.save();
-    store.close();
-  }
+  await runAuthRescan(store, target.spec, scannedAt);
 }
 
 function argValue(args: string[], flag: string): string | undefined {
