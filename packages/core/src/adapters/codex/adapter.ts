@@ -95,7 +95,19 @@ export class CodexAdapter implements LogAdapter {
         const output = p.output ?? rec.output;
         const classification = classifySearchOutput(output, expectedExactToolName);
         if (classification.kind === 'success') {
-          toolLoads[idx].toolName = classification.toolName;
+          // 다중이면 슬롯 하나로 부족하다. 첫 툴은 원래 슬롯에 넣고 나머지는 뒤에 push한다.
+          // tool_loads에는 순서 의미가 없으므로(시각 컬럼 없음) 재배치가 안전하다.
+          const [first, ...rest] = classification.tools;
+          toolLoads[idx].toolName = first!.toolName;
+          toolLoads[idx].loadedTokens = countTokens(first!.definitionText);
+          for (const tool of rest) {
+            toolLoads.push({
+              sessionId,
+              serverName: null,
+              toolName: tool.toolName,
+              loadedTokens: countTokens(tool.definitionText),
+            });
+          }
         } else if (classification.kind === 'no-match') {
           toolSearchAttempts.push({
             sessionId,
@@ -138,7 +150,8 @@ export class CodexAdapter implements LogAdapter {
 }
 
 type SearchOutputClassification =
-  | { kind: 'success'; toolName: string }
+  // tools는 길이 1 이상을 보장한다. 0개면 generic이다.
+  | { kind: 'success'; tools: Array<{ toolName: string; definitionText: string }> }
   | { kind: 'no-match' }
   | { kind: 'generic' };
 
@@ -184,9 +197,27 @@ function classifySearchOutput(
   if (malformed || cancellationOrError || ambiguousJson) return { kind: 'generic' };
   if (evidence.length !== 1) return { kind: 'generic' };
   if (evidence[0] === 'definition') {
-    if (definition?.length !== 1) return { kind: 'generic' };
-    const name = validDefinitionName(definition[0], expectedExactToolName);
-    return name !== null ? { kind: 'success', toolName: name } : { kind: 'generic' };
+    const elements = definition ?? [];
+    if (expectedExactToolName !== null) {
+      // 정확 검색: 지목 대상이 하나다. 느슨하게 하면 결함 E 보정이 막은 오탐이 돌아온다.
+      if (elements.length !== 1) return { kind: 'generic' };
+      const name = validDefinitionName(elements[0], expectedExactToolName);
+      return name === null
+        ? { kind: 'generic' }
+        : { kind: 'success', tools: [{ toolName: name, definitionText: JSON.stringify(elements[0]) }] };
+    }
+    // 부분일치 검색: canonical MCP 정의만 골라 전부 로드로 인정한다. 출력에 정의가 N개
+    // 실려 있으면 그 N개가 실제로 로드된 툴이고, 각 정의 원문의 토큰이 실지불 비용이다.
+    const tools: Array<{ toolName: string; definitionText: string }> = [];
+    const seen = new Set<string>();
+    for (const element of elements) {
+      const name = validDefinitionName(element, null);
+      // 같은 툴이 두 번 실린 출력은 한 번만 센다.
+      if (name === null || seen.has(name)) continue;
+      seen.add(name);
+      tools.push({ toolName: name, definitionText: JSON.stringify(element) });
+    }
+    return tools.length === 0 ? { kind: 'generic' } : { kind: 'success', tools };
   }
   // sentinel(TOOL_NOT_FOUND) evidence는 "무엇을 찾다가 없었는지"를 알 때만 의미가 있다.
   // 입력 패턴을 몰라 expectedExactToolName이 없으면 no-match로 기록할 대상이 없다.
