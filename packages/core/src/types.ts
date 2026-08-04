@@ -1,5 +1,13 @@
 // packages/core/src/types.ts
 export type ClientId = 'claude-code' | 'codex' | 'gemini-cli';
+export type ConfigSourceKind = 'claude-user' | 'claude-project' | 'codex' | 'gemini';
+export type ServerTransport = 'stdio' | 'http';
+export type IdentityConflictState = 'clear' | 'conflict' | 'unreadable';
+export type DependencyStatus = 'Independent' | 'Review required' | 'Dependent';
+export type InferenceProvider = 'auto' | 'claude' | 'codex';
+export type GlobalActionClient = 'claude-code' | 'codex';
+export type GlobalActionStatus = 'active' | 'restore-pending' | 'restored' | 'conflict' | 'failed';
+export type RegretEvidenceKind = 'direct' | 'indirect';
 
 /** 설계문서 4-3의 회계 모드 4종 */
 export type AccountingMode =
@@ -56,6 +64,98 @@ export interface AdapterResult {
   toolLoads: ToolLoadEvent[];
   usage: TokenUsageEvent[];
   parseErrors: number;
+  toolSearchAttempts?: ToolSearchAttempt[];
+}
+
+export interface ToolDefinitionBody {
+  serverName: string;
+  toolName: string;
+  description: string | null;
+  inputSchemaJson: string;
+  definitionTokens: number;
+  definitionSetHash: string;
+  scannedAt: string;
+}
+
+export interface ServerIdentity {
+  client: ClientId;
+  serverName: string;
+  sourceKind: ConfigSourceKind;
+  sourcePathHash: string;
+  transport: ServerTransport;
+  endpointHash: string;
+  conflictState: IdentityConflictState;
+  observedAt: string;
+}
+
+export interface DependencyCallRecord {
+  sequence: number;
+  sessionId: string;
+  serverName: string;
+  toolName: string;
+  calledAt: string | null;
+  isError: boolean;
+}
+
+export interface ToolDependencyResult {
+  serverName: string;
+  toolName: string;
+  status: DependencyStatus;
+  dependedOnBy: string[];
+  rationale: string;
+  displaySummary: string | null;
+  whatYouLose: string | null;
+  riskWithoutTool: string | null;
+}
+
+export interface DependencyAnalysis {
+  definitionSetHash: string;
+  analysisRulesVersion: number;
+  provider: Exclude<InferenceProvider, 'auto'>;
+  model: string;
+  status: 'complete' | 'failed';
+  analyzedAt: string;
+  errorCode: string | null;
+  results: ToolDependencyResult[];
+}
+
+export interface GlobalAction {
+  actionId: string;
+  client: GlobalActionClient;
+  serverName: string;
+  toolName: string;
+  identityHash: string;
+  definitionSetHash: string;
+  ownedRule: string;
+  backupPath: string;
+  preFingerprint: string;
+  postFingerprint: string;
+  status: GlobalActionStatus;
+  createdAt: string;
+  restoredAt: string | null;
+}
+
+export interface RegretSignal {
+  actionId: string;
+  kind: RegretEvidenceKind;
+  sessionId: string;
+  observedAt: string;
+}
+
+export interface ToolSearchAttempt {
+  sessionId: string;
+  exactToolName: string;
+  observedAt: string;
+  noMatch: true;
+}
+
+export interface InferenceConsent {
+  policyVersion: number;
+  provider: Exclude<InferenceProvider, 'auto'>;
+  model: string;
+  status: 'accepted' | 'revoked';
+  acceptedAt: string;
+  revokedAt: string | null;
 }
 
 export interface LogAdapter {

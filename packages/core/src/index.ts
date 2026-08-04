@@ -5,6 +5,10 @@ export * from './ingest/identity.js';
 export * from './ingest/coordinator.js';
 export * from './ingest/lease.js';
 export * from './health/collectionHealth.js';
+export * from './dependency/analyzer.js';
+export * from './dependency/eligibility.js';
+export * from './dependency/rollout.js';
+export * from './inference/costEstimate.js';
 export * from './paths.js';
 export { countTokens } from './tokenize.js';
 export * from './engine/engine.js';
@@ -18,6 +22,8 @@ export { LensStore } from './store/store.js';
 export { materializeSession } from './store/observations.js';
 export type { CollectorReceipt } from './store/store.js';
 export { scanServer } from './scanner/scanner.js';
+export { applyClaudeGlobalDeny, restoreClaudeGlobalDeny, claudeDenyRule, type ActionFileSystem, type ActionMutation, type ActionRequest } from './actions/claude.js';
+export { applyCodexDisabledTool, restoreCodexDisabledTool } from './actions/codex.js';
 export {
   loadStoredOAuth,
   saveStoredOAuth,

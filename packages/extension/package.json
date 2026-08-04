@@ -70,6 +70,30 @@
       {
         "command": "mcp-lens.addServer",
         "title": "Add (서버 차단 해제)"
+      },
+      {
+        "command": "mcplens.openAnalysisDetails",
+        "title": "MCP Lens: Open Analysis Details"
+      },
+      {
+        "command": "mcplens.analyzeDependencies",
+        "title": "MCP Lens: Analyze Dependencies"
+      },
+      {
+        "command": "mcplens.reanalyzeServer",
+        "title": "MCP Lens: Reanalyze Server"
+      },
+      {
+        "command": "mcplens.disableGlobally",
+        "title": "MCP Lens: Disable Globally"
+      },
+      {
+        "command": "mcplens.restoreGlobally",
+        "title": "MCP Lens: Restore Globally"
+      },
+      {
+        "command": "mcplens.withdrawInferenceConsent",
+        "title": "MCP Lens: Withdraw Inference Consent"
       }
     ],
     "menus": {
@@ -105,25 +129,25 @@
         {
           "command": "mcp-lens.hooksResume",
           "when": "mcpLens.hooksPaused"
+        },
+        {
+          "command": "mcplens.openAnalysisDetails",
+          "when": "false"
+        },
+        {
+          "command": "mcplens.reanalyzeServer",
+          "when": "false"
+        },
+        {
+          "command": "mcplens.disableGlobally",
+          "when": "false"
+        },
+        {
+          "command": "mcplens.restoreGlobally",
+          "when": "false"
         }
       ],
       "view/item/context": [
-        {
-          "command": "mcp-lens.removeTool",
-          "when": "view == mcpLens.matrix && viewItem == mcpTool-enabled"
-        },
-        {
-          "command": "mcp-lens.addTool",
-          "when": "view == mcpLens.matrix && viewItem == mcpTool-disabled"
-        },
-        {
-          "command": "mcp-lens.removeServer",
-          "when": "view == mcpLens.matrix && viewItem == mcpServer-enabled"
-        },
-        {
-          "command": "mcp-lens.addServer",
-          "when": "view == mcpLens.matrix && viewItem == mcpServer-disabled"
-        },
         {
           "command": "mcp-lens.installHooks",
           "when": "view == mcpLens.collection && viewItem == hook-installable",
@@ -132,6 +156,16 @@
         {
           "command": "mcp-lens.uninstallHooks",
           "when": "view == mcpLens.collection && viewItem == hook-installed",
+          "group": "1_actions"
+        },
+        {
+          "command": "mcplens.disableGlobally",
+          "when": "view == mcpLens.matrix && viewItem == mcpAnalysis-disable",
+          "group": "inline"
+        },
+        {
+          "command": "mcplens.restoreGlobally",
+          "when": "view == mcpLens.matrix && viewItem == mcpAnalysis-restore",
           "group": "1_actions"
         }
       ]
@@ -209,6 +243,28 @@
           },
           "default": [],
           "markdownDescription": "Lens가 지원하지 않는다고 판정한 MCP 서버 이름 목록(자동 클라이언트 등록을 거부하는 서버 등). 로그인 시도 중 자동 추가되며, 트리에서 숨겨지고 다시 로그인을 묻지 않습니다."
+        },
+        "mcpLens.inferenceProvider": {
+          "type": "string",
+          "enum": ["auto", "claude", "codex"],
+          "default": "auto",
+          "markdownDescription": "Provider used for dependency analysis."
+        },
+        "mcpLens.claudeModel": {
+          "type": "string",
+          "default": "haiku",
+          "markdownDescription": "Claude model used for dependency analysis."
+        },
+        "mcpLens.codexModel": {
+          "type": "string",
+          "default": "gpt-5.6-luna",
+          "markdownDescription": "Codex model used for dependency analysis."
+        },
+        "mcplens.dependencyAnalysis.rollout": {
+          "type": "string",
+          "enum": ["shadow", "claude", "codex-beta", "stable"],
+          "default": "shadow",
+          "markdownDescription": "Controls which dependency-analysis action surfaces are available. Shadow allows analysis, cache, and details only."
         }
       }
     }

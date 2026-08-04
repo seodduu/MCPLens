@@ -72,6 +72,9 @@ export function needsRuntimeRefresh(
   bundled: string | null,
   installed: string | null,
 ): boolean {
-  if (install !== 'installed' || bundled === null) return false;
+  // needs-approval도 파일은 이미 설치돼 있다 — 번들이 바뀌면 갱신 대상이다.
+  // (갱신하면 hooks.json 해시가 바뀌어 codex가 재승인을 요구한다. 그것이 올바른
+  //  보안 동작이며, 재승인이 필요해진 사실은 needs-approval 상태로 표면화된다.)
+  if ((install !== 'installed' && install !== 'needs-approval') || bundled === null) return false;
   return installed !== bundled;
 }

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Wave Task Completion"
+  short_description: "Safely verify and integrate finished Wave tasks"
+  default_prompt: "Use $completing-wave-tasks to verify, commit, merge, and clean up Wave 1 Task 4."

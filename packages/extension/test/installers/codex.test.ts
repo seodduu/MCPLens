@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CodexHookInstaller } from '../../src/installers/codex.js';
 import { PLUGIN_ID, MARKETPLACE_NAME, stableDir, type InstallerDeps, type RunResult } from '../../src/hookInstall.js';
+import { CODEX_HOOK_STATE_KEYS } from '../../src/installers/codexHookState.js';
 
 const here = join(fileURLToPath(import.meta.url), '..');
 /** `codex plugin list --json` 실측 출력 (codex-cli 0.144.6). */
@@ -13,6 +14,18 @@ const listJson = readFileSync(join(here, '../fixtures/codex-plugin-list.json'), 
 const emptyJson = JSON.stringify({ installed: [], available: [] });
 
 const HOME = '/home/u';
+const CONFIG_PATH = join(HOME, '.codex', 'config.toml');
+
+/** 우리 훅 4개 모두 `enabled = true`(+선택적으로 trusted_hash)를 갖는 config.toml 본문. */
+function configWith(opts: { enabled?: boolean; trusted?: boolean } = {}): string {
+  const { enabled = true, trusted = false } = opts;
+  return CODEX_HOOK_STATE_KEYS.map((key) => [
+    `[hooks.state."${key}"]`,
+    ...(enabled ? ['enabled = true'] : []),
+    ...(trusted ? ['trusted_hash = "sha256:x"'] : []),
+    '',
+  ].join('\n')).join('\n');
+}
 
 function deps(over: Partial<InstallerDeps> = {}): InstallerDeps {
   return {
@@ -87,6 +100,26 @@ describe('CodexHookInstaller.detect', () => {
   it('run이 throw해도 전파하지 않고 not-installed', async () => {
     const run = async (): Promise<RunResult> => { throw new Error('spawn ENOENT'); };
     expect(await new CodexHookInstaller(deps({ run })).detect()).toBe('not-installed');
+  });
+
+  it('plugin은 있지만 enabled가 없으면 not-installed로 보고 설치가 다시 돈다', async () => {
+    const fs = memFsStub({ [CONFIG_PATH]: '[features]\nplugin_hooks = true\n' });
+    expect(await new CodexHookInstaller(deps({ fs })).detect()).toBe('not-installed');
+  });
+
+  it('enabled는 있고 trusted_hash가 없으면 needs-approval이다', async () => {
+    const fs = memFsStub({ [CONFIG_PATH]: configWith({ enabled: true, trusted: false }) });
+    expect(await new CodexHookInstaller(deps({ fs })).detect()).toBe('needs-approval');
+  });
+
+  it('enabled와 trusted_hash가 모두 있으면 installed다', async () => {
+    const fs = memFsStub({ [CONFIG_PATH]: configWith({ enabled: true, trusted: true }) });
+    expect(await new CodexHookInstaller(deps({ fs })).detect()).toBe('installed');
+  });
+
+  it('config를 못 읽으면 fail-open으로 installed를 보고한다', async () => {
+    // memFsStub 기본값: config.toml이 없으면 readFile이 throw한다.
+    expect(await new CodexHookInstaller(deps()).detect()).toBe('installed');
   });
 });
 
@@ -164,6 +197,32 @@ describe('CodexHookInstaller.install', () => {
     };
     const res = await new CodexHookInstaller(deps({ run })).install();
     expect(res).toEqual({ kind: 'failed', step: 'marketplace-add', stderr: 'spawn ENOENT' });
+  });
+
+  it('install이 config.toml에 enabled = true를 쓰고 백업을 남긴다', async () => {
+    const { run } = recorder(emptyJson);
+    const before = '[features]\nplugin_hooks = true\n';
+    const fs = memFsStub({ [CONFIG_PATH]: before });
+    const written: Record<string, string> = {};
+    const wrappedFs = {
+      ...fs,
+      writeFile: (p: string, content: string) => { written[p] = content; fs.writeFile(p, content); },
+    };
+    const res = await new CodexHookInstaller(deps({ run, fs: wrappedFs })).install();
+
+    expect(res).toEqual({ kind: 'ok', alreadyInstalled: false });
+    expect(written[`${CONFIG_PATH}.mcplens.bak`]).toBe(before);
+    expect(written[CONFIG_PATH]).toContain('enabled = true');
+    expect(written[CONFIG_PATH]).toContain('[features]');
+  });
+
+  it('needs-approval이면 install은 alreadyInstalled로 조기 반환한다', async () => {
+    const fs = memFsStub({ [CONFIG_PATH]: configWith({ enabled: true, trusted: false }) });
+    const { calls, run } = recorder(listJson);
+    const res = await new CodexHookInstaller(deps({ run, fs })).install();
+
+    expect(res).toEqual({ kind: 'ok', alreadyInstalled: true });
+    expect(calls.filter((a) => !a.includes('list'))).toEqual([]);
   });
 });
 

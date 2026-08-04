@@ -1,0 +1,4 @@
+{
+  "permissions": { "deny": ["Read(.env)"] },
+  "model": "haiku"
+}

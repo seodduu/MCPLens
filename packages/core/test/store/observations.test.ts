@@ -18,8 +18,9 @@ import { LensStore } from '../../src/store/store.js';
 import { materializeSession } from '../../src/store/observations.js';
 import { makeCorrelationKey } from '../../src/ingest/identity.js';
 import { CORRELATION_GRACE_MS } from '../../src/health/collectionHealth.js';
+import { buildMatrix, visibleMatrixRows } from '../../src/engine/engine.js';
 import type { HookEnvelope, ToolObservation } from '../../src/ingest/contracts.js';
-import type { AdapterResult, ClientId } from '../../src/types.js';
+import type { AdapterResult, ClientId, GlobalAction, ToolDefinition } from '../../src/types.js';
 import type {
   CollectionHealthInput,
   CollectionHealthSnapshot,
@@ -105,6 +106,42 @@ function legacyResult(): AdapterResult {
     }],
     toolLoads: [], usage: [], parseErrors: 0,
   };
+}
+
+function exactCodexLoad(exposedToolName: string): AdapterResult {
+  return {
+    session: {
+      sessionId: 'codex-exact-load-session', client: 'codex', filePath: '/tmp/codex-exact.jsonl',
+      externalSessionId: 'codex-exact-load-external', startedAt: NOW, mode: 'DEFERRED_MEASURABLE',
+    },
+    toolCalls: [],
+    toolLoads: [{
+      sessionId: 'codex-exact-load-session', serverName: null,
+      toolName: exposedToolName, loadedTokens: 37,
+    }],
+    usage: [], parseErrors: 0,
+  };
+}
+
+const codexAction = (overrides: Partial<GlobalAction> = {}): GlobalAction => ({
+  actionId: 'codex-exact-action', client: 'codex', serverName: 'atlas', toolName: 'lookup',
+  identityHash: 'identity-anon', definitionSetHash: 'definitions-anon',
+  ownedRule: 'atlas_lookup', backupPath: '/tmp/backup-anon', preFingerprint: 'before-anon',
+  postFingerprint: 'after-anon', status: 'active', createdAt: '2026-07-19T00:00:00.000Z',
+  restoredAt: null, ...overrides,
+});
+
+const definition = (serverName: string, toolName: string): ToolDefinition => ({
+  serverName, toolName, definitionTokens: 100, scannedAt: NOW, firstScannedAt: NOW,
+});
+
+function visibleActionCandidates(store: LensStore) {
+  const sessions = store.sessionsSince('2000-01-01');
+  return visibleMatrixRows(buildMatrix({
+    definitions: store.allDefinitions(), calls: store.callsSince('2000-01-01'),
+    loads: store.loadsSince('2000-01-01'), sessions,
+  }), sessions).filter((row) => row.recommendation.action === 'remove'
+    || row.recommendation.action === 'filter-server');
 }
 
 async function canonicalCalls(order: readonly ('hook' | 'log')[]) {
@@ -204,6 +241,40 @@ function fallbackCompleted(
 }
 
 describe('observation materialization', () => {
+  it('returns dependency calls in stable session, time, and database-id order without dropping null times', async () => {
+    const path = join(temporaryRoot(), 'dependency-calls.db');
+    const SQL = await initSqlJs();
+    const db = new SQL.Database();
+    db.exec(`CREATE TABLE sessions (session_id TEXT PRIMARY KEY, client TEXT NOT NULL,
+      file_path TEXT, external_session_id TEXT, started_at TEXT, mode TEXT NOT NULL);
+      CREATE TABLE tool_definitions (server_name TEXT NOT NULL, tool_name TEXT NOT NULL,
+      definition_tokens INTEGER NOT NULL, scanned_at TEXT NOT NULL, first_scanned_at TEXT,
+      PRIMARY KEY(server_name, tool_name));
+      CREATE TABLE tool_calls (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
+      server_name TEXT NOT NULL, tool_name TEXT NOT NULL, called_at TEXT, duration_ms INTEGER,
+      is_error INTEGER NOT NULL DEFAULT 0, response_tokens INTEGER);
+      INSERT INTO tool_calls(session_id,server_name,tool_name,called_at,is_error) VALUES
+        ('session-b','github','same-time-first','${NOW}',0),
+        ('session-b','github','same-time-second','${NOW}',0),
+        ('session-b','github','unknown-time',NULL,0),
+        ('session-a','github','early','${observedAt(-1)}',0);`);
+    writeFileSync(path, Buffer.from(db.export()));
+    db.close();
+    const store = await LensStore.open(path);
+
+    expect(store.dependencyCallsSince(observedAt(-2))).toEqual([
+      { sequence: expect.any(Number), sessionId: 'session-a', serverName: 'github',
+        toolName: 'early', calledAt: observedAt(-1), isError: false },
+      { sequence: expect.any(Number), sessionId: 'session-b', serverName: 'github',
+        toolName: 'unknown-time', calledAt: null, isError: false },
+      { sequence: expect.any(Number), sessionId: 'session-b', serverName: 'github',
+        toolName: 'same-time-first', calledAt: NOW, isError: false },
+      { sequence: expect.any(Number), sessionId: 'session-b', serverName: 'github',
+        toolName: 'same-time-second', calledAt: NOW, isError: false },
+    ]);
+    store.close();
+  });
+
   it('materializes hook and log observations identically regardless of arrival order', async () => {
     const hookThenLog = await canonicalCalls(['hook', 'log']);
     const logThenHook = await canonicalCalls(['log', 'hook']);
@@ -512,6 +583,169 @@ describe('observation materialization', () => {
     store.ingest(result);
 
     expect(store.loadsSince('2000-01-01').map((load) => load.loadedTokens)).toEqual([11, 22]);
+  });
+
+  it('uniquely attributes an exact Codex exposed load to a configured scanned definition', async () => {
+    const store = await LensStore.open(':memory:');
+    store.upsertDefinitions([definition('atlas', 'lookup')]);
+    store.upsertClientServers(new Map([['atlas', new Set<ClientId>(['codex'])]]), new Set(['codex']));
+
+    store.ingest(exactCodexLoad('mcp__atlas__lookup'));
+    expect(store.loadsSince('2000-01-01')).toEqual([{
+      sessionId: 'codex-exact-load-session', serverName: 'atlas', toolName: 'lookup', loadedTokens: 37,
+    }]);
+
+    store.ingest(exactCodexLoad('mcp__atlas__lookup'));
+    expect(store.loadsSince('2000-01-01')).toHaveLength(1);
+  });
+
+  it('does not attribute ambiguous or unconfigured Codex exposed loads', async () => {
+    const ambiguous = await LensStore.open(':memory:');
+    ambiguous.upsertDefinitions([definition('atlas', 'deep__lookup'), definition('atlas__deep', 'lookup')]);
+    ambiguous.upsertClientServers(new Map([
+      ['atlas', new Set<ClientId>(['codex'])], ['atlas__deep', new Set<ClientId>(['codex'])],
+    ]), new Set(['codex']));
+    ambiguous.ingest(exactCodexLoad('mcp__atlas__deep__lookup'));
+    expect(ambiguous.loadsSince('2000-01-01')[0]).toMatchObject({
+      serverName: null, toolName: 'mcp__atlas__deep__lookup',
+    });
+    expect(visibleActionCandidates(ambiguous)).not.toContainEqual(expect.objectContaining({
+      serverName: 'atlas', toolName: 'deep__lookup',
+    }));
+    expect(visibleActionCandidates(ambiguous)).not.toContainEqual(expect.objectContaining({
+      serverName: 'atlas__deep', toolName: 'lookup',
+    }));
+
+    const unconfigured = await LensStore.open(':memory:');
+    unconfigured.upsertDefinitions([definition('atlas', 'lookup')]);
+    unconfigured.upsertClientServers(new Map([
+      ['other', new Set<ClientId>(['codex'])],
+    ]), new Set(['codex']));
+    unconfigured.ingest(exactCodexLoad('mcp__atlas__lookup'));
+    expect(unconfigured.loadsSince('2000-01-01')[0]).toMatchObject({
+      serverName: null, toolName: 'mcp__atlas__lookup',
+    });
+    expect(visibleActionCandidates(unconfigured)).not.toContainEqual(expect.objectContaining({
+      serverName: 'atlas', toolName: 'lookup',
+    }));
+  });
+
+  it('records one direct regret signal when a Claude log fallback and hook share a session', async () => {
+    const store = await LensStore.open(':memory:');
+    store.recordGlobalAction(codexAction({
+      actionId: 'claude-log-action', client: 'claude-code', serverName: 'github', toolName: 'get_issue',
+      ownedRule: 'mcp__github__get_issue',
+    }));
+    const hook = observation({
+      client: 'claude-code', externalSessionId: 'claude-log-session', serverName: 'github',
+      toolName: 'get_issue', phase: 'tool-before', observedAt: NOW,
+    });
+    store.upsertObservation(hook);
+    store.ingest({
+      session: { sessionId: 'claude-log-session-id', client: 'claude-code', filePath: '/tmp/claude-log.jsonl',
+        externalSessionId: 'claude-log-session', startedAt: NOW, mode: 'UPFRONT' },
+      toolCalls: [{ sessionId: 'claude-log-session-id', serverName: 'github', toolName: 'get_issue',
+        calledAt: NOW, durationMs: null, isError: true, responseTokens: null, responseText: null }],
+      toolLoads: [], usage: [], parseErrors: 0,
+    });
+
+    expect(store.regretSignals('claude-log-action')).toHaveLength(1);
+  });
+
+  it.each([true, false])('records direct regret from a structured Claude log %s without a hook', async (isError) => {
+    const store = await LensStore.open(':memory:');
+    store.recordGlobalAction(codexAction({
+      actionId: 'claude-log-only-action', client: 'claude-code', serverName: 'github', toolName: 'get_issue',
+      ownedRule: 'mcp__github__get_issue',
+    }));
+    store.ingest({
+      session: { sessionId: 'claude-log-only-session-id', client: 'claude-code', filePath: '/tmp/claude-log-only.jsonl',
+        externalSessionId: 'claude-log-only-session', startedAt: NOW, mode: 'UPFRONT' },
+      toolCalls: [{ sessionId: 'claude-log-only-session-id', serverName: 'github', toolName: 'get_issue',
+        calledAt: NOW, durationMs: null, isError, responseTokens: null, responseText: null }],
+      toolLoads: [], usage: [], parseErrors: 0,
+    });
+
+    expect(store.regretSignals('claude-log-only-action')).toEqual([{
+      actionId: 'claude-log-only-action', kind: 'direct', sessionId: 'claude-log-only-session', observedAt: NOW,
+    }]);
+  });
+
+  it('does not record direct regret from a generic Claude log tool-before', async () => {
+    const store = await LensStore.open(':memory:');
+    store.recordGlobalAction(codexAction({
+      actionId: 'claude-log-before-action', client: 'claude-code', serverName: 'github', toolName: 'get_issue',
+      ownedRule: 'mcp__github__get_issue',
+    }));
+    store.ingest({
+      session: { sessionId: 'claude-log-before-session-id', client: 'claude-code', filePath: '/tmp/claude-log-before.jsonl',
+        externalSessionId: 'claude-log-before-session', startedAt: NOW, mode: 'DEFERRED_OPAQUE' },
+      toolCalls: [],
+      toolLoads: [{ sessionId: 'claude-log-before-session-id', serverName: 'github', toolName: 'get_issue', loadedTokens: null }],
+      usage: [], parseErrors: 0,
+    });
+
+    expect(store.regretSignals('claude-log-before-action')).toEqual([]);
+  });
+
+  it('does not record indirect regret from a canonical broad Codex no-match', async () => {
+    const adapter = new CodexAdapter();
+    const result = adapter.parseFile('/tmp/codex-broad-no-match.jsonl', [
+      JSON.stringify({ payload: { type: 'custom_tool_call', call_id: 'broad-no-match', input: 'ALL_TOOLS.filter(x => x.name.includes("mcp__atlas__lookup"))' } }),
+      JSON.stringify({ payload: { type: 'custom_tool_call_output', call_id: 'broad-no-match', output: 'TOOL_NOT_FOUND' } }),
+    ].join('\n'));
+    const store = await LensStore.open(':memory:');
+    store.recordGlobalAction(codexAction());
+    store.ingest(result);
+
+    expect(result.toolSearchAttempts ?? []).toEqual([]);
+    expect(store.regretSignals('codex-exact-action')).toEqual([]);
+  });
+
+  it('does not record indirect regret from malformed canonical no-match framing', async () => {
+    const adapter = new CodexAdapter();
+    const result = adapter.parseFile('/tmp/codex-malformed-no-match.jsonl', [
+      JSON.stringify({ payload: { type: 'custom_tool_call', call_id: 'malformed-no-match', input: 'ALL_TOOLS.filter(x => x.name === "mcp__atlas__lookup")' } }),
+      JSON.stringify({ payload: { type: 'custom_tool_call_output', call_id: 'malformed-no-match', output: [
+        { type: 'input_text', text: 'TOOL_NOT_FOUND' }, { type: 'input_text', text: '{bad-json' },
+      ] } }),
+    ].join('\n'));
+    const store = await LensStore.open(':memory:');
+    store.recordGlobalAction(codexAction());
+    store.ingest(result);
+
+    expect(result.toolSearchAttempts ?? []).toEqual([]);
+    expect(store.regretSignals('codex-exact-action')).toEqual([]);
+  });
+
+  it('does not record indirect regret from an empty Codex content-block array', async () => {
+    const adapter = new CodexAdapter();
+    const result = adapter.parseFile('/tmp/codex-empty-content.jsonl', [
+      JSON.stringify({ payload: { type: 'custom_tool_call', call_id: 'empty-content', input: 'ALL_TOOLS.filter(x => x.name === "mcp__atlas__lookup")' } }),
+      JSON.stringify({ payload: { type: 'custom_tool_call_output', call_id: 'empty-content', output: [] } }),
+    ].join('\n'));
+    const store = await LensStore.open(':memory:');
+    store.recordGlobalAction(codexAction());
+    store.ingest(result);
+
+    expect(result.toolSearchAttempts ?? []).toEqual([]);
+    expect(store.regretSignals('codex-exact-action')).toEqual([]);
+  });
+
+  it('does not record indirect regret from duplicate Codex no-match evidence', async () => {
+    const adapter = new CodexAdapter();
+    const result = adapter.parseFile('/tmp/codex-duplicate-no-match.jsonl', [
+      JSON.stringify({ payload: { type: 'custom_tool_call', call_id: 'duplicate-no-match', input: 'ALL_TOOLS.filter(x => x.name === "mcp__atlas__lookup")' } }),
+      JSON.stringify({ payload: { type: 'custom_tool_call_output', call_id: 'duplicate-no-match', output: [
+        { type: 'input_text', text: '[]' }, { type: 'input_text', text: '[]' },
+      ] } }),
+    ].join('\n'));
+    const store = await LensStore.open(':memory:');
+    store.recordGlobalAction(codexAction());
+    store.ingest(result);
+
+    expect(result.toolSearchAttempts ?? []).toEqual([]);
+    expect(store.regretSignals('codex-exact-action')).toEqual([]);
   });
 
   it('does not materialize a hook tool-before without log load evidence', () => {

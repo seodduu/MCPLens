@@ -1,0 +1,8 @@
+{
+  "session_id": "claude-session-regret-001",
+  "transcript_path": "/tmp/claude/session-regret-001.jsonl",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "mcp__github__search_issues",
+  "tool_use_id": "toolu_anon_pre_001",
+  "tool_input": {}
+}

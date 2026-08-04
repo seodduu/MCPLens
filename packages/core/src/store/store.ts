@@ -2,16 +2,26 @@ import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
 import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { AdapterResult, ClientId, SessionMeta, ToolCallEvent, ToolDefinition,
-  ToolLoadEvent } from '../types.js';
+import type {
+  AdapterResult, ClientId, DependencyAnalysis, DependencyCallRecord, GlobalAction,
+  GlobalActionClient, GlobalActionStatus, InferenceConsent, RegretSignal, ServerIdentity,
+  SessionMeta, ToolCallEvent, ToolDefinition, ToolDefinitionBody, ToolLoadEvent,
+} from '../types.js';
 import type { ToolObservation } from '../ingest/contracts.js';
 import { adapterResultToObservations } from '../ingest/log-bridge.js';
 import { makeCorrelationKey } from '../ingest/identity.js';
 import { deriveCollectionHealth, type CollectionHealthSnapshot } from '../health/collectionHealth.js';
+import { directClaudeRegretSignals } from '../regret/claudeAttempt.js';
 import { materializeSession, sessionIdFor } from './observations.js';
 
 const SCHEMA = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), 'schema.sql'), 'utf8');
+
+function atOrAfter(observedAt: string, createdAt: string): boolean {
+  const observed = Date.parse(observedAt);
+  const created = Date.parse(createdAt);
+  return Number.isFinite(observed) && Number.isFinite(created) && observed >= created;
+}
 
 /**
  * schema.sql은 CREATE TABLE IF NOT EXISTS라 기존 DB에는 새 컬럼이 생기지 않는다.
@@ -94,10 +104,14 @@ export class LensStore {
         // A hook and its transcript record can share native identity. Delivery
         // idempotency is source-local, while the ordinal preserves occurrences
         // whose fallback correlation identities are intentionally identical.
+        const attributed = this.attributeCodexExactLoad(observation);
         this.insertObservation({
-          ...observation,
-          deliveryId: `log:${index}:${observation.deliveryId}`,
+          ...attributed,
+          deliveryId: `log:${index}:${attributed.deliveryId}`,
         });
+        for (const signal of directClaudeRegretSignals(this.activeActions(), attributed)) {
+          this.recordRegretSignal(signal);
+        }
       }
       this.rebuildSession(s.sessionId);
       if (prior !== null && prior !== s.sessionId) this.refreshDisplacedSession(prior);
@@ -108,7 +122,47 @@ export class LensStore {
              cache_read_tokens, cache_creation_tokens) VALUES(?,?,?,?,?,?)`,
           [u.sessionId, u.at, u.inputTokens, u.outputTokens,
            u.cacheReadTokens, u.cacheCreationTokens]);
+      for (const attempt of r.toolSearchAttempts ?? []) {
+        for (const action of this.activeActions()) {
+          if (
+            action.client === 'codex'
+            && attempt.exactToolName === `mcp__${action.serverName}__${action.toolName}`
+            && atOrAfter(attempt.observedAt, action.createdAt)
+          ) {
+            this.recordRegretSignal({
+              actionId: action.actionId,
+              kind: 'indirect',
+              sessionId: attempt.sessionId,
+              observedAt: attempt.observedAt,
+            });
+          }
+        }
+      }
     });
+  }
+
+  /** Codex가 남긴 exposed exact name은 현재 스캔·설정에 유일하게 맞을 때만 분해한다. */
+  private attributeCodexExactLoad(observation: ToolObservation): ToolObservation {
+    if (
+      observation.client !== 'codex'
+      || observation.source !== 'log'
+      || observation.phase !== 'tool-before'
+      || observation.serverName !== null
+      || observation.toolName === null
+      || observation.toolName === '(code-mode-search)'
+    ) return observation;
+
+    const candidates = this.select(
+      `SELECT d.server_name, d.tool_name FROM tool_definitions d
+       JOIN client_servers c ON c.server_name=d.server_name
+       WHERE c.client='codex'`, [],
+    ).filter((row) => `mcp__${row.server_name as string}__${row.tool_name as string}` === observation.toolName);
+    if (candidates.length !== 1) return observation;
+    return {
+      ...observation,
+      serverName: candidates[0]!.server_name as string,
+      toolName: candidates[0]!.tool_name as string,
+    };
   }
 
   begin(): void {
@@ -139,6 +193,9 @@ export class LensStore {
     this.transaction(() => {
       this.insertObservation(observation);
       this.rebuildSession(this.ensureAlias(observation));
+      for (const signal of directClaudeRegretSignals(this.activeActions(), observation)) {
+        this.recordRegretSignal(signal);
+      }
     });
   }
 
@@ -192,7 +249,7 @@ export class LensStore {
     return result;
   }
 
-  upsertDefinitions(defs: ToolDefinition[]): void {
+  upsertDefinitions(defs: readonly ToolDefinition[]): void {
     this.transaction(() => {
       for (const d of defs)
         this.run(
@@ -206,6 +263,264 @@ export class LensStore {
                                            excluded.first_scanned_at)`,
           [d.serverName, d.toolName, d.definitionTokens, d.scannedAt, d.firstScannedAt]);
     });
+  }
+
+  upsertServerIdentities(rows: readonly ServerIdentity[]): void {
+    this.transaction(() => {
+      for (const row of rows) this.run(
+        `INSERT INTO server_identities(client, server_name, source_kind, source_path_hash,
+           transport, endpoint_hash, conflict_state, observed_at)
+         VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(client, server_name, source_kind, source_path_hash)
+         DO UPDATE SET transport=excluded.transport, endpoint_hash=excluded.endpoint_hash,
+           conflict_state=excluded.conflict_state, observed_at=excluded.observed_at`,
+        [row.client, row.serverName, row.sourceKind, row.sourcePathHash, row.transport,
+          row.endpointHash, row.conflictState, row.observedAt],
+      );
+    });
+  }
+
+  serverIdentities(serverName?: string): ServerIdentity[] {
+    const rows = serverName === undefined
+      ? this.select(`SELECT * FROM server_identities
+          ORDER BY server_name, client, source_kind, source_path_hash`, [])
+      : this.select(`SELECT * FROM server_identities WHERE server_name=?
+          ORDER BY client, source_kind, source_path_hash`, [serverName]);
+    return rows.map(rowToServerIdentity);
+  }
+
+  upsertDefinitionBodies(rows: readonly ToolDefinitionBody[]): void {
+    this.transaction(() => {
+      for (const row of rows) this.run(
+        `INSERT INTO tool_definition_bodies(server_name, tool_name, description,
+           input_schema_json, definition_tokens, definition_set_hash, scanned_at)
+         VALUES(?,?,?,?,?,?,?) ON CONFLICT(server_name, tool_name) DO UPDATE SET
+           description=excluded.description, input_schema_json=excluded.input_schema_json,
+           definition_tokens=excluded.definition_tokens,
+           definition_set_hash=excluded.definition_set_hash, scanned_at=excluded.scanned_at`,
+        [row.serverName, row.toolName, row.description, row.inputSchemaJson,
+          row.definitionTokens, row.definitionSetHash, row.scannedAt],
+      );
+    });
+  }
+
+  upsertScanResult(
+    definitions: readonly ToolDefinition[],
+    bodies: readonly ToolDefinitionBody[],
+    identities: readonly ServerIdentity[],
+  ): void {
+    this.transaction(() => {
+      this.upsertDefinitions(definitions);
+      this.upsertDefinitionBodies(bodies);
+      this.upsertServerIdentities(identities);
+    });
+  }
+
+  definitionBodiesForServer(serverName: string): ToolDefinitionBody[] {
+    return this.select(
+      `SELECT * FROM tool_definition_bodies WHERE server_name=? ORDER BY tool_name`,
+      [serverName],
+    ).map(rowToDefinitionBody);
+  }
+
+  dependencyCallsSince(iso: string): DependencyCallRecord[] {
+    return this.select(
+      `SELECT id, session_id, server_name, tool_name, called_at, is_error
+       FROM tool_calls WHERE called_at IS NULL OR called_at >= ?
+       ORDER BY session_id, called_at, id`,
+      [iso],
+    ).map((row) => ({
+      sequence: row.id as number,
+      sessionId: row.session_id as string,
+      serverName: row.server_name as string,
+      toolName: row.tool_name as string,
+      calledAt: row.called_at as string | null,
+      isError: row.is_error === 1,
+    }));
+  }
+
+  findDependencyAnalysis(
+    definitionSetHash: string,
+    rulesVersion: number,
+  ): DependencyAnalysis | null {
+    const row = this.select(
+      `SELECT * FROM dependency_analyses
+       WHERE definition_set_hash=? AND analysis_rules_version=?`,
+      [definitionSetHash, rulesVersion],
+    )[0];
+    if (row === undefined) return null;
+    const results = this.select(
+      `SELECT r.*, e.display_summary, e.what_you_lose, e.risk_without_tool
+       FROM tool_dependency_results r LEFT JOIN tool_explanations e
+       ON e.definition_set_hash=r.definition_set_hash
+         AND e.analysis_rules_version=r.analysis_rules_version
+         AND e.server_name=r.server_name AND e.tool_name=r.tool_name
+       WHERE r.definition_set_hash=? AND r.analysis_rules_version=?
+       ORDER BY r.server_name, r.tool_name`,
+      [definitionSetHash, rulesVersion],
+    ).map((result) => ({
+      serverName: result.server_name as string,
+      toolName: result.tool_name as string,
+      status: result.status as DependencyAnalysis['results'][number]['status'],
+      dependedOnBy: JSON.parse(result.depended_on_by_json as string) as string[],
+      rationale: result.rationale as string,
+      displaySummary: result.display_summary as string | null,
+      whatYouLose: result.what_you_lose as string | null,
+      riskWithoutTool: result.risk_without_tool as string | null,
+    }));
+    return {
+      definitionSetHash: row.definition_set_hash as string,
+      analysisRulesVersion: row.analysis_rules_version as number,
+      provider: row.provider as DependencyAnalysis['provider'],
+      model: row.model as string,
+      status: row.status as DependencyAnalysis['status'],
+      analyzedAt: row.analyzed_at as string,
+      errorCode: row.error_code as string | null,
+      results,
+    };
+  }
+
+  saveDependencyAnalysis(analysis: DependencyAnalysis): void {
+    this.transaction(() => {
+      const key = [analysis.definitionSetHash, analysis.analysisRulesVersion];
+      this.run(
+        `INSERT INTO dependency_analyses(definition_set_hash, analysis_rules_version,
+           provider, model, status, analyzed_at, error_code) VALUES(?,?,?,?,?,?,?)
+         ON CONFLICT(definition_set_hash, analysis_rules_version) DO UPDATE SET
+           provider=excluded.provider, model=excluded.model, status=excluded.status,
+           analyzed_at=excluded.analyzed_at, error_code=excluded.error_code`,
+        [...key, analysis.provider, analysis.model, analysis.status,
+          analysis.analyzedAt, analysis.errorCode],
+      );
+      this.run(
+        `DELETE FROM tool_explanations
+         WHERE definition_set_hash=? AND analysis_rules_version=?`, key,
+      );
+      this.run(
+        `DELETE FROM tool_dependency_results
+         WHERE definition_set_hash=? AND analysis_rules_version=?`, key,
+      );
+      for (const result of analysis.results) {
+        this.run(
+          `INSERT INTO tool_dependency_results(definition_set_hash, analysis_rules_version,
+             server_name, tool_name, status, depended_on_by_json, rationale)
+           VALUES(?,?,?,?,?,?,?)`,
+          [...key, result.serverName, result.toolName, result.status,
+            JSON.stringify(result.dependedOnBy), result.rationale],
+        );
+        const explanation = [result.displaySummary, result.whatYouLose, result.riskWithoutTool];
+        if (explanation.every((value) => value !== null)) this.run(
+          `INSERT INTO tool_explanations(definition_set_hash, analysis_rules_version,
+             server_name, tool_name, display_summary, what_you_lose, risk_without_tool)
+           VALUES(?,?,?,?,?,?,?)`,
+          [...key, result.serverName, result.toolName, ...explanation],
+        );
+      }
+    });
+  }
+
+  recordGlobalAction(action: GlobalAction): void {
+    this.transaction(() => this.run(
+      `INSERT INTO global_actions(action_id, client, server_name, tool_name, identity_hash,
+       definition_set_hash, owned_rule, backup_path, pre_fingerprint, post_fingerprint,
+       status, created_at, restored_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [action.actionId, action.client, action.serverName, action.toolName,
+        action.identityHash, action.definitionSetHash, action.ownedRule, action.backupPath,
+        action.preFingerprint, action.postFingerprint, action.status, action.createdAt,
+        action.restoredAt],
+    ));
+  }
+
+  activeActionFor(
+    client: GlobalActionClient,
+    serverName: string,
+    toolName: string,
+  ): GlobalAction | null {
+    const row = this.select(
+      `SELECT * FROM global_actions
+       WHERE client=? AND server_name=? AND tool_name=? AND status='active'`,
+      [client, serverName, toolName],
+    )[0];
+    return row === undefined ? null : rowToGlobalAction(row);
+  }
+
+  activeActions(): GlobalAction[] {
+    return this.select(
+      `SELECT * FROM global_actions WHERE status='active'
+       ORDER BY client, server_name, tool_name, action_id`, [],
+    ).map(rowToGlobalAction);
+  }
+
+  /** 호출자가 지정한 기준시각 이후 이 정확한 정의가 복구됐는지 반환한다. */
+  hasRestoredActionSince(
+    client: GlobalActionClient,
+    serverName: string,
+    toolName: string,
+    definitionSetHash: string,
+    sinceIso: string,
+  ): boolean {
+    return this.select(
+      `SELECT 1 FROM global_actions
+       WHERE client=? AND server_name=? AND tool_name=? AND definition_set_hash=?
+         AND status='restored' AND restored_at IS NOT NULL AND restored_at >= ?
+       LIMIT 1`,
+      [client, serverName, toolName, definitionSetHash, sinceIso],
+    ).length > 0;
+  }
+
+  updateGlobalActionStatus(
+    actionId: string,
+    status: GlobalActionStatus,
+    restoredAt?: string,
+  ): void {
+    this.transaction(() => this.run(
+      `UPDATE global_actions SET status=?, restored_at=? WHERE action_id=?`,
+      [status, restoredAt ?? null, actionId],
+    ));
+  }
+
+  recordRegretSignal(signal: RegretSignal): void {
+    this.transaction(() => this.run(
+      `INSERT INTO regret_signals(action_id, kind, session_id, observed_at)
+       VALUES(?,?,?,?) ON CONFLICT(action_id, kind, session_id) DO NOTHING`,
+      [signal.actionId, signal.kind, signal.sessionId, signal.observedAt],
+    ));
+  }
+
+  regretSignals(actionId: string): RegretSignal[] {
+    return this.select(
+      `SELECT * FROM regret_signals WHERE action_id=? ORDER BY observed_at, kind, session_id`,
+      [actionId],
+    ).map((row) => ({
+      actionId: row.action_id as string,
+      kind: row.kind as RegretSignal['kind'],
+      sessionId: row.session_id as string,
+      observedAt: row.observed_at as string,
+    }));
+  }
+
+  saveInferenceConsent(consent: InferenceConsent): void {
+    this.transaction(() => this.run(
+      `INSERT INTO inference_consents(policy_version, provider, model, status, accepted_at,
+       revoked_at) VALUES(?,?,?,?,?,?) ON CONFLICT(policy_version) DO UPDATE SET
+       provider=excluded.provider, model=excluded.model, status=excluded.status,
+       accepted_at=excluded.accepted_at, revoked_at=excluded.revoked_at`,
+      [consent.policyVersion, consent.provider, consent.model, consent.status,
+        consent.acceptedAt, consent.revokedAt],
+    ));
+  }
+
+  currentInferenceConsent(policyVersion: number): InferenceConsent | null {
+    const row = this.select(
+      `SELECT * FROM inference_consents WHERE policy_version=?`, [policyVersion],
+    )[0];
+    return row === undefined ? null : {
+      policyVersion: row.policy_version as number,
+      provider: row.provider as InferenceConsent['provider'],
+      model: row.model as string,
+      status: row.status as InferenceConsent['status'],
+      acceptedAt: row.accepted_at as string,
+      revokedAt: row.revoked_at as string | null,
+    };
   }
 
   getCursor(filePath: string): { byteOffset: number; mtimeMs: number } | null {
@@ -229,6 +544,18 @@ export class LensStore {
       // 마이그레이션 직후·구행 방어: 값이 없으면 scanned_at을 최초 관찰로 간주
       firstScannedAt: (r.first_scanned_at as string | null) ?? (r.scanned_at as string),
     }));
+  }
+
+  /**
+   * 정의 body가 실제로 적재된 서버명. 스캔 완료 판정의 기준이다.
+   * definition만 있고 body가 없는 서버는 body 테이블 도입 이전에 스캔된
+   * 레거시 상태이므로 재스캔 대상으로 남아야 한다.
+   */
+  serversWithDefinitionBodies(): Set<string> {
+    return new Set(
+      this.select('SELECT DISTINCT server_name FROM tool_definition_bodies', [])
+        .map((r) => r.server_name as string),
+    );
   }
 
   /**
@@ -531,5 +858,48 @@ function rowToObservation(row: Record<string, unknown>): ToolObservation {
     isError: row.is_error === null ? null : row.is_error === 1,
     inputFingerprint: row.input_fingerprint as string | null,
     responseTokens: row.response_tokens as number | null, loadedTokens: row.loaded_tokens as number | null,
+  };
+}
+
+function rowToServerIdentity(row: Record<string, unknown>): ServerIdentity {
+  return {
+    client: row.client as ServerIdentity['client'],
+    serverName: row.server_name as string,
+    sourceKind: row.source_kind as ServerIdentity['sourceKind'],
+    sourcePathHash: row.source_path_hash as string,
+    transport: row.transport as ServerIdentity['transport'],
+    endpointHash: row.endpoint_hash as string,
+    conflictState: row.conflict_state as ServerIdentity['conflictState'],
+    observedAt: row.observed_at as string,
+  };
+}
+
+function rowToDefinitionBody(row: Record<string, unknown>): ToolDefinitionBody {
+  return {
+    serverName: row.server_name as string,
+    toolName: row.tool_name as string,
+    description: row.description as string | null,
+    inputSchemaJson: row.input_schema_json as string,
+    definitionTokens: row.definition_tokens as number,
+    definitionSetHash: row.definition_set_hash as string,
+    scannedAt: row.scanned_at as string,
+  };
+}
+
+function rowToGlobalAction(row: Record<string, unknown>): GlobalAction {
+  return {
+    actionId: row.action_id as string,
+    client: row.client as GlobalAction['client'],
+    serverName: row.server_name as string,
+    toolName: row.tool_name as string,
+    identityHash: row.identity_hash as string,
+    definitionSetHash: row.definition_set_hash as string,
+    ownedRule: row.owned_rule as string,
+    backupPath: row.backup_path as string,
+    preFingerprint: row.pre_fingerprint as string,
+    postFingerprint: row.post_fingerprint as string,
+    status: row.status as GlobalAction['status'],
+    createdAt: row.created_at as string,
+    restoredAt: row.restored_at as string | null,
   };
 }

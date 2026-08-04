@@ -59,3 +59,57 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_observation_delivery ON ingest_observation
 CREATE INDEX IF NOT EXISTS idx_observation_correlation ON ingest_observations(correlation_key);
 CREATE TABLE IF NOT EXISTS session_aliases (client TEXT NOT NULL, external_session_id TEXT NOT NULL, session_id TEXT NOT NULL, transcript_path TEXT, PRIMARY KEY(client, external_session_id));
 CREATE TABLE IF NOT EXISTS collector_receipts (receipt_id TEXT PRIMARY KEY, client TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, observed_at TEXT NOT NULL, error_code TEXT);
+
+CREATE TABLE IF NOT EXISTS server_identities (
+  client TEXT NOT NULL, server_name TEXT NOT NULL, source_kind TEXT NOT NULL,
+  source_path_hash TEXT NOT NULL, transport TEXT NOT NULL, endpoint_hash TEXT NOT NULL,
+  conflict_state TEXT NOT NULL, observed_at TEXT NOT NULL,
+  PRIMARY KEY (client, server_name, source_kind, source_path_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_server_identity_name ON server_identities(server_name);
+
+CREATE TABLE IF NOT EXISTS tool_definition_bodies (
+  server_name TEXT NOT NULL, tool_name TEXT NOT NULL, description TEXT,
+  input_schema_json TEXT NOT NULL, definition_tokens INTEGER NOT NULL,
+  definition_set_hash TEXT NOT NULL, scanned_at TEXT NOT NULL,
+  PRIMARY KEY (server_name, tool_name)
+);
+CREATE INDEX IF NOT EXISTS idx_definition_set_hash ON tool_definition_bodies(definition_set_hash);
+
+CREATE TABLE IF NOT EXISTS dependency_analyses (
+  definition_set_hash TEXT NOT NULL, analysis_rules_version INTEGER NOT NULL,
+  provider TEXT NOT NULL, model TEXT NOT NULL, status TEXT NOT NULL,
+  analyzed_at TEXT NOT NULL, error_code TEXT,
+  PRIMARY KEY (definition_set_hash, analysis_rules_version)
+);
+CREATE TABLE IF NOT EXISTS tool_dependency_results (
+  definition_set_hash TEXT NOT NULL, analysis_rules_version INTEGER NOT NULL,
+  server_name TEXT NOT NULL, tool_name TEXT NOT NULL, status TEXT NOT NULL,
+  depended_on_by_json TEXT NOT NULL, rationale TEXT NOT NULL,
+  PRIMARY KEY (definition_set_hash, analysis_rules_version, server_name, tool_name)
+);
+CREATE TABLE IF NOT EXISTS tool_explanations (
+  definition_set_hash TEXT NOT NULL, analysis_rules_version INTEGER NOT NULL,
+  server_name TEXT NOT NULL, tool_name TEXT NOT NULL, display_summary TEXT NOT NULL,
+  what_you_lose TEXT NOT NULL, risk_without_tool TEXT NOT NULL,
+  PRIMARY KEY (definition_set_hash, analysis_rules_version, server_name, tool_name)
+);
+
+CREATE TABLE IF NOT EXISTS global_actions (
+  action_id TEXT PRIMARY KEY, client TEXT NOT NULL, server_name TEXT NOT NULL,
+  tool_name TEXT NOT NULL, identity_hash TEXT NOT NULL, definition_set_hash TEXT NOT NULL,
+  owned_rule TEXT NOT NULL,
+  backup_path TEXT NOT NULL, pre_fingerprint TEXT NOT NULL, post_fingerprint TEXT NOT NULL,
+  status TEXT NOT NULL, created_at TEXT NOT NULL, restored_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_global_action
+  ON global_actions(client, server_name, tool_name) WHERE status='active';
+CREATE TABLE IF NOT EXISTS regret_signals (
+  action_id TEXT NOT NULL, kind TEXT NOT NULL, session_id TEXT NOT NULL,
+  observed_at TEXT NOT NULL,
+  PRIMARY KEY (action_id, kind, session_id)
+);
+CREATE TABLE IF NOT EXISTS inference_consents (
+  policy_version INTEGER PRIMARY KEY, provider TEXT NOT NULL, model TEXT NOT NULL,
+  status TEXT NOT NULL, accepted_at TEXT NOT NULL, revoked_at TEXT
+);

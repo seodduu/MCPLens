@@ -1,5 +1,6 @@
 import type { ClientId } from '../types.js';
 export type ObservationSource = 'hook' | 'log' | 'proxy';
+/** `tool-before` also represents an observed direct request before a tool executes. */
 export type HookPhase = 'session-start' | 'tool-before' | 'tool-after' | 'tool-failure' | 'turn-stop' | 'session-end';
 export type CorrelationConfidence = 'high' | 'medium' | 'low';
 export type CollectionHealth = 'idle' | 'healthy' | 'hook-only' | 'log-only' | 'degraded' | 'unavailable';

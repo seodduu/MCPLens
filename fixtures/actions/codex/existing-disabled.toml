@@ -1,0 +1,3 @@
+[mcp_servers.github]
+command = "npx"
+disabled_tools = ["search"]

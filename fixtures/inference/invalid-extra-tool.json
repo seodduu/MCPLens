@@ -1,0 +1,24 @@
+{
+  "results": [
+    {
+      "serverName": "github",
+      "toolName": "list_issues",
+      "status": "Independent",
+      "dependedOnBy": [],
+      "rationale": "No dependency evidence was found.",
+      "displaySummary": "No observed workflow depends on this tool.",
+      "whatYouLose": "You lose direct access to issue listing from this MCP server.",
+      "riskWithoutTool": "Future issue triage may require restoring the tool manually."
+    },
+    {
+      "serverName": "github",
+      "toolName": "delete_repo",
+      "status": "Independent",
+      "dependedOnBy": [],
+      "rationale": "This tool was not in the input batch.",
+      "displaySummary": "Unexpected extra tool.",
+      "whatYouLose": "Nothing from the requested batch.",
+      "riskWithoutTool": "The result set is not trustworthy."
+    }
+  ]
+}

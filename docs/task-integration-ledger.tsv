@@ -1,0 +1,26 @@
+# task	integration_commit	description
+1	6c4a8ba	v2 공유 계약 통합
+2	dc00789	v2 Claude 직접 후회 신호 통합
+3	c4606da	v2 Codex 간접 후회 신호 통합
+4	ccbea15	v2 격리 추론 CLI 통합
+5	c8458f8	v2 정의 수집과 결정론 분석 통합
+6	c8458f8	v2 정의 수집과 결정론 분석 통합
+7	9c178fd	v2 분석 오케스트레이터 통합
+8	b32cf2e	v2 Claude 전역 deny 액션 통합
+9	3faa233	v2 Codex disabled-tools 액션 통합
+10	7dbf8c7	v2 영문 분석 UI 통합
+11	410d9b0	v2 확장 분석 및 전역 액션 통합
+12	33c1f90	v2 shadow rollout gate 및 telemetry 통합
+13	d552924	Task 13 품질 검토 지적 해결 통합
+13-spec-remediation	2ef8ff11598110f751e5a263b1008ab4406a051b	Task 13 사양 검토 지적 해결 통합
+13-consent-remediation	d64f1f04e61ad64c17824f69d741a07e92074e97	Task 14 차단 consent UI 상세 고지 보정 통합
+14-inference-remediation	7216aab60501c62dc346f742b9327581a6e0b653	Task 14 inference CLI 구조화 출력 계약 보정 통합
+14-runtime-remediation	e6db4ff3065d2c22d47d4f6c8bb3f8ed6753333f	Task 14 실제 regret와 Codex 정의 load 귀속 보정 통합
+14-cli-contract-remediation	20441cbe597ee691c16c60c690cbb9514595a2d1	Task 14 Claude 추론 CLI 인자와 Codex Wall time 파싱 계약 보정 통합
+14-scan-basis-remediation	693168c8c8aaa2bca9e57c099839fc03624c0164	스캔 완료 판정을 definition에서 definition body로 옮긴 보정 통합
+14-health-coverage-remediation	53f715f9c13760aef293467b47a2a0ef8b7ed64f	hook 시작 단계를 수집 커버리지로 인정한 보정 통합
+14-lease-reaping-remediation	dfef55a9231934b28028d4da614dbd4a5f28d600	writer lease 인수 후 reaping 디렉터리 미정리 결함 보정 통합
+14-codex-exact-search-remediation	960fc56b8b6b23805cf58d05db8b89cfeed11821	Codex exact search 성공 판정을 입력 패턴에서 출력 형태로 옮긴 보정 통합
+14-health-coverage-gate-remediation	9a821809e6023054edf8a4fe59a8476f7809fdc1	degraded 승격에 툴 단계 훅 커버리지 게이트를 건 보정 통합
+14-codex-hook-enable-remediation	82db9718b72efecf6dafbc0e3d71cbe6e23efc13	codex 훅 설치가 enabled를 켜고 승인 대기를 표면화한 보정 통합
+14-coverage-since-remediation	5e4d593be8fce37ca75ff265e8d70d5f0719b7c4	degraded 승격에 커버리지 성립 시점을 더한 보정 통합

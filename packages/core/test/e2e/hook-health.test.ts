@@ -124,13 +124,19 @@ describe('collection health (E2E)', () => {
 
   it('degrades after three matured correlation misses', async () => {
     const store = await LensStore.open(':memory:');
-    // Three completed transcript calls at T0 with no correlating hook; NOW is
+    // An earlier corroborated call establishes that tool-phase hooks do cover this
+    // client; without that evidence a miss is log-only operation, not collector
+    // failure, and degrading would trap hookless users (see 결함 F).
+    // Then three completed transcript calls at T0 with no correlating hook; NOW is
     // 60s later so every miss has matured past the grace window.
     store.ingest(logResult('codex', 's1', [
+      { externalCallId: 'c0', toolName: 'covered', calledAt: at(-20_000) },
       { externalCallId: 'm1', toolName: 'a', calledAt: at(0) },
       { externalCallId: 'm2', toolName: 'b', calledAt: at(0) },
       { externalCallId: 'm3', toolName: 'c', calledAt: at(0) },
     ]));
+    store.upsertObservation(hookObservation('codex', 's1', 'c0', 'covered', at(-20_000)));
+
     expect(store.collectionHealth(NOW)).toMatchObject({
       health: 'degraded', consecutiveMisses: 3,
     });
@@ -190,11 +196,16 @@ describe('recommendation gate reacts to collection health (E2E)', () => {
 
   it('downgrades a destructive recommendation to low confidence under degraded collection', async () => {
     const store = await healthOf((s) => {
+      // The earlier corroborated call establishes tool-phase hook coverage, which
+      // is what makes the later misses read as collector failure rather than
+      // ordinary hookless (log-only) operation (see 결함 F).
       s.ingest(logResult('codex', 's1', [
+        { externalCallId: 'c0', toolName: 'covered', calledAt: at(-20_000) },
         { externalCallId: 'm1', toolName: 'a', calledAt: at(0) },
         { externalCallId: 'm2', toolName: 'b', calledAt: at(0) },
         { externalCallId: 'm3', toolName: 'c', calledAt: at(0) },
       ]));
+      s.upsertObservation(hookObservation('codex', 's1', 'c0', 'covered', at(-20_000)));
     });
     const health = store.collectionHealth(NOW);
     expect(health.health).toBe('degraded');

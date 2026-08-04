@@ -1,0 +1,4 @@
+{
+  // Claude settings does not allow comments
+  "permissions": { "deny": [] }
+}

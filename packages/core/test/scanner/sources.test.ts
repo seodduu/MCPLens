@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
+import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { configSources, collectFromSource, collectAllSpecs, collectFromSources, type ConfigSource } from '../../src/scanner/sources.js';
+import { computeEndpointHash } from '../../src/scanner/serverIdentity.js';
 
 /** 실제 Node fs 오류 형태를 흉내낸다. */
 function fsError(code: string): NodeJS.ErrnoException {
@@ -195,5 +197,72 @@ command = "shared-cmd"
     const names = r.specs.map((s) => s.name);
     expect(names.filter((n) => n === 'shared').length).toBe(1);
     expect(r.attribution.get('shared')).toEqual(new Set(['codex', 'gemini-cli']));
+  });
+
+  it('읽은 소스마다 env/header 값을 제외한 server identity를 반환한다', () => {
+    const codexWithEnv = `
+[mcp_servers.secure]
+command = "secure-cmd"
+args = ["--stdio"]
+
+[mcp_servers.secure.env]
+TOKEN = "secret"
+`;
+    const claudeHttp = JSON.stringify({
+      mcpServers: {
+        remote: {
+          type: 'http',
+          url: 'https://example.com/mcp?x=1',
+          headers: { Authorization: 'Bearer secret' },
+        },
+      },
+    });
+    const r = collectFromSources([codexSource, claudeUserSource], (p) => {
+      if (p === codexSource.filePath) return codexWithEnv;
+      if (p === claudeUserSource.filePath) return claudeHttp;
+      throw fsError('ENOENT');
+    });
+
+    expect(r.identities).toEqual([
+      expect.objectContaining({
+        client: 'claude-code',
+        serverName: 'remote',
+        sourceKind: 'claude-user',
+        sourcePathHash: createHash('sha256').update(claudeUserSource.filePath).digest('hex'),
+        transport: 'http',
+        endpointHash: computeEndpointHash({ name: 'remote', url: 'https://example.com/mcp?x=1' }),
+        conflictState: 'clear',
+      }),
+      expect.objectContaining({
+        client: 'codex',
+        serverName: 'secure',
+        sourceKind: 'codex',
+        sourcePathHash: createHash('sha256').update(codexSource.filePath).digest('hex'),
+        transport: 'stdio',
+        endpointHash: computeEndpointHash({ name: 'secure', command: 'secure-cmd', args: ['--stdio'] }),
+        conflictState: 'clear',
+      }),
+    ]);
+  });
+
+  it('같은 서버명에 endpoint hash가 둘 이상이면 모든 identity를 conflict로 표시한다', () => {
+    const sameNameCodex = `
+[mcp_servers.shared]
+command = "first-cmd"
+`;
+    const sameNameGemini = JSON.stringify({
+      mcpServers: { shared: { command: 'second-cmd', args: [] } },
+    });
+    const r = collectFromSources([codexSource, geminiSource], (p) => {
+      if (p === codexSource.filePath) return sameNameCodex;
+      if (p === geminiSource.filePath) return sameNameGemini;
+      throw fsError('ENOENT');
+    });
+
+    expect(r.specs).toEqual([{ name: 'shared', command: 'first-cmd', args: [], env: undefined }]);
+    expect(r.identities.map((i) => [i.client, i.serverName, i.conflictState])).toEqual([
+      ['codex', 'shared', 'conflict'],
+      ['gemini-cli', 'shared', 'conflict'],
+    ]);
   });
 });

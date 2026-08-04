@@ -1,188 +1,39 @@
 # MCP Lens
 
-AI 코딩 클라이언트(Claude Code·Codex·Gemini CLI)의 MCP 컨텍스트 회계 도구.
+Claude Code, Codex, Gemini CLI의 MCP 컨텍스트 회계 도구다. 툴 정의 토큰과 실제 사용량을 대조해 무엇을 끄면 얼마가 남는지 근거로 말한다.
 
-- 설계: `MCP-Lens-설계문서-v2.md`
-- 구현 계획: `docs/plans/2026-07-19-mcp-lens-mvp-구현계획.md` — 태스크·터미널 운용의 유일한 진실
+- 설계의 유일한 진실: MCP-Lens-설계문서-v2.md
+- 디자인 사양이 필요하면 루트 DESIGN.md를 먼저 만들고 유일한 진실로 삼는다. 그전까지는 MCP-Lens-설계문서-v2.md의 리포트·UI 절을 따른다.
+- 구현 계획과 태스크·worktree 운영의 유일한 진실: docs/plans/
 
-## 실행 모델
+스택: TypeScript 모노레포, npm workspaces, Vitest, Node 20+, SQLite(~/.mcplens/lens.db), VS Code 확장, CLI, 로컬 대시보드, 클라이언트별 플러그인·훅 런타임.
 
-터미널 1개 = 독립 태스크 세트 1개 = worktree 1개 = 브랜치 1개.
-명세가 분명하고 파일 소유권이 한 태스크에 한정된 작업은 현재 세션에서 직접 구현한다.
-서로 독립적이고 파일 소유권이 겹치지 않는 작업이 2개 이상이면 작업별로 사용자가 볼 수
-있는 독립 터미널 탭·창을 열고, 각 worktree에서 역할이 고정된 `codex exec`를 포그라운드로
-실행한다. 역할 고정 작업을 보이지 않는 백그라운드 프로세스나 일반 native subagent로
-대체하지 않는다. 선행 태스크에 의존하거나 같은 파일을 수정하는 작업은 현재 세션에서
-반드시 순차 실행한다.
+## 계획·실행 스킬
 
-## 모델 배분
-
-Claude의 역할 구분은 Codex의 GPT-5.6 계열에 다음과 같이 대응한다.
-
-| 역할 | Codex 모델 | reasoning effort |
-|---|---|---|
-| 메인 세션(계획·조정·통합·리뷰) | `gpt-5.6-sol` | `medium` |
-| 병렬 실행 서브에이전트 — 기본(테스트+구현 모두) | `gpt-5.6-terra` | `medium` |
-| 예외: 어댑터 태스크(Task 2·3·4)와 Wave 4 E2E(Task 14) 서브에이전트 | `gpt-5.6-sol` | `high` |
-
-서브에이전트를 스폰할 때 위 모델과 reasoning effort를 명시하거나, 같은 설정으로 구성된
-프로젝트/사용자 커스텀 에이전트를 선택한다. 현재 Codex 표면이 자식별 모델 지정을 지원하지
-않으면 부모 설정을 상속하되, 태스크 프롬프트에 필요한 역할과 추론 수준을 명확히 적는다.
-단일 파일 또는 짧은 순차 작업에는 서브에이전트 시작·회수 오버헤드를 추가하지 않는다.
-
-`gpt-5.6-sol` 예외의 근거: 어댑터는 계획서의 필드명 후보와 실제 픽스처의 불일치를
-판단해야 하고, E2E는 실기기 디버깅이 필요하다. 나머지 태스크는 계획서에 코드와 사양이
-명확하므로 `gpt-5.6-terra`를 사용한다.
+- 설계 문서, 구현 계획, 태스크 분해, 실행 프롬프트를 만들거나 고칠 때는 plan-conventions를 먼저 읽는다.
+- 구현 계획의 Wave, worktree, 서브에이전트, 통합, 실환경 E2E를 실행할 때는 execution-conventions를 먼저 읽는다.
 
 ## 모든 세션·서브에이전트 공통 규칙
 
-- 자기 태스크의 `Files` 목록 밖 파일은 수정하지 않는다. 특히
-  `packages/core/src/types.ts`, `packages/core/src/store/schema.sql`, 루트 설정은 공유 계약이다.
-  계약이 맞지 않으면 직접 수정하지 말고 오케스트레이터에게 보고한다.
-- 계획서의 필드명과 픽스처가 다르면 **픽스처가 진실**이다. 코드를 픽스처에 맞춘다.
-- core에서 `vscode`를 import하지 않는다.
-- DB 경로는 `~/.mcplens/lens.db`이며, 코드에서는 `os.homedir()`와 `path.join()`으로 조립한다.
-  `~` 문자열을 하드코딩하지 않는다.
-- 네이티브 애드온을 추가하지 않는다.
-- 원본 클라이언트 로그는 읽기 전용이다. 수정하거나 이동하지 않는다.
-- 파싱 실패는 throw하지 않고 건너뛰며 `parseErrors`를 증가시킨다.
-- 유닛 테스트는 픽스처와 `:memory:` DB만 사용해 터미널 병렬 안전성을 유지한다.
-- 공유 DB나 실제 MCP 서버를 사용하는 스모크/E2E는 Wave 4에서 직렬 실행한다.
-- 구현은 계획서의 태스크 순서, 파일 소유권, 테스트 절차를 따른다.
-- 완료를 주장하기 전에 해당 태스크의 테스트를 실행하고 결과를 확인한다.
+- 자기 태스크의 Files 목록 밖 파일을 수정하지 않는다. packages/core/src/types.ts, packages/core/src/store/schema.sql, 루트 설정(package.json, tsconfig.base.json, vitest.config.ts)은 shared contract다. 불일치하면 수정하지 않고 보고한다.
+- 계획서의 필드명과 fixture가 다르면 fixture를 진실로 삼아 코드를 맞춘다.
+- 패키지는 서비스 경계다. core는 순수 로직·수집·저장만 담당하며 vscode를 import하지 않는다. extension, cli, dashboard, 플러그인은 core 공개 API를 경유하고 다른 패키지 내부 경로를 import하지 않는다.
+- 비용·절감 수치는 core에서 계산한다. 클라이언트에는 판정을 바꾸지 않는 표시 형식만 맡긴다.
+- 시점이 중요한 데이터는 snapshot으로 저장한다.
+- DB 경로는 ~/.mcplens/lens.db이며 코드에서는 os.homedir()와 path.join()으로 조립한다. 물결표 문자열을 하드코딩하지 않는다.
+- 네이티브 애드온을 추가하지 않는다. 원본 클라이언트 로그는 읽기 전용이며 파싱 실패는 throw하지 않고 건너뛰며 parseErrors를 증가시킨다.
+- 시크릿은 코드·커밋에 넣지 않고 환경변수 또는 gitignore된 로컬 설정으로 주입한다.
+- 유닛 테스트는 fixtures와 in-memory DB만 사용한다. 공유 DB나 실제 MCP 서버를 쓰는 스모크·E2E는 직렬 Wave로 분리한다.
+- 화면을 만드는 태스크는 대시보드나 확장을 실제로 실행해 렌더 결과를 직접 스크린샷으로 확인하고 report에 경로를 남긴다. 리뷰어도 스크린샷을 직접 확인한다. 테스트나 curl은 이를 대체하지 못한다. 한글 본문에는 word-break: keep-all과 한글에 맞는 자간·행간을 적용한다.
+- 커밋 메시지·문서·주석은 한국어로 쓰고, 커밋은 태스크 단위로 원자적으로 만든다.
+- 완료를 주장하기 전에 해당 태스크의 테스트를 실행하고 출력을 확인한다.
 
-## 역할 고정 에이전트 실행 계약
+## 일반 검증 함정
 
-이 절은 위 모델 배분의 일반적인 "부모 설정 상속" fallback보다 우선한다.
-역할별 모델 또는 reasoning effort가 지정된 작업은 단순 프롬프트나 `task_name`만으로
-커스텀 에이전트가 선택됐다고 간주하지 않는다.
+자세한 원문은 docs/pitfalls/에서 확인한다.
 
-### Native spawn 금지 조건
-
-- 현재 `spawn_agent` 인터페이스에 `agent_type`, `model`, `model_reasoning_effort` 중 필요한
-  선택자가 노출되지 않으면 역할 고정 작업에 native `spawn_agent`를 사용하지 않는다.
-- `task_name`은 표시·추적용 라벨일 뿐 `.codex/agents/<name>.toml`을 선택하는 역할
-  식별자가 아니다.
-- 프롬프트에 `mcplens-spec-reviewer를 spawn해라`라고 쓰는 것만으로 모델·effort가
-  적용됐다고 간주하지 않는다.
-- `agent_role: null`, 예상과 다른 effort, 커스텀 nickname 후보 불일치는 일반 자식이
-  부모 설정을 상속한 증거로 취급한다.
-- 역할 선택이 실패했을 때 native 일반 자식으로 조용히 fallback하지 않는다.
-
-Native spawn은 현재 도구 스키마가 필요한 역할 선택자를 실제로 제공하고, 생성된 자식의
-세션 메타데이터에서 agent role·model·effort를 검증할 수 있을 때만 역할 고정 작업에 사용할
-수 있다. 모델 고정이 필요 없는 병렬 탐색·검색 작업에는 일반 native subagent를 사용할 수 있다.
-
-### 필수 프로세스 실행 방식
-
-역할별 모델·effort가 필요한 구현, 리뷰, 검증은 별도의 `codex exec` 프로세스로 실행한다.
-각 프로세스는 사용자가 진행 과정과 명령 출력을 실시간으로 볼 수 있는 독립 터미널 탭·창의
-포그라운드 작업이어야 한다. `&`, `nohup`, 숨겨진 background exec session처럼 진행 과정이
-사용자에게 보이지 않는 방식으로 실행하지 않는다. 오케스트레이터 터미널은 worktree와
-프롬프트를 준비하고, 작업 터미널 종료 후 결과와 diff를 직접 검증한다.
-
-병렬 작업의 기본 화면 구성은 다음과 같다.
-
-```text
-터미널 1..N: task별 worktree에서 codex exec 포그라운드 실행
-마지막 터미널: 오케스트레이터의 diff·테스트·review·merge 전용
-```
-
-터미널 UI를 직접 열 수 있는 표면에서는 오케스트레이터가 탭·창을 생성하고 명령을 실행한다.
-터미널 UI 제어가 없는 표면에서는 실행 준비가 끝난 전체 명령을 사용자에게 제공하되, 사용자가
-붙여넣은 뒤에는 해당 터미널에서 프로세스가 포그라운드로 유지되어야 한다. 장기 작업의 출력은
-필요하면 `2>&1 | tee /tmp/<task>-live.log`로 동시에 기록한다.
-
-기본 구현 작업:
-
-```bash
-codex exec \
-  -C <worktree> \
-  -m gpt-5.6-terra \
-  -c 'model_reasoning_effort="medium"' \
-  -s workspace-write \
-  --ephemeral \
-  "<implementer task brief>"
-```
-
-어댑터·고난도 구현 작업:
-
-```bash
-codex exec \
-  -C <worktree> \
-  -m gpt-5.6-sol \
-  -c 'model_reasoning_effort="high"' \
-  -s workspace-write \
-  --ephemeral \
-  "<adapter implementer task brief>"
-```
-
-Spec reviewer, quality reviewer, verifier:
-
-```bash
-codex exec \
-  -C <worktree> \
-  -m gpt-5.6-sol \
-  -c 'model_reasoning_effort="high"' \
-  -s read-only \
-  --ephemeral \
-  "<review or verification task brief>"
-```
-
-실행 역할에 맞춰 자식 프롬프트는 먼저 다음 파일 중 하나를 읽고 그
-`developer_instructions`를 준수하도록 명시한다.
-
-- `.codex/agents/mcplens-implementer.toml`
-- `.codex/agents/mcplens-adapter-implementer.toml`
-- `.codex/agents/mcplens-spec-reviewer.toml`
-- `.codex/agents/mcplens-quality-reviewer.toml`
-- `.codex/agents/mcplens-verifier.toml`
-
-### 무컨텍스트 실행 프롬프트 필수 항목
-
-터미널별 실행 프롬프트를 작성할 때는 이전 대화가 전혀 없는 새 `codex exec` 프로세스를
-전제로 한다. 각 프로세스 프롬프트에 다음을 모두 포함한다.
-
-- 역할과 읽어야 할 `.codex/agents/*.toml` 경로
-- 저장소와 worktree의 절대 경로
-- task ID와 계획서의 절대 경로
-- base commit과 대상 branch
-- 수정 허용 `Files` 목록과 수정 금지 공유 파일
-- 구현 요구사항 또는 리뷰 기준
-- 정확한 테스트·빌드·정적 검사 명령
-- 커밋·merge·push·하위 agent spawn 금지 여부
-- 결과 보고 형식과 report 파일 경로
-
-긴 프롬프트는 shell quoting에 의존해 한 인자로 조립하지 말고, 안전한 prompt 파일이나
-stdin으로 전달한다. 비밀 값이나 신뢰할 수 없는 외부 문자열을 명령행에 보간하지 않는다.
-터미널별 프롬프트에는 `백그라운드 실행 금지`, `포그라운드 유지`, `진행 명령과 테스트 결과를
-현재 터미널에 출력`을 명시한다.
-
-### worktree 진입 명령 필수 포함
-
-터미널별 실행 프롬프트를 생성할 때는 **worktree 생성 명령어(`git worktree add <경로> <브랜치>`)를
-반드시 함께 제시**한다. 프롬프트만 있고 진입 명령이 없으면 터미널마다 브랜치를 즉흥으로 만들게
-되고, 그때 브랜치 기점이 어긋난다. 아래 순서를 계획서와 프롬프트에 그대로 적는다.
-
-```bash
-# 1) 계획서를 먼저 커밋한다 (untracked면 새 worktree에 딸려가지 않는다)
-git add docs/plans/<계획서>.md && git commit -m "docs(plan): ..."
-# 2) 그 커밋을 기점으로 각 터미널 worktree를 만든다
-git worktree add <worktree 절대경로> <브랜치명>
-```
-
-**브랜치 기점 확인은 필수**: 모든 터미널의 브랜치가 계획서 커밋을 포함해야 한다. 계획서 커밋이
-이미 특정 feature 브랜치에만 들어가 있으면 다른 터미널은 그 문서를 읽을 수 없다 — 해당 커밋에서
-브랜치를 따거나 cherry-pick 한다. 무컨텍스트 `codex exec` 자식은 계획서 절대경로만 받고 대화
-맥락이 없으므로, 파일이 없으면 즉시 막힌다. 오케스트레이터는 worktree 생성 직후 각 worktree에서
-계획서 존재와 `base commit`(위 항목 참조) 일치를 확인한 뒤 프롬프트를 배포한다.
-
-### 오케스트레이터 검증 의무
-
-- 부모는 `codex exec` 명령에 지정한 model·effort·sandbox를 실행 기록에 남긴다.
-- 부모는 각 역할 프로세스가 독립된 보이는 터미널에서 포그라운드로 실행됐는지 확인한다.
-- 자식의 완료 보고만 신뢰하지 않고 diff, 파일 소유권, 테스트, 빌드를 직접 확인한다.
-- reviewer가 수정하지 않았는지, implementer가 허용 파일 밖을 수정하지 않았는지 확인한다.
-- 프로세스 실패나 모델 선택 실패 시 동일 역할의 일반 native subagent로 대체하지 않는다.
-- 필요한 역할 프로세스를 실행할 수 없으면 `BLOCKED`로 보고한다.
-- 모든 reviewer 승인과 verifier PASS 이후에만 부모가 commit 또는 merge한다.
+- 타입체크는 반드시 package별로 npx tsc --noEmit -p packages/<package>/tsconfig.json을 실행한다.
+- 테스트 판정은 npm test를 기준으로 하며, 스모크·E2E spec은 Vitest 수집 범위에서 분리한다.
+- fixture와 in-memory DB 테스트 통과만으로 실환경 동작을 주장하지 않는다.
+- 성능·토큰 수 측정은 dist 배포 경로에서 수행하고 구성도 report에 기록한다.
+- 화면 결함을 판정하기 전에 관련 빌드 산출물을 재생성하고 다시 확인한다.

@@ -5,7 +5,7 @@ import { LensStore, LogWatcher, buildMatrix, sessionSavings, dbPath,
   scanServer, ClaudeAdapter, CodexAdapter, GeminiAdapter,
   collectAllSpecs, configSources, collectFromSource,
   authenticateServer, clearStoredOAuth,
-  type McpServerSpec, type ClientId } from '@mcp-lens/core';
+  type McpServerSpec, type ClientId, type ServerIdentity } from '@mcp-lens/core';
 import { formatReport } from './report.js';
 import { collectServerSpecs } from './scan-config.js';
 import { scanFailureLine, formatSourceCounts } from './scan-report.js';
@@ -118,6 +118,7 @@ async function runScan(args: string[]) {
   let skipped: string[];
   let attribution: Map<string, Set<ClientId>> | undefined;
   let replaceable: Set<ClientId> | undefined;
+  let identities: ServerIdentity[] = [];
 
   if (configPath) {
     let jsonText: string;
@@ -135,6 +136,7 @@ async function runScan(args: string[]) {
     skipped = result.skipped;
     attribution = result.attribution;
     replaceable = result.replaceable;
+    identities = result.identities;
     const summary = formatSourceCounts(sourceDiscoveryCounts());
     if (summary) console.log(`발견: ${summary}`);
   }
@@ -162,10 +164,14 @@ async function runScan(args: string[]) {
   }
   for (const spec of specs) {
     try {
-      const defs = await scanServer(spec);
-      store.upsertDefinitions(defs);
-      const total = defs.reduce((n, d) => n + d.definitionTokens, 0);
-      console.log(`- ${spec.name}: ${defs.length}개 툴, ${total} 토큰`);
+      const result = await scanServer(spec);
+      store.upsertScanResult(
+        result.definitions,
+        result.bodies,
+        identities.filter((identity) => identity.serverName === spec.name),
+      );
+      const total = result.definitions.reduce((n, d) => n + d.definitionTokens, 0);
+      console.log(`- ${spec.name}: ${result.definitions.length}개 툴, ${total} 토큰`);
     } catch (e) {
       console.log(scanFailureLine(spec.name, e as Error));
     }
@@ -217,10 +223,10 @@ async function runAuth(args: string[]) {
 
   const store = await LensStore.open(dbPath());
   try {
-    const defs = await scanServer(target.spec);
-    store.upsertDefinitions(defs);
-    const total = defs.reduce((n, d) => n + d.definitionTokens, 0);
-    console.log(`${name}: 로그인 완료, 툴 ${defs.length}개 · ${total}토큰`);
+    const result = await scanServer(target.spec);
+    store.upsertScanResult(result.definitions, result.bodies, []);
+    const total = result.definitions.reduce((n, d) => n + d.definitionTokens, 0);
+    console.log(`${name}: 로그인 완료, 툴 ${result.definitions.length}개 · ${total}토큰`);
     store.save();
   } catch (e) {
     console.log(scanFailureLine(name, e as Error));
