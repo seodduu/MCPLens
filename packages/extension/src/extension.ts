@@ -41,7 +41,7 @@ import { registerScanNow, registerOpenRolloutSetting, registerAuthenticateServer
 import { evaluateSetupKeys, stepsToUncheck, stepsToComplete, type SetupKeys } from './setupContextKeys.js';
 import { buildSetupRows } from './setupTree.js';
 import { SetupStatusProvider } from './setupTreeProvider.js';
-import { withGenerationGuard } from './collectionRefresh.js';
+import { applyCollectionResult } from './collectionRefresh.js';
 import { noInstallTargetsMessage, installedSummaryMessage } from './installHooksAllMessage.js';
 
 let watcher: LogWatcher | undefined;
@@ -286,11 +286,11 @@ export async function activate(ctx: vscode.ExtensionContext) {
       install: await installerFor(client).detect(),
       snapshot: byHealth.get(client),
     })));
-    await withGenerationGuard(gen, () => collectionGeneration, async () => {
-      lastCollectionInputs = inputs;
-      hookStatusProvider.setClients(inputs);
-      await refreshSetupKeys(inputs);
-      refreshSetupRows();
+    await applyCollectionResult(gen, () => collectionGeneration, inputs, {
+      applyInputs: (i) => { lastCollectionInputs = i; },
+      setClients: (i) => hookStatusProvider.setClients(i),
+      refreshSetupKeys: (i) => refreshSetupKeys(i),
+      refreshSetupRows: () => refreshSetupRows(),
     });
     if (!runtimeChecked) {
       runtimeChecked = true;               // 세션당 1회 — 매 refresh마다 CLI를 돌리지 않는다

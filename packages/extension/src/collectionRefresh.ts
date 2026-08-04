@@ -19,3 +19,36 @@ export async function withGenerationGuard(
     await apply();
   }
 }
+
+/**
+ * computeCollection() 한 사이클이 끝나고 결과를 반영할 때 실제로 실행하는 네 가지 부수효과.
+ * extension.ts는 vscode API에 의존하는 콜백을 여기 채워 넣고, 이 모듈은 순서와 가드만 책임진다.
+ * (vscode를 import하지 않으므로 유닛테스트에서 이 순서·가드 자체를 직접 검증할 수 있다.)
+ */
+export interface CollectionResultEffects<TInputs> {
+  applyInputs: (inputs: TInputs) => void;
+  setClients: (inputs: TInputs) => void;
+  refreshSetupKeys: (inputs: TInputs) => Promise<void> | void;
+  refreshSetupRows: () => void;
+}
+
+/**
+ * computeCollection()의 세대 가드 적용 지점을 뽑아낸 순수 함수.
+ * withGenerationGuard와 동일하게, gen이 시작 시점의 currentGeneration()과 같을 때만
+ * 네 부수효과를 (applyInputs → setClients → refreshSetupKeys → refreshSetupRows) 순서로 전부 실행한다.
+ * 어긋나면 하나도 실행하지 않는다. 일단 시작하면(gen이 통과하면) 중간에 세대가 바뀌어도
+ * 이미 시작한 실행은 끝까지 간다 — withGenerationGuard가 실행 도중 재검사를 하지 않기 때문이다.
+ */
+export async function applyCollectionResult<TInputs>(
+  gen: number,
+  currentGeneration: () => number,
+  inputs: TInputs,
+  effects: CollectionResultEffects<TInputs>,
+): Promise<void> {
+  await withGenerationGuard(gen, currentGeneration, async () => {
+    effects.applyInputs(inputs);
+    effects.setClients(inputs);
+    await effects.refreshSetupKeys(inputs);
+    effects.refreshSetupRows();
+  });
+}
