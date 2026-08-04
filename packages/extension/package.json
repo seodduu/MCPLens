@@ -2,7 +2,7 @@
   "name": "mcp-context-lens",
   "displayName": "MCP Context Lens",
   "description": "Automatically accounts for MCP context usage across Claude Code, Codex, and Gemini CLI.",
-  "version": "0.1.1",
+  "version": "0.3.0",
   "publisher": "seodduu",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -274,7 +274,11 @@
         },
         "mcpLens.inferenceProvider": {
           "type": "string",
-          "enum": ["auto", "claude", "codex"],
+          "enum": [
+            "auto",
+            "claude",
+            "codex"
+          ],
           "default": "auto",
           "markdownDescription": "Provider used for dependency analysis."
         },
@@ -290,7 +294,12 @@
         },
         "mcplens.dependencyAnalysis.rollout": {
           "type": "string",
-          "enum": ["shadow", "claude", "codex-beta", "stable"],
+          "enum": [
+            "shadow",
+            "claude",
+            "codex-beta",
+            "stable"
+          ],
           "default": "shadow",
           "markdownDescription": "Controls which dependency-analysis action surfaces are available. Shadow allows analysis, cache, and details only."
         }
@@ -306,29 +315,49 @@
             "id": "scan",
             "title": "Scan your MCP servers",
             "description": "Measure how many tokens each tool definition costs in every prompt. Lens briefly starts each configured server and calls tools/list. No LLM tokens are spent and no config file is modified.\n[Scan now](command:mcp-lens.scanNow)",
-            "media": { "image": "media/walkthrough/scan.svg", "altText": "Scanning MCP servers" },
-            "completionEvents": ["onContext:mcpLens.scanReady"]
+            "media": {
+              "image": "media/walkthrough/scan.svg",
+              "altText": "Scanning MCP servers"
+            },
+            "completionEvents": [
+              "onContext:mcpLens.scanReady"
+            ]
           },
           {
             "id": "hooks",
             "title": "Turn on usage collection",
             "description": "Install hooks into your AI coding clients. Hooks record how often each tool is actually called, which is what definition cost is compared against.\nCodex also needs you to approve the hooks under /hooks. Gemini CLI needs a restart. Either way, collection starts with your next session.\nSetup Status in the sidebar always shows the live state.\n[Install hooks](command:mcp-lens.installHooksAll)",
-            "media": { "image": "media/walkthrough/hooks.svg", "altText": "Installing hooks" },
-            "completionEvents": ["onContext:mcpLens.hooksReady"]
+            "media": {
+              "image": "media/walkthrough/hooks.svg",
+              "altText": "Installing hooks"
+            },
+            "completionEvents": [
+              "onContext:mcpLens.hooksReady"
+            ]
           },
           {
             "id": "analyze",
             "title": "Analyze tool dependencies",
             "description": "Find out which tools depend on which. Only tool definitions and aggregated usage counts are sent. Prompts, tool inputs, tool outputs and source code are never sent.\n[Analyze](command:mcplens.analyzeDependencies)",
-            "media": { "image": "media/walkthrough/analyze.svg", "altText": "Analyzing dependencies" },
-            "completionEvents": ["onContext:mcpLens.analysisReady"]
+            "media": {
+              "image": "media/walkthrough/analyze.svg",
+              "altText": "Analyzing dependencies"
+            },
+            "completionEvents": [
+              "onContext:mcpLens.analysisReady"
+            ]
           },
           {
             "id": "actions",
             "title": "Enable global actions (optional)",
             "description": "Let Lens turn unused tools off for you by editing your client config. This is locked by default.\n[Open setting](command:mcp-lens.openRolloutSetting)",
-            "media": { "image": "media/walkthrough/actions.svg", "altText": "Enabling global actions" },
-            "completionEvents": ["onSettingChanged:mcplens.dependencyAnalysis.rollout"]
+            "media": {
+              "image": "media/walkthrough/actions.svg",
+              "altText": "Enabling global actions"
+            },
+            "completionEvents": [
+              "onSettingChanged:mcplens.dependencyAnalysis.rollout"
+            ]
           }
         ]
       }
