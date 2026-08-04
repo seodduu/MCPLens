@@ -9,6 +9,7 @@ import { LensStore, LogWatcher, buildMatrix, sessionSavings, dbPath,
 import { formatReport } from './report.js';
 import { collectServerSpecs } from './scan-config.js';
 import { scanFailureLine, formatSourceCounts } from './scan-report.js';
+import { classifyScanFailure } from './scan-status.js';
 import { openUrl } from './auth-open.js';
 import { resolveAuthTarget } from './auth-target.js';
 import { captureHook } from './hook-capture.js';
@@ -163,6 +164,7 @@ async function runScan(args: string[]) {
     return;
   }
   for (const spec of specs) {
+    const scannedAt = new Date().toISOString();
     try {
       const result = await scanServer(spec);
       store.upsertScanResult(
@@ -170,9 +172,12 @@ async function runScan(args: string[]) {
         result.bodies,
         identities.filter((identity) => identity.serverName === spec.name),
       );
+      store.recordServerScanStatus(spec.name, 'ok', scannedAt);
       const total = result.definitions.reduce((n, d) => n + d.definitionTokens, 0);
       console.log(`- ${spec.name}: ${result.definitions.length}개 툴, ${total} 토큰`);
     } catch (e) {
+      const record = classifyScanFailure(e as Error);
+      store.recordServerScanStatus(spec.name, record.status, scannedAt, record.errorCode);
       console.log(scanFailureLine(spec.name, e as Error));
     }
   }
@@ -222,13 +227,17 @@ async function runAuth(args: string[]) {
   }
 
   const store = await LensStore.open(dbPath());
+  const scannedAt = new Date().toISOString();
   try {
     const result = await scanServer(target.spec);
     store.upsertScanResult(result.definitions, result.bodies, []);
+    store.recordServerScanStatus(name, 'ok', scannedAt);
     const total = result.definitions.reduce((n, d) => n + d.definitionTokens, 0);
     console.log(`${name}: 로그인 완료, 툴 ${result.definitions.length}개 · ${total}토큰`);
     store.save();
   } catch (e) {
+    const record = classifyScanFailure(e as Error);
+    store.recordServerScanStatus(name, record.status, scannedAt, record.errorCode);
     console.log(scanFailureLine(name, e as Error));
   } finally {
     store.close();
