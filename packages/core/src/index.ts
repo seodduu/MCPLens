@@ -20,7 +20,7 @@ export { CodexAdapter } from './adapters/codex/adapter.js';
 export { GeminiAdapter, splitFlattenedName } from './adapters/gemini/adapter.js';
 export { LensStore } from './store/store.js';
 export { materializeSession } from './store/observations.js';
-export type { CollectorReceipt } from './store/store.js';
+export type { CollectorReceipt, ServerScanStatus, ServerScanStatusKind } from './store/store.js';
 export { scanServer } from './scanner/scanner.js';
 export { applyClaudeGlobalDeny, restoreClaudeGlobalDeny, claudeDenyRule, type ActionFileSystem, type ActionMutation, type ActionRequest } from './actions/claude.js';
 export { applyCodexDisabledTool, restoreCodexDisabledTool } from './actions/codex.js';

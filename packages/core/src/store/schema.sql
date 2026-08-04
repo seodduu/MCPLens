@@ -113,3 +113,10 @@ CREATE TABLE IF NOT EXISTS inference_consents (
   policy_version INTEGER PRIMARY KEY, provider TEXT NOT NULL, model TEXT NOT NULL,
   status TEXT NOT NULL, accepted_at TEXT NOT NULL, revoked_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS server_scan_status (
+  server_name TEXT PRIMARY KEY,
+  status      TEXT NOT NULL,
+  scanned_at  TEXT NOT NULL,
+  error_code  TEXT
+);

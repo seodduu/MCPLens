@@ -17,6 +17,14 @@ import { materializeSession, sessionIdFor } from './observations.js';
 const SCHEMA = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), 'schema.sql'), 'utf8');
 
+export type ServerScanStatusKind = 'ok' | 'auth-required' | 'failed';
+
+export interface ServerScanStatus {
+  status: ServerScanStatusKind;
+  scannedAt: string;
+  errorCode?: string;
+}
+
 function atOrAfter(observedAt: string, createdAt: string): boolean {
   const observed = Date.parse(observedAt);
   const created = Date.parse(createdAt);
@@ -497,6 +505,37 @@ export class LensStore {
       acceptedAt: row.accepted_at as string,
       revokedAt: row.revoked_at as string | null,
     };
+  }
+
+  /**
+   * 서버별 마지막 스캔 결과. 시각은 호출자가 넘긴다 — 저장소가 시계를 읽으면
+   * 테스트가 시각을 고정할 수 없다.
+   */
+  recordServerScanStatus(
+    serverName: string,
+    status: ServerScanStatusKind,
+    scannedAt: string,
+    errorCode?: string,
+  ): void {
+    this.run(
+      `INSERT INTO server_scan_status(server_name, status, scanned_at, error_code)
+       VALUES(?,?,?,?)
+       ON CONFLICT(server_name) DO UPDATE SET
+         status=excluded.status, scanned_at=excluded.scanned_at, error_code=excluded.error_code`,
+      [serverName, status, scannedAt, errorCode ?? null]);
+  }
+
+  /** 스캔한 적 없는 서버는 '값'이 아니라 '행의 부재'로 표현한다. */
+  serverScanStatuses(): ReadonlyMap<string, ServerScanStatus> {
+    const map = new Map<string, ServerScanStatus>();
+    for (const r of this.select('SELECT * FROM server_scan_status', [])) {
+      map.set(r.server_name as string, {
+        status: r.status as ServerScanStatusKind,
+        scannedAt: r.scanned_at as string,
+        errorCode: (r.error_code as string | null) ?? undefined,
+      });
+    }
+    return map;
   }
 
   getCursor(filePath: string): { byteOffset: number; mtimeMs: number } | null {
