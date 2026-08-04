@@ -6,6 +6,7 @@ const base = {
   definitionCount: 0,
   consentAccepted: false,
   analyzedServerCount: 0,
+  rollout: undefined as string | undefined,
 };
 
 describe('evaluateSetupKeys', () => {
@@ -53,11 +54,27 @@ describe('evaluateSetupKeys', () => {
   it('동의만 있고 분석 결과가 없으면 analysisReady는 거짓', () => {
     expect(evaluateSetupKeys({ ...base, consentAccepted: true }).analysisReady).toBe(false);
   });
+
+  it('rollout이 shadow면 globalActionsReady는 거짓', () => {
+    expect(evaluateSetupKeys({ ...base, rollout: 'shadow' }).globalActionsReady).toBe(false);
+  });
+
+  it('rollout이 설정되지 않았으면 globalActionsReady는 거짓', () => {
+    expect(evaluateSetupKeys({ ...base, rollout: undefined }).globalActionsReady).toBe(false);
+  });
+
+  it('rollout이 claude면 globalActionsReady는 참', () => {
+    expect(evaluateSetupKeys({ ...base, rollout: 'claude' }).globalActionsReady).toBe(true);
+  });
+
+  it('rollout이 stable이면 globalActionsReady는 참', () => {
+    expect(evaluateSetupKeys({ ...base, rollout: 'stable' }).globalActionsReady).toBe(true);
+  });
 });
 
 describe('stepsToUncheck', () => {
-  const on = { scanReady: true, hooksReady: true, analysisReady: true };
-  const off = { scanReady: false, hooksReady: false, analysisReady: false };
+  const on = { scanReady: true, hooksReady: true, analysisReady: true, globalActionsReady: true };
+  const off = { scanReady: false, hooksReady: false, analysisReady: false, globalActionsReady: false };
 
   it('참에서 거짓으로 바뀐 키의 스텝 id를 돌려준다', () => {
     expect(stepsToUncheck(on, { ...on, hooksReady: false })).toEqual([SETUP_STEP_IDS.hooksReady]);
@@ -79,5 +96,14 @@ describe('stepsToUncheck', () => {
     expect(SETUP_STEP_IDS.hooksReady).toBe('seodduu.mcp-context-lens#mcpLens.setup#hooks');
     expect(SETUP_STEP_IDS.scanReady).toBe('seodduu.mcp-context-lens#mcpLens.setup#scan');
     expect(SETUP_STEP_IDS.analysisReady).toBe('seodduu.mcp-context-lens#mcpLens.setup#analyze');
+  });
+
+  it('actions 스텝 id는 seodduu.mcp-context-lens#mcpLens.setup#actions 이다', () => {
+    expect(SETUP_STEP_IDS.globalActionsReady).toBe('seodduu.mcp-context-lens#mcpLens.setup#actions');
+  });
+
+  it('globalActionsReady가 참에서 거짓이 되면 actions 스텝 id를 해제 대상으로 돌려준다', () => {
+    expect(stepsToUncheck(on, { ...on, globalActionsReady: false }))
+      .toEqual([SETUP_STEP_IDS.globalActionsReady]);
   });
 });

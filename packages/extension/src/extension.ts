@@ -256,6 +256,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
       definitionCount: s.allDefinitions().length,
       consentAccepted: s.currentInferenceConsent(CONSENT_POLICY_VERSION)?.status === 'accepted',
       analyzedServerCount: analyzedServerCount(s),
+      rollout: dependencyRollout(),
     });
     for (const [key, value] of Object.entries(next)) {
       void vscode.commands.executeCommand('setContext', `mcpLens.${key}`, value);
@@ -532,7 +533,10 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
   ctx.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
     if (e.affectsConfiguration('mcpLens.reportDays') ||
-        e.affectsConfiguration('mcpLens.unsupportedServers')) refresh();
+        e.affectsConfiguration('mcpLens.unsupportedServers') ||
+        // 스텝 4의 globalActionsReady를 켜고/끄는 설정. refresh()가 scheduleCollectionRefresh()를
+        // 거쳐 computeCollection() → refreshSetupKeys()까지 이어진다.
+        e.affectsConfiguration('mcplens.dependencyAnalysis.rollout')) refresh();
   }));
 
   void maybeAutoScan(store, refresh);                     // 시작 시 1회 판정

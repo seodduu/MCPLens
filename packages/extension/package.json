@@ -356,7 +356,7 @@
               "altText": "Enabling global actions"
             },
             "completionEvents": [
-              "onSettingChanged:mcplens.dependencyAnalysis.rollout"
+              "onContext:mcpLens.globalActionsReady"
             ]
           }
         ]

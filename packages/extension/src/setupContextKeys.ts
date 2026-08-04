@@ -4,6 +4,7 @@ export interface SetupKeys {
   scanReady: boolean;
   hooksReady: boolean;
   analysisReady: boolean;
+  globalActionsReady: boolean;
 }
 
 export interface SetupKeyInput {
@@ -12,6 +13,8 @@ export interface SetupKeyInput {
   definitionCount: number;
   consentAccepted: boolean;
   analyzedServerCount: number;
+  /** mcplens.dependencyAnalysis.rollout 설정값. 미설정이면 undefined */
+  rollout: string | undefined;
 }
 
 const STEP_PREFIX = 'seodduu.mcp-context-lens#mcpLens.setup#';
@@ -20,6 +23,7 @@ export const SETUP_STEP_IDS: Record<keyof SetupKeys, string> = {
   scanReady: `${STEP_PREFIX}scan`,
   hooksReady: `${STEP_PREFIX}hooks`,
   analysisReady: `${STEP_PREFIX}analyze`,
+  globalActionsReady: `${STEP_PREFIX}actions`,
 };
 
 export function evaluateSetupKeys(input: SetupKeyInput): SetupKeys {
@@ -30,6 +34,8 @@ export function evaluateSetupKeys(input: SetupKeyInput): SetupKeys {
     // needs-approval을 참으로 세면 수집 0건인데 체크가 켜지는 거짓 성공이 난다.
     hooksReady: present.length > 0 && present.every((row) => row.install === 'installed'),
     analysisReady: input.consentAccepted && input.analyzedServerCount > 0,
+    // 값이 없으면 VS Code 설정 기본값(shadow)과 같다. shadow는 잠금 상태이므로 거짓이어야 한다.
+    globalActionsReady: input.rollout !== undefined && input.rollout !== 'shadow',
   };
 }
 
