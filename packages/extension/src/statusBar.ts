@@ -6,13 +6,13 @@ function formatK(tokens: number): string {
 }
 
 export function formatStatus(wasteToolCount: number, wasteTokens: number): string {
-  if (wasteToolCount === 0) return 'Lens: 낭비 없음 ✓';
-  return `Lens: 낭비 ${wasteToolCount}툴 · ${formatK(wasteTokens)}`;
+  if (wasteToolCount === 0) return 'Lens: no waste ✓';
+  return `Lens: ${wasteToolCount} wasteful tools · ${formatK(wasteTokens)}`;
 }
 
 export function wasteTooltip(wasteToolCount: number, wasteTokens: number): string {
-  if (wasteToolCount === 0) return '낭비로 판단한 툴 없음 · 클릭 → 상세 리포트';
-  return `낭비로 판단한 툴 ${wasteToolCount}개 · 세션당 정의 ${formatK(wasteTokens)}토큰\n`
-    + 'remove/filter-server 판정 · 클라이언트 귀속 적용\n'
-    + '클릭 → 상세 리포트';
+  if (wasteToolCount === 0) return 'No wasteful tools found. Click for the detailed report.';
+  return `${wasteToolCount} wasteful tools · ${formatK(wasteTokens)} tokens defined per session\n`
+    + 'remove/filter-server verdicts, client attribution applied\n'
+    + 'Click for the detailed report.';
 }

@@ -32,26 +32,26 @@ export function formatCollectionHealth(
 ): CollectionHealthPresentation {
   switch (snapshot.health) {
     case 'healthy':
-      return present('정상', 'Hook+로그', 'Hook과 로그가 최근 호출에서 일치합니다.', 'ok');
+      return present('Healthy', 'Hook+log', 'Hook and log agree on recent calls.', 'ok');
     case 'hook-only':
-      return present('부분 측정', 'Hook only · 토큰 상세 없음',
-        'Hook 호출은 수집하지만 로그 토큰 상세를 아직 확인하지 못했습니다.', 'info');
+      return present('Partially measured', 'Hook only, no token detail',
+        'Hook calls are being collected, but log token detail has not been confirmed yet.', 'info');
     case 'log-only':
-      return present('부분 측정', 'Log only · 비공식 포맷 의존',
-        '로그만 수집 중입니다. Hook 설치와 신뢰 상태를 확인하세요.', 'warning');
+      return present('Partially measured', 'Log only, relies on an unofficial format',
+        'Only the log is being collected. Check the hook installation and trust status.', 'warning');
     case 'degraded':
-      return present('성능 저하', `연속 상관관계 불일치 ${snapshot.consecutiveMisses}회`,
-        '수집 품질이 낮아 제거 권고를 후보로 낮춥니다.', 'warning');
+      return present('Degraded', `${snapshot.consecutiveMisses} consecutive correlation misses`,
+        'Collection quality is low, so removal recommendations are downgraded to candidates.', 'warning');
     case 'unavailable':
-      return present('검토 필요', 'Hook과 로그를 모두 확인할 수 없음',
-        'Hook 설치·신뢰와 클라이언트 로그 접근 권한을 점검하세요.', 'error');
+      return present('Needs review', 'Neither hook nor log can be confirmed',
+        'Check hook installation and trust status, and client log access permissions.', 'error');
     case 'idle':
       if (options.hooksConfigured) {
-        return present('첫 이벤트 대기', 'Hook 또는 로그 이벤트를 기다리는 중',
-          '수집이 구성되었습니다. 첫 MCP 호출 뒤 상태가 갱신됩니다.', 'info');
+        return present('Waiting for first event', 'Waiting for a hook or log event',
+          'Collection is configured. Status updates after the first MCP call.', 'info');
       }
-      return present('유휴', '최근 MCP 수집 이벤트 없음',
-        '최근 MCP 실행 또는 로그 변화가 없어 수집 품질을 판단할 수 없습니다.', 'idle');
+      return present('Idle', 'No recent MCP collection events',
+        'No recent MCP activity or log changes, so collection quality cannot be judged.', 'idle');
   }
 }
 
@@ -60,13 +60,13 @@ export function clientRowPresentation(
   snapshot: CollectionHealthSnapshot | undefined,
 ): CollectionHealthPresentation {
   if (install === 'not-installed') {
-    return present('미연결', '설치 필요',
-      '훅이 설치되지 않았습니다. 설치하면 이 클라이언트의 MCP 호출을 수집합니다.', 'warning');
+    return present('Not connected', 'Install needed',
+      'The hook is not installed. Installing it collects MCP calls from this client.', 'warning');
   }
   if (install === 'needs-approval') {
-    return present('승인 대기', 'codex 동의 필요',
-      '훅을 켰지만 codex의 신뢰 승인이 남았습니다. codex를 한 번 실행하면 동의 프롬프트가 뜹니다. '
-      + '승인하기 전까지 이 클라이언트의 MCP 호출은 로그로만 수집됩니다.', 'warning');
+    return present('Awaiting approval', 'codex consent needed',
+      'The hook is on, but codex trust approval is still pending. Run codex once to see the consent prompt. '
+      + 'Until it is approved, MCP calls from this client are collected from the log only.', 'warning');
   }
   // installed: 관측이 있으면 그 건강도, 없으면 idle(첫 이벤트 대기)
   return formatCollectionHealth(

@@ -106,10 +106,10 @@ export async function activate(ctx: vscode.ExtensionContext) {
         recordInstalledStamp(nodeFs, home, input.client, bundled!);
         refreshed = true;
         void vscode.window.showInformationMessage(
-          `MCP Lens: ${input.client} 훅 런타임을 최신으로 갱신했습니다 — 새 세션부터 적용됩니다.`);
+          `MCP Lens: ${input.client} hook runtime updated to the latest version. It applies starting with your next session.`);
       } else {
         void vscode.window.showWarningMessage(
-          `MCP Lens: ${input.client} 훅 런타임이 낡았습니다. 수집이 부정확할 수 있으니 훅을 제거 후 다시 설치해 주세요.`);
+          `MCP Lens: ${input.client} hook runtime is out of date. Collection may be inaccurate. Please remove and reinstall the hooks.`);
       }
     }
     return refreshed;
@@ -136,20 +136,20 @@ export async function activate(ctx: vscode.ExtensionContext) {
     vscode.commands.registerCommand('mcp-lens.installHooks', async (node?: { client?: HookClient }) => {
       const client = node?.client; if (!client) return;
       const r = await installerFor(client).install();
-      if (r.kind === 'client-missing') void vscode.window.showWarningMessage(`MCP Lens: ${client} CLI를 찾을 수 없습니다.`);
-      else if (r.kind === 'failed') void vscode.window.showErrorMessage(`MCP Lens ${client} 훅 설치 실패 (${r.step}): ${r.stderr.slice(0, 300)}`);
+      if (r.kind === 'client-missing') void vscode.window.showWarningMessage(`MCP Lens: could not find the ${client} CLI.`);
+      else if (r.kind === 'failed') void vscode.window.showErrorMessage(`MCP Lens ${client} hook install failed (${r.step}): ${r.stderr.slice(0, 300)}`);
       else {
         const stamp = bundledStamp(nodeFs, bundledDirFor(client), client);
         if (stamp !== null) recordInstalledStamp(nodeFs, lensHomeDir(), client, stamp);
-        void vscode.window.showInformationMessage(`MCP Lens: ${client} 훅 설치 완료 — 새 세션부터 수집이 시작됩니다.`);
+        void vscode.window.showInformationMessage(`MCP Lens: hooks installed for ${client}. Collection starts with your next session.`);
       }
       await computeCollection();
     }),
     vscode.commands.registerCommand('mcp-lens.uninstallHooks', async (node?: { client?: HookClient }) => {
       const client = node?.client; if (!client) return;
       const r = await installerFor(client).uninstall();
-      if (r.kind === 'ok') void vscode.window.showInformationMessage(`MCP Lens: ${client} 훅을 제거했습니다.`);
-      else if (r.kind === 'failed') void vscode.window.showErrorMessage(`MCP Lens ${client} 훅 제거 실패: ${r.stderr.slice(0, 300)}`);
+      if (r.kind === 'ok') void vscode.window.showInformationMessage(`MCP Lens: removed hooks for ${client}.`);
+      else if (r.kind === 'failed') void vscode.window.showErrorMessage(`MCP Lens ${client} hook removal failed: ${r.stderr.slice(0, 300)}`);
       await computeCollection();
     }),
     // 온보딩 워크스루의 "Install hooks" 버튼: 감지된 클라이언트 전부에 한 번에 설치한다.
@@ -497,10 +497,10 @@ export async function activate(ctx: vscode.ExtensionContext) {
       const awaiting = approvalPendingClients(detected, states, dismissed);
       if (awaiting.length === 0) return;
       const pick = await vscode.window.showWarningMessage(
-        `MCP Lens: ${awaiting.join('·')} 훅을 켰습니다. codex를 한 번 실행해 뜨는 동의를 승인하면 수집이 시작됩니다.`,
-        '수집 뷰 열기', '다시 안 보기');
-      if (pick === '수집 뷰 열기') void vscode.commands.executeCommand('mcpLens.collection.focus');
-      else if (pick === '다시 안 보기') {
+        `MCP Lens: hooks are on for ${awaiting.join(', ')}. Run codex once and approve the prompt to start collection.`,
+        'Open collection view', "Don't show again");
+      if (pick === 'Open collection view') void vscode.commands.executeCommand('mcpLens.collection.focus');
+      else if (pick === "Don't show again") {
         for (const c of awaiting) await ctx.globalState.update(`${DISMISS_KEY}.${c}`, true);
       }
     };
@@ -512,13 +512,13 @@ export async function activate(ctx: vscode.ExtensionContext) {
     if (pending.length === 0) { await announce(); return; }
 
     const choice = await vscode.window.showInformationMessage(
-      `MCP Lens: ${pending.join('·')} 훅 수집이 꺼져 있어요`, '모두 설치', '수집 뷰 열기', '다시 안 보기');
-    if (choice === '모두 설치') {
+      `MCP Lens: hook collection is off for ${pending.join(', ')}`, 'Install all', 'Open collection view', "Don't show again");
+    if (choice === 'Install all') {
       for (const c of pending) await installerFor(c).install();
       await announce();                       // 설치로 needs-approval이 됐는지 다시 본다
-    } else if (choice === '수집 뷰 열기') {
+    } else if (choice === 'Open collection view') {
       void vscode.commands.executeCommand('mcpLens.collection.focus');
-    } else if (choice === '다시 안 보기') {
+    } else if (choice === "Don't show again") {
       for (const c of pending) await ctx.globalState.update(`${DISMISS_KEY}.${c}`, true);
     }
   })();
@@ -653,32 +653,33 @@ export async function activate(ctx: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand('mcp-lens.hooksDoctor', (client?: HookClient) => {
       if (lastCollectionInputs.length === 0) {
-        void vscode.window.showInformationMessage('MCP Lens: 아직 수집 상태를 알 수 없습니다 (감지된 클라이언트 없음).');
+        void vscode.window.showInformationMessage('MCP Lens: collection status is not known yet (no clients detected).');
         return;
       }
       if (client) {
         const found = lastCollectionInputs.find((i) => i.client === client);
         if (!found) {
-          void vscode.window.showInformationMessage(`MCP Lens: ${client} 상태를 아직 알 수 없습니다.`);
+          void vscode.window.showInformationMessage(`MCP Lens: ${client} status is not known yet.`);
           return;
         }
         const row = toRow(found);
-        void vscode.window.showInformationMessage(`MCP Lens 수집 상태 (${client}): ${row.description}`);
+        void vscode.window.showInformationMessage(`MCP Lens collection status (${client}): ${row.description}`);
         return;
       }
       const summary = lastCollectionInputs.map((i) => `${i.client}: ${toRow(i).description}`).join(' / ');
-      void vscode.window.showInformationMessage(`MCP Lens 수집 상태 — ${summary}`);
+      void vscode.window.showInformationMessage(`MCP Lens collection status: ${summary}`);
     }),
     vscode.commands.registerCommand('mcp-lens.hooksPause', async () => {
       if (!coordinator) {
-        void vscode.window.showWarningMessage('MCP Lens: 수집기가 초기화되지 않아 중지할 수 없습니다.');
+        void vscode.window.showWarningMessage('MCP Lens: cannot pause because the collector has not been initialized.');
         return;
       }
       hooksPaused = true;
       await coordinator.pause();
       void vscode.commands.executeCommand('setContext', 'mcpLens.hooksPaused', true);
       void vscode.window.showInformationMessage(
-        'MCP Lens: Hook 수집을 일시 중지했습니다. 중지 중 발생한 훅은 보관되었다가 재개 시 반영됩니다 (VS Code 재시작 시 자동 재개).');
+        'MCP Lens: hook collection is paused. Hooks that fire while paused are held and applied on resume. ' +
+        'Resume happens automatically when VS Code restarts.');
     }),
     vscode.commands.registerCommand('mcp-lens.hooksResume', async () => {
       if (!coordinator) return;
@@ -688,7 +689,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
       if (collectAction(hooksPaused, mode) === 'start') {
         await coordinator.startDraining().catch(ignoreStaleWriterError);
       }
-      void vscode.window.showInformationMessage('MCP Lens: Hook 수집을 재개했습니다.');
+      void vscode.window.showInformationMessage('MCP Lens: hook collection resumed.');
     }));
 }
 

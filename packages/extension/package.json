@@ -36,40 +36,40 @@
       },
       {
         "command": "mcp-lens.hooksDoctor",
-        "title": "MCP Lens: Hook 수집 진단"
+        "title": "MCP Lens: Hook Collection Diagnostics"
       },
       {
         "command": "mcp-lens.hooksPause",
-        "title": "MCP Lens: Hook 수집 일시 중지"
+        "title": "MCP Lens: Pause Hook Collection"
       },
       {
         "command": "mcp-lens.hooksResume",
-        "title": "MCP Lens: Hook 수집 재개"
+        "title": "MCP Lens: Resume Hook Collection"
       },
       {
         "command": "mcp-lens.installHooks",
-        "title": "MCP Lens: 이 클라이언트에 훅 설치",
+        "title": "MCP Lens: Install Hooks for This Client",
         "icon": "$(cloud-download)"
       },
       {
         "command": "mcp-lens.uninstallHooks",
-        "title": "MCP Lens: 이 클라이언트 훅 제거"
+        "title": "MCP Lens: Remove Hooks for This Client"
       },
       {
         "command": "mcp-lens.removeTool",
-        "title": "Remove (Claude Code에서 차단)"
+        "title": "Remove (block in Claude Code)"
       },
       {
         "command": "mcp-lens.addTool",
-        "title": "Add (차단 해제)"
+        "title": "Add (unblock)"
       },
       {
         "command": "mcp-lens.removeServer",
-        "title": "Remove (서버 전체 차단)"
+        "title": "Remove (block entire server)"
       },
       {
         "command": "mcp-lens.addServer",
-        "title": "Add (서버 차단 해제)"
+        "title": "Add (unblock server)"
       },
       {
         "command": "mcplens.openAnalysisDetails",
@@ -207,11 +207,11 @@
       "mcpLens": [
         {
           "id": "mcpLens.matrix",
-          "name": "비용×사용 매트릭스"
+          "name": "Cost × Usage Matrix"
         },
         {
           "id": "mcpLens.collection",
-          "name": "수집 상태"
+          "name": "Collection Status"
         },
         {
           "id": "mcpLens.setupStatus",
@@ -226,7 +226,7 @@
           "type": "number",
           "default": 30,
           "minimum": 1,
-          "markdownDescription": "상태바 요약과 리포트가 집계할 기간(일). 원본 클라이언트 로그는 약 30일 후 만료되지만 Lens DB에는 영구 보존되므로 더 긴 기간도 조회할 수 있습니다."
+          "markdownDescription": "Number of days the status bar summary and reports aggregate over. Original client logs expire after about 30 days, but the Lens DB retains data permanently, so longer periods can also be queried."
         },
         "mcpLens.reportDetail": {
           "type": "string",
@@ -236,10 +236,10 @@
           ],
           "default": "summary",
           "enumDescriptions": [
-            "조치 목록 위주로 요약합니다. 후보·정상 툴 목록은 상위 5개까지만 표시 (기본)",
-            "모든 툴을 표시합니다"
+            "Summarizes with a focus on the action list. Candidate and normal tool lists show only the top 5 (default)",
+            "Shows every tool"
           ],
-          "markdownDescription": "`MCP Lens: 리포트 보기`의 상세 수준. 조치가 필요한 항목과 점검 대상은 설정과 무관하게 항상 전량 표시됩니다."
+          "markdownDescription": "Detail level for `MCP Lens: Show Report`. Items needing action and items to inspect are always shown in full regardless of this setting."
         },
         "mcpLens.autoScan": {
           "type": "string",
@@ -250,11 +250,11 @@
           ],
           "default": "prompt",
           "enumDescriptions": [
-            "스캔할 서버가 새로 감지되면 물어봅니다 (기본)",
-            "묻지 않고 자동 스캔합니다",
-            "자동 스캔하지 않습니다 (npx mcp-lens scan 수동 사용)"
+            "Asks when a new server to scan is detected (default)",
+            "Scans automatically without asking",
+            "Never scans automatically (use `npx mcp-lens scan` manually)"
           ],
-          "markdownDescription": "MCP 서버 툴 정의 자동 스캔. 스캔은 등록된 stdio 서버를 잠깐 실행해 tools/list를 요청합니다 — LLM 토큰을 소모하지 않고 설정 파일을 수정하지 않습니다."
+          "markdownDescription": "Automatic scanning of MCP server tool definitions. Scanning briefly runs each registered stdio server and requests tools/list. No LLM tokens are spent and no config file is modified."
         },
         "mcpLens.authIgnore": {
           "type": "array",
@@ -262,7 +262,7 @@
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "로그인 필요 알림을 다시 띄우지 않을 MCP 서버 이름 목록. `이 서버는 묻지 않음` 버튼으로 자동 추가됩니다."
+          "markdownDescription": "MCP server names for which the sign-in-required notification will not be shown again. Automatically added via the `Don't ask for this server` button."
         },
         "mcpLens.unsupportedServers": {
           "type": "array",
@@ -270,7 +270,7 @@
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Lens가 지원하지 않는다고 판정한 MCP 서버 이름 목록(자동 클라이언트 등록을 거부하는 서버 등). 로그인 시도 중 자동 추가되며, 트리에서 숨겨지고 다시 로그인을 묻지 않습니다."
+          "markdownDescription": "MCP server names that Lens has determined it does not support (for example, servers that reject automatic client registration). Automatically added during a sign-in attempt; these servers are hidden from the tree and never prompted for sign-in again."
         },
         "mcpLens.inferenceProvider": {
           "type": "string",

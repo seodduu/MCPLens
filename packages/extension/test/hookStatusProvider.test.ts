@@ -22,7 +22,7 @@ describe('toRow', () => {
   it('미설치 클라이언트는 installable + 미연결', () => {
     const r = toRow({ client: 'codex', install: 'not-installed', snapshot: undefined });
     expect(r.contextValue).toBe('hook-installable');
-    expect(r.description).toContain('설치 필요');
+    expect(r.description).toContain('Install needed');
     expect(r.client).toBe('codex');
   });
   it('설치 클라이언트는 installed', () => {
@@ -62,7 +62,7 @@ describe('HookStatusProvider', () => {
     };
     expect(item.id).toBe('codex');
     expect(item.contextValue).toBe('hook-installable');
-    expect(item.description).toContain('설치 필요');
+    expect(item.description).toContain('Install needed');
     expect(item.iconPath.id).toBe('warning');
   });
 

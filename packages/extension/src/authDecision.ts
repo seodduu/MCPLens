@@ -39,5 +39,5 @@ export function isDcrRejected(err: unknown): boolean {
 /** DCR 거부가 아닌 일반 로그인 실패를 사용자용 문구로 바꾼다. */
 export function friendlyAuthError(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
-  return `로그인 실패 — ${raw}`;
+  return `Sign-in failed. ${raw}`;
 }

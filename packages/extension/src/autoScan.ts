@@ -47,9 +47,9 @@ async function runScan(store: LensStore, targets: McpServerSpec[],
   }
   store.save();
   onDone(); // refresh() — 상태바·사이드바 ?tok 갱신
-  const failNote = failed.length ? ` (실패: ${failed.join(', ')})` : '';
+  const failNote = failed.length ? ` (failed: ${failed.join(', ')})` : '';
   vscode.window.setStatusBarMessage(
-    `$(check) Lens: ${targets.length - failed.length}개 서버 · 툴 ${tools}개 · ${tokens}tok 스캔 완료${failNote}`, 8000);
+    `$(check) Lens: scanned ${targets.length - failed.length} servers, ${tools} tools, ${tokens}tok${failNote}`, 8000);
   if (authFailed.length) await maybeAuthPrompt(store, authFailed, onDone);
 }
 
@@ -83,11 +83,11 @@ export async function maybeAuthPrompt(
 
   const names = action.targets.map((t) => t.name).join(', ');
   const pick = await vscode.window.showInformationMessage(
-    `MCP 서버 ${action.targets.length}개(${names})는 로그인이 필요합니다. ` +
-    `브라우저에서 로그인할까요? (Lens 명의로 접근 권한을 요청합니다)`,
-    '로그인', '나중에', '이 서버는 묻지 않음');
+    `${action.targets.length} MCP server(s) (${names}) need sign-in. ` +
+    `Sign in in your browser? (Lens will request access on your behalf.)`,
+    'Sign in', 'Later', "Don't ask for this server");
 
-  if (pick === '로그인') {
+  if (pick === 'Sign in') {
     const errors: string[] = [];
     const unsupported: string[] = [];
     for (const spec of action.targets) {
@@ -109,14 +109,14 @@ export async function maybeAuthPrompt(
       const merged = [...new Set([...unsupportedServers(config), ...unsupported])];
       await config.update('unsupportedServers', merged, vscode.ConfigurationTarget.Global);
       void vscode.window.showWarningMessage(
-        `MCP Lens는 다음 MCP를 지원하지 않습니다: ${unsupported.join(', ')}`);
+        `MCP Lens does not support the following MCP server(s): ${unsupported.join(', ')}`);
     }
     onDone(); // 트리 새로고침 — unsupported 반영해 숨긴다
     if (errors.length) void vscode.window.showErrorMessage(errors.join('\n'));
-  } else if (pick === '이 서버는 묻지 않음') {
+  } else if (pick === "Don't ask for this server") {
     const names2 = action.targets.map((t) => t.name);
     await config.update('authIgnore', [...ignoreList, ...names2], vscode.ConfigurationTarget.Global);
-  } else if (pick === '나중에') {
+  } else if (pick === 'Later') {
     // 이번 VSCode 세션 동안만 억제 — 재시작하면 다시 묻는다.
     for (const t of action.targets) sessionAuthSnooze.add(t.name);
   } // 닫기(undefined) → 아무것도 저장 안 함 → 다음 스캔 때 다시 묻는다
@@ -141,13 +141,13 @@ export async function maybeAutoScan(store: LensStore, onDone: () => void): Promi
   // kind === 'prompt' — 합의된 동의창
   const names = action.targets.map((t) => t.name).join(', ');
   const pick = await vscode.window.showInformationMessage(
-    `MCP Lens: MCP 서버 ${action.targets.length}개(${names})의 툴 정의를 스캔할까요? ` +
-    `서버를 잠깐 실행합니다. (토큰 소모 없음 · 설정 변경 없음)`,
-    '스캔', '나중에', '다시 묻지 않음');
-  if (pick === '스캔') {
+    `MCP Lens: scan ${action.targets.length} MCP server(s) (${names}) for tool definitions? ` +
+    `This briefly runs the server. No LLM tokens are spent and no config file is modified.`,
+    'Scan', 'Later', "Don't ask again");
+  if (pick === 'Scan') {
     await config.update('autoScan', 'always', vscode.ConfigurationTarget.Global);
     await runScan(store, action.targets, onDone, identities);
-  } else if (pick === '다시 묻지 않음') {
+  } else if (pick === "Don't ask again") {
     await config.update('autoScan', 'never', vscode.ConfigurationTarget.Global);
   } // '나중에'/닫기 → 아무것도 저장 안 함 → 다음 시작 때 재질문
 }

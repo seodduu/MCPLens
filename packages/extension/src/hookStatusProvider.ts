@@ -61,7 +61,7 @@ export class HookStatusProvider implements vscode.TreeDataProvider<ClientRow> {
     item.contextValue = row.contextValue;
     item.iconPath = new vscode.ThemeIcon(ICON[row.severity], new vscode.ThemeColor(row.colorId));
     if (row.severity === 'warning' || row.severity === 'error') {
-      item.command = { command: 'mcp-lens.hooksDoctor', title: 'MCP Lens: Hook 진단', arguments: [row.client] };
+      item.command = { command: 'mcp-lens.hooksDoctor', title: 'MCP Lens: Hook Doctor', arguments: [row.client] };
     }
     return item;
   }
