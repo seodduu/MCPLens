@@ -228,18 +228,34 @@ async function runAuth(args: string[]) {
 
   const store = await LensStore.open(dbPath());
   const scannedAt = new Date().toISOString();
+  await runAuthRescan(store, target.spec, name, scannedAt);
+}
+
+/**
+ * 로그인 직후 서버 1개를 재스캔하고 성공/실패와 무관하게 store를 저장·종료한다.
+ * scan을 인자로 받아 테스트에서 실패를 주입할 수 있게 한다(기본값은 실제 scanServer).
+ * save/close를 finally 하나로 모아 두 분기(성공/실패) 모두 recordServerScanStatus로
+ * 기록한 값이 디스크에 남게 한다 — 이 함수를 만든 이유가 바로 그 보장이다.
+ */
+export async function runAuthRescan(
+  store: LensStore,
+  spec: McpServerSpec,
+  name: string,
+  scannedAt: string,
+  scan: typeof scanServer = scanServer,
+): Promise<void> {
   try {
-    const result = await scanServer(target.spec);
+    const result = await scan(spec);
     store.upsertScanResult(result.definitions, result.bodies, []);
     store.recordServerScanStatus(name, 'ok', scannedAt);
     const total = result.definitions.reduce((n, d) => n + d.definitionTokens, 0);
     console.log(`${name}: 로그인 완료, 툴 ${result.definitions.length}개 · ${total}토큰`);
-    store.save();
   } catch (e) {
     const record = classifyScanFailure(e as Error);
     store.recordServerScanStatus(name, record.status, scannedAt, record.errorCode);
     console.log(scanFailureLine(name, e as Error));
   } finally {
+    store.save();
     store.close();
   }
 }
