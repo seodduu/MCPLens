@@ -106,6 +106,10 @@
       {
         "command": "mcp-lens.openRolloutSetting",
         "title": "MCP Lens: Open Global Actions Setting"
+      },
+      {
+        "command": "mcp-lens.authenticateServer",
+        "title": "MCP Lens: Sign In to Server"
       }
     ],
     "menus": {
@@ -161,6 +165,10 @@
         {
           "command": "mcp-lens.openRolloutSetting",
           "when": "false"
+        },
+        {
+          "command": "mcp-lens.authenticateServer",
+          "when": "false"
         }
       ],
       "view/item/context": [
@@ -204,6 +212,10 @@
         {
           "id": "mcpLens.collection",
           "name": "수집 상태"
+        },
+        {
+          "id": "mcpLens.setupStatus",
+          "name": "Setup Status"
         }
       ]
     },

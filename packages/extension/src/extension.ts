@@ -9,7 +9,7 @@ import { LensStore, LogWatcher, dbPath, dbWriterLockPath,
   buildReport, renderReport, applyClaudeGlobalDeny, restoreClaudeGlobalDeny,
   applyCodexDisabledTool, restoreCodexDisabledTool, estimateInferenceCost, type ActionFileSystem,
   actionAllowedByRollout, isDependencyAnalysisRollout, type GlobalActionClient,
-  type DependencyAnalysisRollout } from '@mcp-lens/core';
+  type DependencyAnalysisRollout, collectAllSpecs } from '@mcp-lens/core';
 import { WriterLeaseManager } from './writerLease.js';
 import { chooseMode } from './leaseMode.js';
 import { collectAction } from './pauseDecision.js';
@@ -35,8 +35,10 @@ import { readProviderConfig, resolveProvider, type ProviderResolution } from './
 import { runInference } from './inferenceCli.js';
 import { AnalysisCoordinator, ANALYSIS_RULES_VERSION, CONSENT_POLICY_VERSION } from './analysisCoordinator.js';
 import { currentActionEligibility, disableGlobally, restoreGlobally, restoreRecommended } from './globalActionCommand.js';
-import { registerScanNow, registerOpenRolloutSetting } from './setupCommands.js';
+import { registerScanNow, registerOpenRolloutSetting, registerAuthenticateServer } from './setupCommands.js';
 import { evaluateSetupKeys, stepsToUncheck, type SetupKeys } from './setupContextKeys.js';
+import { buildSetupRows } from './setupTree.js';
+import { SetupStatusProvider } from './setupTreeProvider.js';
 
 let watcher: LogWatcher | undefined;
 let store: LensStore | undefined;
@@ -70,6 +72,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
   ctx.subscriptions.push(vscode.window.registerTreeDataProvider('mcpLens.matrix', treeProvider));
   const hookStatusProvider = new HookStatusProvider();
   ctx.subscriptions.push(vscode.window.registerTreeDataProvider('mcpLens.collection', hookStatusProvider));
+  const setupStatusProvider = new SetupStatusProvider();
+  ctx.subscriptions.push(vscode.window.registerTreeDataProvider('mcpLens.setupStatus', setupStatusProvider));
 
   const DISMISS_KEY = 'mcpLens.hookInstall.dismissed';
 
@@ -214,15 +218,34 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
   let lastSetupKeys: SetupKeys | undefined;
 
-  /** 정의가 있는 서버 중 findDependencyAnalysis가 결과를 주는 서버 수. */
-  function analyzedServerCount(s: LensStore): number {
+  /** 정의가 있는 서버 중 findDependencyAnalysis가 결과를 주는 서버 이름 집합. */
+  function analyzedServerNames(s: LensStore): Set<string> {
     const serverNames = new Set(s.allDefinitions().map((definition) => definition.serverName));
-    let count = 0;
+    const analyzed = new Set<string>();
     for (const serverName of serverNames) {
       const body = s.definitionBodiesForServer(serverName)[0];
-      if (body && s.findDependencyAnalysis(body.definitionSetHash, ANALYSIS_RULES_VERSION)) count++;
+      if (body && s.findDependencyAnalysis(body.definitionSetHash, ANALYSIS_RULES_VERSION)) analyzed.add(serverName);
     }
-    return count;
+    return analyzed;
+  }
+  const analyzedServerCount = (s: LensStore): number => analyzedServerNames(s).size;
+
+  /** Setup Status 뷰 갱신 — computeCollection()이 매 refresh 사이클마다 함께 부른다. */
+  function refreshSetupRows(): void {
+    const s = store!;
+    const config = vscode.workspace.getConfiguration('mcpLens');
+    const consent = s.currentInferenceConsent(CONSENT_POLICY_VERSION);
+    const { specs } = collectAllSpecs();
+    setupStatusProvider.setRows(buildSetupRows({
+      serverNames: specs.map((spec) => spec.name),
+      scanStatuses: s.serverScanStatuses(),
+      authIgnore: config.get<string[]>('authIgnore', []),
+      unsupported: config.get<string[]>('unsupportedServers', []),
+      analyzedServers: analyzedServerNames(s),
+      definitionServers: new Set(s.allDefinitions().map((definition) => definition.serverName)),
+      consent: consent?.status === 'accepted' ? { provider: consent.provider, model: consent.model } : undefined,
+      rollout: dependencyRollout(),
+    }));
   }
 
   async function refreshSetupKeys(inputs: ClientRowInput[]): Promise<void> {
@@ -263,6 +286,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
       if (await refreshStaleRuntimes(inputs)) void computeCollection();
     }
     await refreshSetupKeys(inputs);
+    refreshSetupRows();
     return inputs;
   }
 
@@ -506,7 +530,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
   void maybeAutoScan(store, refresh);                     // 시작 시 1회 판정
   ctx.subscriptions.push(watchConfigSources(store, refresh)); // 이후 설정 파일 감시
-  ctx.subscriptions.push(registerScanNow(() => store!, refresh), registerOpenRolloutSetting());
+  ctx.subscriptions.push(
+    registerScanNow(() => store!, refresh), registerOpenRolloutSetting(), registerAuthenticateServer(refresh));
 
   const requestAnalysis = async (node?: LensNode, reanalyze = false) => {
     selectedProvider = undefined;
