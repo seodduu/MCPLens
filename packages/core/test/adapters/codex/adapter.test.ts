@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { CodexAdapter } from '../../../src/adapters/codex/adapter.js';
+import { countTokens } from '../../../src/tokenize.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fx = readFileSync(
@@ -13,6 +14,15 @@ const cancelledFx = readFileSync(
   path.join(here, '../../../../../fixtures/codex/tool-search-cancelled.jsonl'), 'utf8');
 const successFx = readFileSync(
   path.join(here, '../../../../../fixtures/codex/tool-search-success.jsonl'), 'utf8');
+const multiFx = readFileSync(
+  path.join(here, '../../../../../fixtures/codex/tool-search-multi.jsonl'), 'utf8');
+const multiMixedFx = readFileSync(
+  path.join(here, '../../../../../fixtures/codex/tool-search-multi-mixed.jsonl'), 'utf8');
+
+// 기대 토큰은 계획서 수치가 아니라 픽스처 원문에서 뽑는다. 픽스처가 진실이다.
+const multiDefinitions: unknown[] = JSON.parse(
+  JSON.parse(multiFx.trim().split('\n').at(-1)!).payload.output.at(-1).text as string,
+);
 
 describe('CodexAdapter', () => {
   const a = new CodexAdapter();
@@ -366,13 +376,106 @@ describe('CodexAdapter', () => {
       .toMatchObject([{ toolName: '(code-mode-search)' }]);
   });
 
-  it('넓은 조건 검색이 정의를 2건 반환하면 여전히 generic이다', () => {
+  it('부분일치 검색 출력의 정의 N개를 각각 로드로 기록한다', () => {
+    const r = a.parseFile('/fake/tool-search-multi.jsonl', multiFx);
+
+    expect(r.toolLoads).toHaveLength(2);
+    expect(r.toolLoads.map((l) => l.toolName).sort())
+      .toEqual(['mcp__atlas__lookup', 'mcp__atlas__search']);
+    expect(r.toolLoads.every((l) => l.serverName === null)).toBe(true);
+    expect(r.toolLoads.filter((l) => l.toolName === '(code-mode-search)')).toHaveLength(0);
+  });
+
+  it('다중 로드의 토큰은 원소별 정의 크기로 나뉜다', () => {
+    const r = a.parseFile('/fake/tool-search-multi.jsonl', multiFx);
+    const byName = new Map(r.toolLoads.map((l) => [l.toolName, l.loadedTokens]));
+
+    const [lookupDefinition, searchDefinition] = multiDefinitions;
+    expect(byName.get('mcp__atlas__lookup'))
+      .toBe(countTokens(JSON.stringify(lookupDefinition)));
+    expect(byName.get('mcp__atlas__search'))
+      .toBe(countTokens(JSON.stringify(searchDefinition)));
+    // 균등 배분이 아님을 고정한다.
+    expect(byName.get('mcp__atlas__lookup')).not.toBe(byName.get('mcp__atlas__search'));
+  });
+
+  it('canonical이 아닌 원소는 로드로 세지 않는다', () => {
+    const r = a.parseFile('/fake/tool-search-multi-mixed.jsonl', multiMixedFx);
+
+    expect(r.toolLoads).toHaveLength(2);
+    expect(r.toolLoads.map((l) => l.toolName).sort())
+      .toEqual(['mcp__atlas__lookup', 'mcp__atlas__search']);
+    expect(r.toolLoads.some((l) => l.toolName === 'exec')).toBe(false);
+  });
+
+  it('canonical 정의가 하나도 없으면 집계 행으로 남는다', () => {
+    const output = '[{"name":"exec","description":"Run a shell command."},'
+      + '{"name":"apply_patch","description":"Apply a patch."}]';
     const content = [
-      JSON.stringify({ payload: { type: 'custom_tool_call', call_id: 'broad-multi', input: 'ALL_TOOLS.filter(x => x.name.includes("atlas"))' } }),
-      JSON.stringify({ payload: { type: 'custom_tool_call_output', call_id: 'broad-multi', output: [{ type: 'input_text', text: '[{"name":"mcp__atlas__lookup","description":"a"},{"name":"mcp__atlas__other","description":"b"}]' }] } }),
+      JSON.stringify({ payload: { type: 'custom_tool_call', call_id: 'builtin-only', input: 'ALL_TOOLS.filter(x => x.name.includes("a"))' } }),
+      JSON.stringify({ payload: { type: 'custom_tool_call_output', call_id: 'builtin-only', output } }),
     ].join('\n');
 
-    expect(a.parseFile('/fake/broad-multi.jsonl', content).toolLoads)
-      .toMatchObject([{ toolName: '(code-mode-search)' }]);
+    const r = a.parseFile('/fake/builtin-only.jsonl', content);
+
+    expect(r.toolLoads).toHaveLength(1);
+    expect(r.toolLoads[0]?.toolName).toBe('(code-mode-search)');
+    expect(r.toolLoads[0]?.loadedTokens).toBe(countTokens(output));
+  });
+
+  it('정확 검색은 원소가 2개 이상이면 여전히 generic이다', () => {
+    const content = [
+      JSON.stringify({ payload: { type: 'custom_tool_call', call_id: 'exact-multi', input: 'ALL_TOOLS.filter(x => x.name === "mcp__atlas__lookup")' } }),
+      JSON.stringify({ payload: { type: 'custom_tool_call_output', call_id: 'exact-multi', output: '[{"name":"mcp__atlas__lookup","description":"a"},{"name":"mcp__atlas__search","description":"b"}]' } }),
+    ].join('\n');
+
+    const r = a.parseFile('/fake/exact-multi.jsonl', content);
+
+    expect(r.toolLoads).toHaveLength(1);
+    expect(r.toolLoads[0]?.toolName).toBe('(code-mode-search)');
+  });
+
+  it('같은 툴이 중복 실린 출력은 한 번만 센다', () => {
+    const content = [
+      JSON.stringify({ payload: { type: 'custom_tool_call', call_id: 'dup', input: 'ALL_TOOLS.filter(x => x.name.includes("atlas"))' } }),
+      JSON.stringify({ payload: { type: 'custom_tool_call_output', call_id: 'dup', output: '[{"name":"mcp__atlas__lookup","description":"a"},{"name":"mcp__atlas__lookup","description":"a"}]' } }),
+    ].join('\n');
+
+    const r = a.parseFile('/fake/dup.jsonl', content);
+
+    expect(r.toolLoads).toHaveLength(1);
+    expect(r.toolLoads[0]?.toolName).toBe('mcp__atlas__lookup');
+  });
+
+  it('객체 래퍼 출력은 계속 generic이다', () => {
+    const content = [
+      JSON.stringify({ payload: { type: 'custom_tool_call', call_id: 'wrapper', input: 'ALL_TOOLS.filter(x => x.name.includes("atlas"))' } }),
+      JSON.stringify({ payload: { type: 'custom_tool_call_output', call_id: 'wrapper', output: '{"matches":[{"name":"mcp__atlas__lookup","description":"a"},{"name":"mcp__atlas__search","description":"b"}]}' } }),
+    ].join('\n');
+
+    const r = a.parseFile('/fake/wrapper.jsonl', content);
+
+    expect(r.toolLoads).toHaveLength(1);
+    expect(r.toolLoads[0]?.toolName).toBe('(code-mode-search)');
+  });
+
+  it('잘린 출력은 계속 generic이다', () => {
+    const content = [
+      JSON.stringify({ payload: { type: 'custom_tool_call', call_id: 'truncated', input: 'ALL_TOOLS.filter(x => x.name.includes("atlas"))' } }),
+      JSON.stringify({
+        payload: {
+          type: 'custom_tool_call_output', call_id: 'truncated',
+          output: [
+            { type: 'input_text', text: 'Warning: truncated output' },
+            { type: 'input_text', text: '[{"name":"mcp__atlas__lookup","description":"a"},{"name":"mcp__atlas__search","description":"b"}]' },
+          ],
+        },
+      }),
+    ].join('\n');
+
+    const r = a.parseFile('/fake/truncated.jsonl', content);
+
+    expect(r.toolLoads).toHaveLength(1);
+    expect(r.toolLoads[0]?.toolName).toBe('(code-mode-search)');
   });
 });
