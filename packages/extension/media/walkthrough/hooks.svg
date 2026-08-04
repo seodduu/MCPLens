@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
+  <g fill="none" stroke="#8b8b8b" stroke-width="2">
+    <circle cx="300" cy="180" r="50" />
+    <path d="M300 230 C300 260, 340 260, 340 290 C340 320, 300 320, 300 350" />
+    <circle cx="500" cy="180" r="50" />
+    <path d="M500 230 C500 260, 460 260, 460 290 C460 320, 500 320, 500 350" />
+  </g>
+  <text x="400" y="400" text-anchor="middle" font-family="sans-serif" font-size="28" fill="#8b8b8b">Collect</text>
+</svg>
