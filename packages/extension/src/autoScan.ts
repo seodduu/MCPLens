@@ -84,24 +84,37 @@ export async function maybeAuthPrompt(
   const names = action.targets.map((t) => t.name).join(', ');
   const pick = await vscode.window.showInformationMessage(
     `${action.targets.length} MCP server(s) (${names}) need sign-in. ` +
-    `Sign in in your browser? (Lens will request access on your behalf.)`,
+    `Sign in from your browser? (Lens will request access on your behalf.)`,
     'Sign in', 'Later', "Don't ask for this server");
 
   if (pick === 'Sign in') {
     const errors: string[] = [];
     const unsupported: string[] = [];
     for (const spec of action.targets) {
+      const observedAt = new Date().toISOString();
       try {
         await authenticateServer(spec, {
           openUrl: async (url) => { await vscode.env.openExternal(vscode.Uri.parse(url)); },
         });
         const result = await scanServer(spec);
         store.upsertScanResult(result.definitions, result.bodies, []);
+        // runScan과 같은 분류를 여기서도 적용한다. 안 그러면 로그인에 성공해도
+        // Setup Status가 계속 'sign in to scan'을 보여주고, 재시작 후에도 그 상태가 남는다.
+        store.recordServerScanStatus(spec.name, 'ok', observedAt);
       } catch (err) {
-        // DCR 거부 서버(예: Figma)는 브라우저가 열리기도 전에 실패한다 — Lens가 지원할 수 없으므로
+        // DCR 거부 서버(예: Figma)는 브라우저가 열리기도 전에 실패한다. Lens가 지원할 수 없으므로
         // '지원하지 않는 서버'로 영구 등록해 트리에서 숨기고 다시는 로그인을 묻지 않는다.
-        if (isDcrRejected(err)) unsupported.push(spec.name);
-        else errors.push(`${spec.name}: ${friendlyAuthError(err)}`); // 그 외 실패는 원인 표면화
+        if (isDcrRejected(err)) {
+          unsupported.push(spec.name);
+        } else {
+          errors.push(`${spec.name}: ${friendlyAuthError(err)}`); // 그 외 실패는 원인 표면화
+          // runScan과 같은 분류: auth-required/token-expired면 로그인 필요 상태로, 아니면 실패로 기록한다.
+          const msg = err instanceof Error ? err.message : String(err);
+          const needsAuth = msg.includes('auth-required') || msg.includes('token-expired');
+          store.recordServerScanStatus(
+            spec.name, needsAuth ? 'auth-required' : 'failed', observedAt,
+            needsAuth ? undefined : msg.slice(0, 120));
+        }
       }
     }
     store.save();

@@ -39,6 +39,8 @@ import { registerScanNow, registerOpenRolloutSetting, registerAuthenticateServer
 import { evaluateSetupKeys, stepsToUncheck, type SetupKeys } from './setupContextKeys.js';
 import { buildSetupRows } from './setupTree.js';
 import { SetupStatusProvider } from './setupTreeProvider.js';
+import { withGenerationGuard } from './collectionRefresh.js';
+import { noInstallTargetsMessage, installedSummaryMessage } from './installHooksAllMessage.js';
 
 let watcher: LogWatcher | undefined;
 let store: LensStore | undefined;
@@ -158,7 +160,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
       const inputs = await computeCollection();
       const targets = inputs.filter((input) => input.install === 'not-installed');
       if (targets.length === 0) {
-        void vscode.window.showInformationMessage('MCP Lens: hooks are already installed.');
+        void vscode.window.showInformationMessage(noInstallTargetsMessage(inputs));
         return;
       }
       const installed: HookClient[] = [];
@@ -173,9 +175,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
           failedCount++;
         }
       }
-      const failedNote = failedCount > 0 ? ` ${failedCount} failed.` : '';
-      void vscode.window.showInformationMessage(
-        `MCP Lens: installed hooks for ${installed.join(', ')}.${failedNote}`);
+      void vscode.window.showInformationMessage(installedSummaryMessage(installed, failedCount));
       await computeCollection();
     }));
 
@@ -260,10 +260,10 @@ export async function activate(ctx: vscode.ExtensionContext) {
       void vscode.commands.executeCommand('setContext', `mcpLens.${key}`, value);
     }
     for (const stepId of stepsToUncheck(lastSetupKeys, next)) {
-      try {
-        // 내부 커맨드다. 사라져도 나머지 동작을 막지 않는다 — 진실은 Setup Status 뷰다.
-        await vscode.commands.executeCommand('welcome.markStepIncomplete', stepId);
-      } catch { /* 무시 */ }
+      // 내부 커맨드다. 사라져도(또는 끝나지 않아도) 나머지 동작을 막지 않는다.
+      // 진실은 Setup Status 뷰다. await하면 이 호출이 collection-refresh 임계 구역 안에 있어서
+      // 응답 없는 커맨드가 세션 내내 모든 사이드바 refresh를 멈출 수 있으므로 fire-and-forget한다.
+      void vscode.commands.executeCommand('welcome.markStepIncomplete', stepId).then(undefined, () => { /* 무시 */ });
     }
     lastSetupKeys = next;
   }
@@ -277,16 +277,16 @@ export async function activate(ctx: vscode.ExtensionContext) {
       install: await installerFor(client).detect(),
       snapshot: byHealth.get(client),
     })));
-    if (gen === collectionGeneration) {
+    await withGenerationGuard(gen, () => collectionGeneration, async () => {
       lastCollectionInputs = inputs;
       hookStatusProvider.setClients(inputs);
-    }
+      await refreshSetupKeys(inputs);
+      refreshSetupRows();
+    });
     if (!runtimeChecked) {
       runtimeChecked = true;               // 세션당 1회 — 매 refresh마다 CLI를 돌리지 않는다
       if (await refreshStaleRuntimes(inputs)) void computeCollection();
     }
-    await refreshSetupKeys(inputs);
-    refreshSetupRows();
     return inputs;
   }
 

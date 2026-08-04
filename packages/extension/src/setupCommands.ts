@@ -4,7 +4,20 @@ import { scanNow } from './autoScan.js';
 
 /** 온보딩 워크스루의 "Scan servers" 버튼이 가리키는 커맨드. */
 export function registerScanNow(store: () => LensStore, refresh: () => void): vscode.Disposable {
-  return vscode.commands.registerCommand('mcp-lens.scanNow', () => scanNow(store(), refresh));
+  return vscode.commands.registerCommand('mcp-lens.scanNow', async () => {
+    try {
+      await scanNow(store(), refresh);
+    } catch (err) {
+      // store.save()는 이 창이 writer 리스를 쥐고 있지 않으면 StaleWriterError를 던진다.
+      // 워크스루의 주 버튼이라 원본 익스텐션 호스트 에러를 그대로 노출하지 않고 안내로 바꾼다.
+      if (err instanceof Error && err.name === 'StaleWriterError') {
+        void vscode.window.showInformationMessage(
+          'MCP Lens: another VS Code window is currently writing to the Lens database. Try again in a moment.');
+        return;
+      }
+      throw err;
+    }
+  });
 }
 
 /** 온보딩 워크스루의 "Open Global Actions setting" 버튼이 가리키는 커맨드. */

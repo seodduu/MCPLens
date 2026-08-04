@@ -49,6 +49,7 @@ vi.mock('vscode', () => ({
   },
   window: {
     showInformationMessage,
+    showErrorMessage: vi.fn(),
     setStatusBarMessage: vi.fn(),
   },
   ConfigurationTarget: { Global: 1 },
@@ -152,6 +153,65 @@ describe('runScan의 서버별 스캔 상태 기록', () => {
 
     expect(recordServerScanStatus).toHaveBeenCalledWith('srv', 'failed', expect.any(String), expect.any(String));
     const errorCode = recordServerScanStatus.mock.calls[0][3] as string;
+    expect(errorCode.length).toBeLessThanOrEqual(120);
+  });
+});
+
+describe('maybeAuthPrompt의 로그인 후 재스캔 상태 기록', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const spec = { name: 'srv', command: 'cmd', args: [] };
+  const store = () => ({
+    upsertClientServers,
+    allDefinitions: () => [],
+    serversWithDefinitionBodies: () => new Set(),
+    upsertScanResult,
+    upsertDefinitions,
+    recordServerScanStatus,
+    save,
+  } as any);
+
+  it('로그인에 성공해 재스캔이 끝나면 서버 상태를 ok로 기록한다', async () => {
+    showInformationMessage.mockResolvedValueOnce('Sign in');
+    const { authenticateServer, scanServer } = await import('@mcp-lens/core');
+    (authenticateServer as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
+    (scanServer as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(result);
+
+    const { maybeAuthPrompt } = await import('../src/autoScan.js');
+    await maybeAuthPrompt(store(), [spec], vi.fn());
+
+    expect(recordServerScanStatus).toHaveBeenCalledWith('srv', 'ok', expect.any(String));
+  });
+
+  it('재스캔이 auth-required로 다시 실패하면 auth-required로 기록되고 errorCode가 없다', async () => {
+    showInformationMessage.mockResolvedValueOnce('Sign in');
+    const { authenticateServer, scanServer } = await import('@mcp-lens/core');
+    (authenticateServer as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
+    (scanServer as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('token-expired'));
+
+    const { maybeAuthPrompt } = await import('../src/autoScan.js');
+    await maybeAuthPrompt(store(), [spec], vi.fn());
+
+    expect(recordServerScanStatus).toHaveBeenCalledWith(
+      'srv', 'auth-required', expect.any(String), undefined);
+  });
+
+  it('재스캔이 그 외 이유로 실패하면 failed로 기록되고 errorCode가 120자 이하다', async () => {
+    showInformationMessage.mockResolvedValueOnce('Sign in');
+    const { authenticateServer, scanServer } = await import('@mcp-lens/core');
+    (authenticateServer as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
+    const longMessage = 'boom'.repeat(50); // 200자
+    (scanServer as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error(longMessage));
+
+    const { maybeAuthPrompt } = await import('../src/autoScan.js');
+    await maybeAuthPrompt(store(), [spec], vi.fn());
+
+    expect(recordServerScanStatus).toHaveBeenCalledWith(
+      'srv', 'failed', expect.any(String), expect.any(String));
+    const call = recordServerScanStatus.mock.calls.find((c) => c[1] === 'failed');
+    const errorCode = call?.[3] as string;
     expect(errorCode.length).toBeLessThanOrEqual(120);
   });
 });

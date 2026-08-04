@@ -5,14 +5,19 @@ function formatK(tokens: number): string {
     : `${tokens}`;
 }
 
+/** "1 tool"/"3 tools" — wasteful 툴 개수의 단복수 표기. */
+function toolWord(wasteToolCount: number): string {
+  return wasteToolCount === 1 ? 'tool' : 'tools';
+}
+
 export function formatStatus(wasteToolCount: number, wasteTokens: number): string {
   if (wasteToolCount === 0) return 'Lens: no waste ✓';
-  return `Lens: ${wasteToolCount} wasteful tools · ${formatK(wasteTokens)}`;
+  return `Lens: ${wasteToolCount} wasteful ${toolWord(wasteToolCount)} · ${formatK(wasteTokens)}`;
 }
 
 export function wasteTooltip(wasteToolCount: number, wasteTokens: number): string {
   if (wasteToolCount === 0) return 'No wasteful tools found. Click for the detailed report.';
-  return `${wasteToolCount} wasteful tools · ${formatK(wasteTokens)} tokens defined per session\n`
+  return `${wasteToolCount} wasteful ${toolWord(wasteToolCount)} · ${formatK(wasteTokens)} tokens defined per session\n`
     + 'remove/filter-server verdicts, client attribution applied\n'
     + 'Click for the detailed report.';
 }

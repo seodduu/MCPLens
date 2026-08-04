@@ -15,7 +15,11 @@ describe('formatStatus', () => {
   });
 
   it('formats exactly 1000 tokens as 1.0k', () => {
-    expect(formatStatus(1, 1000)).toBe('Lens: 1 wasteful tools · 1.0k');
+    expect(formatStatus(1, 1000)).toBe('Lens: 1 wasteful tool · 1.0k');
+  });
+
+  it('singularizes "tool" when the waste count is exactly 1', () => {
+    expect(formatStatus(1, 500)).toBe('Lens: 1 wasteful tool · 500');
   });
 
   it('shows raw token values below 1000', () => {
@@ -35,6 +39,13 @@ describe('wasteTooltip', () => {
   it('describes the count and per-session definition cost', () => {
     expect(wasteTooltip(10, 15267)).toBe(
       '10 wasteful tools · 15.2k tokens defined per session\n'
+      + 'remove/filter-server verdicts, client attribution applied\n'
+      + 'Click for the detailed report.');
+  });
+
+  it('singularizes "tool" when the waste count is exactly 1', () => {
+    expect(wasteTooltip(1, 500)).toBe(
+      '1 wasteful tool · 500 tokens defined per session\n'
       + 'remove/filter-server verdicts, client attribution applied\n'
       + 'Click for the detailed report.');
   });

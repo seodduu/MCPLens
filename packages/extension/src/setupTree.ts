@@ -58,7 +58,10 @@ function authRow(input: BuildSetupRowsInput, serverName: string): SetupRow {
 
 function providerRow(input: BuildSetupRowsInput): SetupRow {
   const description = input.consent ? `${input.consent.provider} · consented` : 'consent required';
-  return { group: 'Dependency analysis', label: 'Provider', description, icon: 'account' };
+  return {
+    group: 'Dependency analysis', label: 'Provider', description, icon: 'account',
+    command: 'mcplens.analyzeDependencies',
+  };
 }
 
 function analysisRow(input: BuildSetupRowsInput, serverName: string): SetupRow {

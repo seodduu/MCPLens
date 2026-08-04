@@ -96,6 +96,14 @@ describe('buildSetupRows', () => {
     expect(rows.find((r) => r.label === 'Provider')?.description).toBe('claude · consented');
   });
 
+  it('Provider 행은 동의 여부와 무관하게 항상 analyzeDependencies 커맨드를 붙인다', () => {
+    const withoutConsent = buildSetupRows(base).find((r) => r.label === 'Provider');
+    expect(withoutConsent?.command).toBe('mcplens.analyzeDependencies');
+    const withConsent = buildSetupRows({ ...base, consent: { provider: 'claude', model: 'sonnet' } })
+      .find((r) => r.label === 'Provider');
+    expect(withConsent?.command).toBe('mcplens.analyzeDependencies');
+  });
+
   it('정의가 있는 서버만 분석 행이 된다', () => {
     const rows = buildSetupRows({
       ...base, definitionServers: new Set(['notion']), analyzedServers: new Set(['notion']) });
