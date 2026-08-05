@@ -46,10 +46,15 @@ function isWaste(r: MatrixRow): boolean {
   return a === 'remove' || a === 'filter-server';
 }
 
-/** 낭비 툴 수 꼬리표 — 0이면 빈 문자열(붙이지 않음) */
+/**
+ * 낭비 툴 수 꼬리표. 0이면 빈 문자열(붙이지 않음).
+ *
+ * 명사를 생략하면 안 된다. 이 꼬리표는 "127.9k tokens" 바로 뒤에 붙으므로
+ * "20 waste"는 낭비 토큰 20으로 읽힌다. 상태바와 같은 "wasteful tools"로 쓴다.
+ */
 function wasteSuffix(rows: MatrixRow[]): string {
   const n = rows.filter(isWaste).length;
-  return n > 0 ? ` · ${n} waste` : '';
+  return n > 0 ? ` · ${n} wasteful ${n === 1 ? 'tool' : 'tools'}` : '';
 }
 
 /**

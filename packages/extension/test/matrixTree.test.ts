@@ -484,13 +484,13 @@ describe('낭비 개수 표시', () => {
   it('서버 노드 description에 낭비 툴 개수가 붙는다', () => {
     const [client] = buildTree({
       definitions: [def('a', 800), def('b', 800)], calls: [], loads: [], sessions: upfront(12) });
-    expect(client.children[0].description).toContain('2 waste');
+    expect(client.children[0].description).toContain('2 wasteful tools');
   });
 
   it('클라이언트 노드 description에 낭비 툴 합이 붙는다', () => {
     const [client] = buildTree({
       definitions: [def('a', 800), def('b', 800)], calls: [], loads: [], sessions: upfront(12) });
-    expect(client.description).toContain('2 waste');
+    expect(client.description).toContain('2 wasteful tools');
   });
 
   it('낭비 0인 서버·클라이언트에는 낭비 문구가 없다', () => {
