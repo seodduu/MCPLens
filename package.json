@@ -6,7 +6,9 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "sync:runtime": "npm run build --workspace=@mcp-lens/core && node packages/hook-runtime/scripts/sync-runtime.mjs",
+    "verify:hooks": "npm run build --workspace=@mcp-lens/core && node scripts/verify-hook-packages.mjs"
   },
   "devDependencies": {
     "typescript": "^5.5.0",

@@ -19,8 +19,15 @@ const unsupportedServers = (config: vscode.WorkspaceConfiguration): string[] =>
  */
 const sessionAuthSnooze = new Set<string>();
 
+/**
+ * 스캔이 새 정의를 적재한 뒤 이어서 돌 작업. 의존성 분석을 잇는 자리다.
+ * 스캔이 한 서버도 성공하지 못하면 부르지 않는다.
+ */
+export type AfterScan = () => void | Promise<void>;
+
 async function runScan(store: LensStore, targets: McpServerSpec[],
-  onDone: () => void, identities: readonly ServerIdentity[] = []): Promise<void> {
+  onDone: () => void, identities: readonly ServerIdentity[] = [],
+  afterScan?: AfterScan): Promise<void> {
   let tools = 0, tokens = 0, failed: string[] = [], authFailed: McpServerSpec[] = [];
   for (const spec of targets) {
     const observedAt = new Date().toISOString();
@@ -51,13 +58,15 @@ async function runScan(store: LensStore, targets: McpServerSpec[],
   vscode.window.setStatusBarMessage(
     `$(check) Lens: scanned ${targets.length - failed.length} servers, ${tools} tools, ${tokens}tok${failNote}`, 8000);
   if (authFailed.length) await maybeAuthPrompt(store, authFailed, onDone);
+  // 한 서버도 못 쟀으면 분석할 새 정의가 없다.
+  if (afterScan && failed.length < targets.length) await afterScan();
 }
 
 /**
  * 사용자가 명시적으로 요청한 스캔. autoScan 설정이 'never'여도 실행한다 —
  * 설정은 '자동으로 하지 말라'는 뜻이지 '눌러도 하지 말라'가 아니다.
  */
-export async function scanNow(store: LensStore, onDone: () => void): Promise<void> {
+export async function scanNow(store: LensStore, onDone: () => void, afterScan?: AfterScan): Promise<void> {
   const { specs, attribution, replaceable, identities } = collectAllSpecs();
   store.upsertClientServers(attribution, replaceable);
   const config = vscode.workspace.getConfiguration('mcpLens');
@@ -67,7 +76,7 @@ export async function scanNow(store: LensStore, onDone: () => void): Promise<voi
     void vscode.window.showInformationMessage('MCP Lens: no MCP servers to scan.');
     return;
   }
-  await runScan(store, targets, onDone, identities);
+  await runScan(store, targets, onDone, identities, afterScan);
 }
 
 /** 스캔 후 auth-required/token-expired 실패 서버에 대해 로그인 동의창 1개를 띄운다. */
@@ -135,7 +144,7 @@ export async function maybeAuthPrompt(
   } // 닫기(undefined) → 아무것도 저장 안 함 → 다음 스캔 때 다시 묻는다
 }
 
-export async function maybeAutoScan(store: LensStore, onDone: () => void): Promise<void> {
+export async function maybeAutoScan(store: LensStore, onDone: () => void, afterScan?: AfterScan): Promise<void> {
   const { specs, attribution, replaceable, identities } = collectAllSpecs();
   // 귀속은 설정 파일만 읽으면 되므로 서버 스캔 성공 여부와 무관하게 저장한다.
   // 자동 스캔을 건너뛰는 경우(action.kind === 'skip')에도 매핑은 최신이어야 한다.
@@ -143,13 +152,14 @@ export async function maybeAutoScan(store: LensStore, onDone: () => void): Promi
   store.save(); // run()은 자동 저장하지 않는다 — 여기서 저장 안 하면 skip 경로(정상 정착 상태의 기본값)에서
                 // 매핑이 디스크에 반영되지 않고 다음 활성화 때 다시 빈 매핑으로 보인다.
   const config = vscode.workspace.getConfiguration('mcpLens');
-  const setting = config.get<AutoScanSetting>('autoScan', 'prompt');
+  const setting = config.get<AutoScanSetting>('autoScan', 'never');
   const scannedServers = store.serversWithDefinitionBodies();
   const action = decideScanAction({
-    setting, specs, scannedServers, unsupported: new Set(unsupportedServers(config)) });
+    setting, specs, scannedServers, unsupported: new Set(unsupportedServers(config)),
+    neverScanned: store.allDefinitions().length === 0 });
 
   if (action.kind === 'skip') return;
-  if (action.kind === 'scan') return runScan(store, action.targets, onDone, identities);
+  if (action.kind === 'scan') return runScan(store, action.targets, onDone, identities, afterScan);
 
   // kind === 'prompt' — 합의된 동의창
   const names = action.targets.map((t) => t.name).join(', ');
@@ -159,19 +169,19 @@ export async function maybeAutoScan(store: LensStore, onDone: () => void): Promi
     'Scan', 'Later', "Don't ask again");
   if (pick === 'Scan') {
     await config.update('autoScan', 'always', vscode.ConfigurationTarget.Global);
-    await runScan(store, action.targets, onDone, identities);
+    await runScan(store, action.targets, onDone, identities, afterScan);
   } else if (pick === "Don't ask again") {
     await config.update('autoScan', 'never', vscode.ConfigurationTarget.Global);
   } // '나중에'/닫기 → 아무것도 저장 안 함 → 다음 시작 때 재질문
 }
 
 /** 전 소스(claude-user/project, codex, gemini) 설정 파일 변경 감시 → 디바운스 후 재판정. dispose 반환. */
-export function watchConfigSources(store: LensStore, onDone: () => void): vscode.Disposable {
+export function watchConfigSources(store: LensStore, onDone: () => void, afterScan?: AfterScan): vscode.Disposable {
   const paths = configSources().map((s) => s.filePath);
   let timer: ReturnType<typeof setTimeout> | undefined;
   const listener = () => {
     clearTimeout(timer);
-    timer = setTimeout(() => void maybeAutoScan(store, onDone), 2000); // 저장 연타 흡수
+    timer = setTimeout(() => void maybeAutoScan(store, onDone, afterScan), 2000); // 저장 연타 흡수
   };
   for (const p of paths) watchFile(p, { interval: 5000 }, listener);
   return {

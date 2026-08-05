@@ -79,7 +79,7 @@ function renderActGroup(g: ReportGroup, c: ClientReport, opts: ReportOptions): s
   const lines: string[] = [];
   const unmeasuredNote = g.hasUnmeasured ? ' · 일부 미측정' : '';
   if (g.headline) {
-    lines.push(`**${g.serverName} — ${g.headline}** → ${actEffect(g)}${unmeasuredNote}`);
+    lines.push(`**${g.serverName} · ${g.headline}** → ${actEffect(g)}${unmeasuredNote}`);
     if (g.caveat) lines.push(g.caveat);
     if (isHomogeneous(g.tools)) {
       lines.push(homogeneousLine(g.tools));
@@ -87,7 +87,7 @@ function renderActGroup(g: ReportGroup, c: ClientReport, opts: ReportOptions): s
       lines.push(...toolDetailTable(g.tools, c, opts));
     }
   } else {
-    lines.push(`**${g.serverName} — 미사용 툴 ${g.tools.length}개** → 세션당 ${tok(g.perSessionTokens)}${unmeasuredNote}`);
+    lines.push(`**${g.serverName} · 미사용 툴 ${g.tools.length}개** → 세션당 ${tok(g.perSessionTokens)}${unmeasuredNote}`);
     if (g.caveat) lines.push(g.caveat);
     lines.push(...toolDetailTable(g.tools, c, opts));
   }
@@ -110,7 +110,7 @@ function renderCandidateGroup(g: ReportGroup, c: ClientReport, opts: ReportOptio
     const headline = g.headline ?? `${g.tools.length}툴 미사용`;
     const unmeasuredNote = g.hasUnmeasured ? ' · 일부 미측정' : '';
     lines.push(
-      `**${g.serverName} — ${headline}**${unmeasuredNote} · ${c.sessionCount}세션 관찰 · 확정 시 세션당 ${tok(g.perSessionTokens)}`,
+      `**${g.serverName} · ${headline}**${unmeasuredNote} · ${c.sessionCount}세션 관찰 · 확정 시 세션당 ${tok(g.perSessionTokens)}`,
     );
     const { shown, restCount, restTokens } = truncateTools(g.tools, 'candidate', opts);
     const parts = shown.map((t) => `${t.toolName} ${perSessionLabel(t.perSessionTokens)}`);
@@ -147,18 +147,18 @@ function renderHealthyBucket(groups: readonly ReportGroup[], opts: ReportOptions
 function bucketTitle(bucket: ReportBucket, groups: readonly ReportGroup[]): string {
   switch (bucket) {
     case 'act':
-      return `### ✅ 지금 조치 — 세션당 ${tok(sumPerSessionTokens(groups))}`;
+      return `### ✅ 지금 조치: 세션당 ${tok(sumPerSessionTokens(groups))}`;
     case 'candidate':
-      return '### ⏳ 관찰 더 필요 — 아직 조치 권고 아님';
+      return '### ⏳ 관찰 더 필요: 아직 조치 권고 아님';
     case 'inspect':
-      return '### 🔧 점검 필요 — 실패가 잦은 툴';
+      return '### 🔧 점검 필요: 실패가 잦은 툴';
     case 'healthy': {
       const toolCount = groups.reduce((s, g) => s + g.tools.length, 0);
       const respTokens = groups.reduce(
         (s, g) => s + g.tools.reduce((s2, t) => s2 + t.responseTokens, 0),
         0,
       );
-      return `### 👍 정상 사용 중 — ${toolCount}툴 · 응답 ${tok(respTokens)}`;
+      return `### 👍 정상 사용 중: ${toolCount}툴 · 응답 ${tok(respTokens)}`;
     }
   }
 }
@@ -188,8 +188,8 @@ function renderCollapsedClient(c: ClientReport): string[] {
   // ReportModel은 그 축을 담지 않는다. 특정 임계값을 주장하면 148세션에 대고
   // "10세션 이상 쓰면"이라 말하는 자기모순이 난다 — 조건을 특정하지 않는다.
   return [
-    '**확정 권고 없음 — 관찰 근거 부족.** 계속 쓰면 후보가 확정됩니다.',
-    `미사용 정의 ${toolCount}개 · 세션당 ${tok(tokens)} (${c.sessionCount}세션 관찰, 아직 확정 조건 미달) — 목록은 \`--full\``,
+    '**확정 권고 없음. 관찰 근거가 부족합니다.** 계속 쓰면 후보가 확정됩니다.',
+    `미사용 정의 ${toolCount}개 · 세션당 ${tok(tokens)} (${c.sessionCount}세션 관찰, 아직 확정 조건 미달). 목록은 \`--full\``,
   ];
 }
 
@@ -214,13 +214,13 @@ function renderClient(c: ClientReport, opts: ReportOptions): string[] {
 
   if (c.hiddenToolCount > 0) {
     lines.push(
-      `_지연 로딩 — 로드·호출 0회로 실비용이 없는 툴 ${c.hiddenToolCount}개는 계산·표시에서 제외_`,
+      `_지연 로딩: 로드·호출 0회로 실비용이 없는 툴 ${c.hiddenToolCount}개는 계산·표시에서 제외_`,
     );
   }
 
   if (c.unmeasuredToolCount > 0) {
     lines.push(
-      `_정의 토큰 미확보(스캐너 미커버) 툴 ${c.unmeasuredToolCount}개는 판정 보류 — 위 집계에서 제외_`,
+      `_정의 토큰 미확보(스캐너 미커버) 툴 ${c.unmeasuredToolCount}개는 판정 보류. 위 집계에서 제외_`,
     );
   }
 
@@ -234,7 +234,7 @@ export function renderReport(model: ReportModel, opts: ReportOptions): string {
   const t = model.totals;
 
   const lines: string[] = [];
-  lines.push(`# MCP Lens — 최근 ${opts.days}일 (${date} 기준)`, '');
+  lines.push(`# MCP Lens · 최근 ${opts.days}일 (${date} 기준)`, '');
   // 리드 문장은 실제 상태를 반영한다 — 조치 대상이 없는데 "0tok 줄일 수 있습니다"로
   // 시작하면 리포트의 첫 줄이 아무 정보도 주지 못한다.
   if (t.actPerSessionTokens > 0) {

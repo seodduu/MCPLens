@@ -119,6 +119,46 @@ describe('dashboard HTTP contract', () => {
   });
 });
 
+describe('dashboard 실패 처리', () => {
+  it('API 핸들러가 throw 해도 프로세스가 죽지 않고 500 JSON 을 준다', async () => {
+    // store 메서드가 던지는 상황을 흉내낸다 (DB 손상, 파일 권한 등)
+    const brokenStore = {
+      allDefinitions() { throw new Error('store 고장'); },
+      callsSince() { return []; },
+      loadsSince() { return []; },
+      sessionsSince() { return []; },
+      lastCallByTool() { return new Map<string, string>(); },
+      close() {},
+    } as unknown as LensStore;
+
+    const srv = await startDashboard(brokenStore, 0);
+    const addr = srv.address() as AddressInfo;
+    try {
+      const res = await fetch(`http://127.0.0.1:${addr.port}/api/matrix`);
+      expect(res.status).toBe(500);
+      expect(res.headers.get('content-type')).toContain('application/json');
+      const body = await res.json();
+      expect(body.error).toBe('내부 오류');
+    } finally {
+      await new Promise<void>((resolve) => srv.close(() => resolve()));
+    }
+  });
+
+  it('포트가 이미 쓰이면 조치 가능한 한국어 메시지로 reject 한다', async () => {
+    const store2 = await LensStore.open(':memory:');
+    const first = await startDashboard(store2, 0);
+    const { port } = first.address() as AddressInfo;
+    try {
+      await expect(startDashboard(store2, port)).rejects.toThrow(
+        `포트 ${port}이 이미 사용 중입니다`,
+      );
+    } finally {
+      await new Promise<void>((resolve) => first.close(() => resolve()));
+      store2.close();
+    }
+  });
+});
+
 describe('dashboard with :memory: store (no watchFile → no reload path)', () => {
   it('API 는 정상 동작하고 파일 재로딩을 시도하지 않는다', async () => {
     const memStore = await LensStore.open(':memory:');

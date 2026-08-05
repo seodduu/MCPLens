@@ -39,4 +39,20 @@ describe('WriterLeaseManager', () => {
     expect(m.isHolder()).toBe(false);
     expect(onLost).toHaveBeenCalledOnce();
   });
+
+  it('renew가 throw해도 holder 해제 + onLost 호출 (스플릿 브레인 방지)', () => {
+    let tick: () => void = () => {};
+    const deps = fakeDeps({
+      renew: vi.fn(() => { const e: any = new Error('EACCES'); e.code = 'EACCES'; throw e; }),
+      setInterval: vi.fn((fn: () => void) => { tick = fn; return 1 as any; }),
+    });
+    const m = new WriterLeaseManager('/lock', { deps } as any);
+    m.tryAcquire();
+    const onLost = vi.fn();
+    m.startHeartbeat(onLost);
+    expect(() => tick()).not.toThrow(); // 인터벌 콜백 밖으로 예외가 새면 안 된다
+    expect(m.isHolder()).toBe(false);
+    expect(onLost).toHaveBeenCalledOnce();
+    expect(deps.clearInterval).toHaveBeenCalled();
+  });
 });

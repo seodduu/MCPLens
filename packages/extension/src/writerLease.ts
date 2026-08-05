@@ -38,7 +38,15 @@ export class WriterLeaseManager {
     if (this.timer) return;
     this.timer = this.deps.setInterval(() => {
       if (!this.lease) return;
-      const renewed = this.deps.renew(this.lockPath, this.lease.token, this.ttlMs);
+      // renew가 EACCES 등으로 throw해도 갱신 실패로 본다. 예외를 인터벌 콜백 밖으로
+      // 흘리면 this.lease가 남아 isHolder()가 계속 true가 되고, TTL이 지나 다른 창이
+      // 리스를 인수하면 writer가 둘이 되어 쓰기가 유실된다.
+      let renewed: Lease | null = null;
+      try {
+        renewed = this.deps.renew(this.lockPath, this.lease.token, this.ttlMs);
+      } catch {
+        renewed = null;
+      }
       if (renewed) { this.lease = renewed; return; }
       this.lease = null;           // 인수당함 → 즉시 비홀더
       this.stopTimer();

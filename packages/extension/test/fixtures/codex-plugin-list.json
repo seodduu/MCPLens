@@ -9,11 +9,11 @@
       "enabled": true,
       "source": {
         "source": "local",
-        "path": "/Users/doo._.hyun/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime/plugins/documents"
+        "path": "/Users/testuser/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime/plugins/documents"
       },
       "marketplaceSource": {
         "sourceType": "local",
-        "source": "/Users/doo._.hyun/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime"
+        "source": "/Users/testuser/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime"
       },
       "installPolicy": "AVAILABLE",
       "authPolicy": "ON_USE"
@@ -27,11 +27,11 @@
       "enabled": true,
       "source": {
         "source": "local",
-        "path": "/Users/doo._.hyun/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime/plugins/pdf"
+        "path": "/Users/testuser/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime/plugins/pdf"
       },
       "marketplaceSource": {
         "sourceType": "local",
-        "source": "/Users/doo._.hyun/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime"
+        "source": "/Users/testuser/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime"
       },
       "installPolicy": "AVAILABLE",
       "authPolicy": "ON_USE"
@@ -45,11 +45,11 @@
       "enabled": true,
       "source": {
         "source": "local",
-        "path": "/private/tmp/claude-501/-Users-doo---hyun-Study-Project-MCPLens/e2544593-fb5b-488d-9b3d-3d7c50025692/scratchpad/mp-probe/plugins/mcp-lens"
+        "path": "/private/tmp/claude-501/-Users-testuser-Study-Project-MCPLens/e2544593-fb5b-488d-9b3d-3d7c50025692/scratchpad/mp-probe/plugins/mcp-lens"
       },
       "marketplaceSource": {
         "sourceType": "local",
-        "source": "/private/tmp/claude-501/-Users-doo---hyun-Study-Project-MCPLens/e2544593-fb5b-488d-9b3d-3d7c50025692/scratchpad/mp-probe"
+        "source": "/private/tmp/claude-501/-Users-testuser-Study-Project-MCPLens/e2544593-fb5b-488d-9b3d-3d7c50025692/scratchpad/mp-probe"
       },
       "installPolicy": "AVAILABLE",
       "authPolicy": "ON_USE"

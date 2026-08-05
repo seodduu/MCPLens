@@ -1,7 +1,7 @@
 // Gemini CLI용 더미 MCP stdio 서버 — 툴 3개.
 // 각 툴의 정의 크기를 최소(≈1토큰)로: 단일 문자 이름 + 설명 없음 + 파라미터 없음.
 // 등록: ~/.gemini/settings.json 의 mcpServers 에 아래 항목 추가
-//   "tiny": { "command": "node", "args": ["/Users/doo._.hyun/Study/Project/MCPLens/demo/gemini-tiny-server.mjs"] }
+//   "tiny": { "command": "node", "args": ["/path/to/MCPLens-V2/demo/gemini-tiny-server.mjs"] }
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 

@@ -53,4 +53,27 @@ describe('decideScanAction', () => {
       setting: 'always', specs: [spec('a')], scannedServers: new Set(['a']) }))
       .toEqual({ kind: 'skip' });
   });
+
+  // 첫 실행은 온보딩 워크스루의 몫이다. 확장이 먼저 스캔하면 분석에 쓸 LLM 제공자
+  // 선택까지 대신 해버린다. 자동 스캔은 사용자가 한 번 스캔한 뒤부터 적용한다.
+  it('첫 실행(정의 0건)에는 always여도 스캔하지 않는다', () => {
+    expect(decideScanAction({
+      setting: 'always', specs: [spec('a')], scannedServers: new Set(), neverScanned: true }))
+      .toEqual({ kind: 'skip' });
+  });
+
+  it('한 번이라도 스캔한 뒤에는 새 서버를 자동으로 스캔한다', () => {
+    expect(decideScanAction({
+      setting: 'always', specs: [spec('a'), spec('b')],
+      scannedServers: new Set(['a']), neverScanned: false }))
+      .toEqual({ kind: 'scan', targets: [spec('b')] });
+  });
+
+  // 레거시 DB(정의는 있고 body만 없음)는 첫 실행이 아니다. body로 첫 실행을 판정하면
+  // 이 사용자의 재스캔까지 막힌다.
+  it('정의는 있고 body만 없는 DB는 첫 실행으로 보지 않는다', () => {
+    expect(decideScanAction({
+      setting: 'always', specs: [spec('a')], scannedServers: new Set(), neverScanned: false }))
+      .toEqual({ kind: 'scan', targets: [spec('a')] });
+  });
 });

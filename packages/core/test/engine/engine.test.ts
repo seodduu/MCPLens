@@ -390,6 +390,54 @@ describe('joinReason: reasonParts → reason 바이트 동일성 (Task 34 회귀
     expect(t0.recommendation.action).toBe('keep');
     expect(t0.recommendation.reasonParts.caveat).toBeNull();
   });
+
+  it('어떤 조각에도 대시(—)를 쓰지 않는다 (전역 산문 규칙)', () => {
+    for (const r of rows) {
+      const p = r.recommendation.reasonParts;
+      for (const part of [p.basis, p.serverBasis, p.effect, p.caveat, r.recommendation.reason]) {
+        expect(part ?? '').not.toContain('—');
+      }
+    }
+  });
+
+  it('조각은 마침표로 이어지고 마침표가 겹치지 않는다', () => {
+    const t1 = rows.find((r) => r.serverName === 'notion' && r.toolName === 't1')!;
+    // serverBasis가 이미 마침표로 끝나도 ".." 가 생기지 않는다.
+    expect(t1.recommendation.reason).not.toContain('..');
+    expect(t1.recommendation.reason).toContain('툴 필터링 권장. ');
+  });
+});
+
+describe('권고 문구의 숫자 표기', () => {
+  const bigDef = (tool: string, tokens: number) => ({
+    serverName: 'notion', toolName: tool, definitionTokens: tokens,
+    scannedAt: '2026-07-19T00:00:00Z', firstScannedAt: '2026-07-19T00:00:00Z' });
+
+  it('정의 토큰과 절약 토큰에 천 단위 구분자가 들어간다', () => {
+    const input: EngineInput = {
+      definitions: [bigDef('huge', 12345)], calls: [], loads: [],
+      sessions: [session('UPFRONT')],
+    };
+    const [row] = buildMatrix(input);
+    expect(row.recommendation.reasonParts.basis).toContain('정의 12,345토큰');
+    expect(row.recommendation.reasonParts.effect).toContain('약 12,345토큰 절약');
+    expect(row.recommendation.reason).not.toMatch(/\d{5}/);
+  });
+
+  it('실패 응답 낭비 토큰에도 구분자가 들어간다', () => {
+    const failing = (n: number) => Array.from({ length: n }, () => ({
+      sessionId: 's1', serverName: 'notion', toolName: 'flaky',
+      calledAt: '2026-07-10T00:00:00Z', durationMs: 10, isError: true,
+      responseTokens: 4000, responseText: null }));
+    const input: EngineInput = {
+      definitions: [bigDef('flaky', 100)], calls: failing(4), loads: [],
+      sessions: [session('UPFRONT')],
+    };
+    const [row] = buildMatrix(input);
+    expect(row.recommendation.action).toBe('inspect');
+    expect(row.recommendation.reasonParts.basis).toContain('16,000토큰 낭비');
+    expect(row.recommendation.reason).toContain('낭비. 점검·대체 권장');
+  });
 });
 
 describe('확신 등급 (evidence 축)', () => {

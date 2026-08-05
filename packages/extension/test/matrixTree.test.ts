@@ -21,7 +21,9 @@ describe('buildTree', () => {
 
   it('클라이언트 ▸ 서버 ▸ 툴 3계층 구조를 만든다', () => {
     const roots = buildTree(input);
-    expect(roots.map((r) => r.label)).toEqual(['claude-code', 'codex']);
+    // 픽스처에 정의 스냅샷이 없어 마지막 행은 스캔 안내 힌트다.
+    expect(roots.filter((r) => r.kind !== 'hint').map((r) => r.label))
+      .toEqual(['claude-code', 'codex']);
     const claude = roots[0];
     expect(claude.kind).toBe('client');
     expect(claude.children).toHaveLength(1);           // github 서버 1개
@@ -150,6 +152,30 @@ describe('buildTree', () => {
         expect.objectContaining({ command, group: 'inline' }),
       ]));
     }
+  });
+
+  // 실측 회귀: 서버가 설정돼 있으면 "0 calls · 0 tokens" 행이 생겨 트리가 비지 않으므로
+  // package.json의 viewsWelcome은 영영 뜨지 않는다. 첫 설치 화면이 0만 늘어선 채
+  // 다음 할 일을 말해 주지 않던 것을 이 힌트 행이 메운다.
+  it('스캔 전(정의 스냅샷 없음)에는 스캔 안내 힌트를 붙인다', () => {
+    const roots = buildTree(input);
+    const hint = roots.find((r) => r.kind === 'hint');
+    expect(hint).toBeDefined();
+    expect(hint!.label).toContain('Run a scan');
+    expect(roots[roots.length - 1]).toBe(hint);   // 기존 "첫 행은 클라이언트" 계약 보존
+  });
+
+  it('스캔한 뒤에는 힌트를 붙이지 않는다', () => {
+    const scanned: EngineInput = {
+      definitions: [{ serverName: 'notion', toolName: 'notion-update-page',
+        definitionTokens: 3287, scannedAt: '2026-07-19T00:00:00Z',
+        firstScannedAt: '2026-07-19T00:00:00Z' }],
+      calls: [],
+      loads: [{ sessionId: 'c1', serverName: 'notion', toolName: 'notion-update-page',
+        loadedTokens: null }],
+      sessions: [session('c1', 'claude-code')],
+    };
+    expect(buildTree(scanned).some((r) => r.kind === 'hint')).toBe(false);
   });
 
   it('로드만 되고 호출 0인 툴도 정의 토큰을 누적 비용으로 표시한다', () => {
@@ -436,6 +462,36 @@ describe('서버 단위 토글 표시', () => {
   const m = (name: string, enabled: boolean): ManagedServer =>
     ({ name, enabled, origins: ['user'] });
 
+  // 실측 회귀: 훅 설치 전 첫 사용자는 스캔 직후 사용 기록이 0이다. 이때 예전 코드는
+  // "0 calls · 0 tokens"를 하드코딩해 방금 잰 정의 토큰을 통째로 버렸고, 툴도 한 개도
+  // 싣지 않았다. 스캔했는데 화면이 0을 말하면 이 도구를 쓸 이유가 사라진다.
+  it('사용 기록이 없어도 스캔한 정의 토큰과 툴 목록을 싣는다', () => {
+    const scannedOnly: EngineInput = {
+      definitions: [
+        { serverName: 'lenstest', toolName: 'get_weather', definitionTokens: 74,
+          scannedAt: '2026-08-05T00:00:00Z', firstScannedAt: '2026-08-05T00:00:00Z' },
+        { serverName: 'lenstest', toolName: 'get_forecast', definitionTokens: 84,
+          scannedAt: '2026-08-05T00:00:00Z', firstScannedAt: '2026-08-05T00:00:00Z' },
+      ],
+      calls: [], loads: [], sessions: [],
+    };
+    const client = buildTree(scannedOnly, new Set(), [m('lenstest', true)])[0];
+    expect(client.description).toContain('definition 158 tokens');   // 74 + 84
+    const server = client.children[0];
+    expect(server.description).toContain('definition 158 tokens');
+    expect(server.description).not.toContain('0 tokens');
+    // 큰 정의부터 위로 온다
+    expect(server.children.map((t) => t.label)).toEqual(['get_forecast', 'get_weather']);
+    expect(server.children[0].description).toContain('definition 84 tokens');
+  });
+
+  it('정의도 사용 기록도 없으면 0 tokens 그대로 말한다', () => {
+    const nothing: EngineInput = { definitions: [], calls: [], loads: [], sessions: [] };
+    const server = buildTree(nothing, new Set(), [m('lenstest', true)])[0].children[0];
+    expect(server.description).toContain('0 calls · 0 tokens');
+    expect(server.children).toHaveLength(0);
+  });
+
   it('managed 서버의 enabled가 서버 노드에 반영된다', () => {
     const server = buildTree(input, new Set(), [m('github', true)])[0].children[0];
     expect(server.enabled).toBe(true);
@@ -484,13 +540,13 @@ describe('낭비 개수 표시', () => {
   it('서버 노드 description에 낭비 툴 개수가 붙는다', () => {
     const [client] = buildTree({
       definitions: [def('a', 800), def('b', 800)], calls: [], loads: [], sessions: upfront(12) });
-    expect(client.children[0].description).toContain('2 waste');
+    expect(client.children[0].description).toContain('2 wasteful tools');
   });
 
   it('클라이언트 노드 description에 낭비 툴 합이 붙는다', () => {
     const [client] = buildTree({
       definitions: [def('a', 800), def('b', 800)], calls: [], loads: [], sessions: upfront(12) });
-    expect(client.description).toContain('2 waste');
+    expect(client.description).toContain('2 wasteful tools');
   });
 
   it('낭비 0인 서버·클라이언트에는 낭비 문구가 없다', () => {

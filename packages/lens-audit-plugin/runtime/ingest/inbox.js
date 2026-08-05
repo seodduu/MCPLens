@@ -1,8 +1,8 @@
-import { chmodSync, closeSync, existsSync, linkSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, utimesSync, writeFileSync, } from 'node:fs';
+import { chmodSync, closeSync, existsSync, linkSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, utimesSync, writeFileSync, } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { installLease, isBusy, isCode, readLease, reapingPath, takeOverLease, } from './lease.js';
+import { installLease, isBusy, isCode, readLease, reapingPath, sweepReapingDirs, takeOverLease, } from './lease.js';
 const MAX_ENVELOPE_BYTES = 1024 * 1024;
 const STALE_PROCESSING_MS = 5 * 60 * 1000;
 /** Exceeds the two-second hook budget while still guaranteeing eventual takeover. */
@@ -133,6 +133,8 @@ function releaseDeliveryLock(lockPath, token) {
     const reaping = reapingPath(lockPath, token);
     try {
         renameSync(lockPath, reaping);
+        // rename만 하고 지우지 않으면 배달마다 디렉터리가 하나씩 쌓인다.
+        rmSync(reaping, { recursive: true, force: true });
     }
     catch (error) {
         if (!isBusy(error) && !isCode(error, 'ENOENT'))
@@ -143,6 +145,8 @@ export function claimPending(opts = {}) {
     const paths = inboxPaths(opts);
     const now = (opts.now ?? (() => new Date()))();
     recoverStaleProcessing(paths, opts);
+    // 구버전이 남긴 lock 잔해는 드레인 때 한 번에 회수한다. 배달 경로에 부담을 주지 않는다.
+    sweepReapingDirs(paths.locks);
     const claims = [];
     let parseErrors = 0;
     for (const filename of readdirSync(paths.pending).filter((name) => name.endsWith('.json')).sort()) {

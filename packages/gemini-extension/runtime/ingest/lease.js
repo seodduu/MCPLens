@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync, } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 // ── 이동해 온 저수준 (installLease/readLease/takeOverLease/lockInstanceToken/reapingPath/isBusy/isCode) ──
 // inbox.ts에서 verbatim 이동. LockLease 타입만 Lease로 이름을 바꿔 사용.
 export function installLease(lockPath, lease) {
@@ -73,17 +73,45 @@ function lockInstanceToken(lockPath, content) {
 export function reapingPath(lockPath, token) {
     return `${lockPath}.reaping-${createHash('sha256').update(token).digest('hex')}`;
 }
+/**
+ * 락 디렉터리가 있는 곳의 reaping 잔해를 지운다.
+ *
+ * reaping 이름은 락을 그 이름으로 rename한 뒤에만 존재한다. 즉 그 시점에 이미 활성 리스가
+ * 아니다. 지우다 실패해도 무시한다 — 다른 프로세스가 같은 잔해를 동시에 치우는 것뿐이다.
+ * 반환값은 지운 개수.
+ */
+export function sweepReapingDirs(directory) {
+    let removed = 0;
+    let entries;
+    try {
+        entries = readdirSync(directory);
+    }
+    catch {
+        return 0;
+    }
+    for (const entry of entries) {
+        if (!entry.includes('.reaping-'))
+            continue;
+        try {
+            rmSync(join(directory, entry), { recursive: true, force: true });
+            removed += 1;
+        }
+        catch { /* 경쟁자가 먼저 치웠거나 권한 문제 — 잔해는 무해하므로 넘어간다 */ }
+    }
+    return removed;
+}
 export function takeOverLease(lockPath, token) {
     const reaping = reapingPath(lockPath, token);
     try {
         renameSync(lockPath, reaping);
-        return true;
     }
     catch (error) {
         if (isBusy(error) || isCode(error, 'ENOENT'))
             return false;
         throw error;
     }
+    rmSync(reaping, { recursive: true, force: true });
+    return true;
 }
 export function isCode(error, code) {
     return typeof error === 'object' && error !== null && 'code' in error
@@ -94,6 +122,8 @@ export function isBusy(error) {
 }
 /** 한 번 시도: 설치 성공 또는 만료 리스 인수 후 설치. 유효 홀더가 있으면 null. */
 export function acquireLease(lockPath, ttlMs, nowMs = () => Date.now()) {
+    // rename과 rm 사이에서 죽은 이전 실행의 잔해를 여기서 회수한다.
+    sweepReapingDirs(dirname(lockPath));
     const now = nowMs();
     const lease = { token: randomUUID(), expiresAt: now + ttlMs };
     if (installLease(lockPath, lease))

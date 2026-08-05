@@ -1,0 +1,283 @@
+/* MCP Lens 대시보드 스타일.
+   본문이 한글이므로 낱말 중간 줄바꿈을 막고(word-break: keep-all)
+   자간·행간을 한글 가독 기준으로 잡는다. */
+
+:root {
+  --bg: #ffffff;
+  --fg: #1c1f23;
+  --muted: #6b7280;
+  --line: #e3e6ea;
+  --line-strong: #c8ccd2;
+  --group-bg: #f4f6f8;
+  --accent: #3b7ddd;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', system-ui, -apple-system,
+    'Segoe UI', sans-serif;
+  font-size: 14px;
+  line-height: 1.7;
+  letter-spacing: 0;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.app {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 28px 24px 64px;
+}
+
+.app h1 {
+  font-size: 22px;
+  line-height: 1.5;
+  margin: 0 0 24px;
+}
+
+.app h2 {
+  font-size: 16px;
+  line-height: 1.5;
+  margin: 0 0 12px;
+}
+
+.app section {
+  margin-bottom: 36px;
+}
+
+.error {
+  color: #b02a2a;
+  background: #fdecec;
+  border: 1px solid #f2c2c2;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+/* 매트릭스 테이블 */
+
+.matrix-table {
+  width: 100%;
+  border-collapse: collapse;
+  word-break: keep-all;
+  line-height: 1.65;
+}
+
+.matrix-table th,
+.matrix-table td {
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+  word-break: keep-all;
+}
+
+.matrix-table thead th {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap; /* "정의 토/큰" 처럼 낱말이 잘리는 것을 막는다 */
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.matrix-table .cell-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/*
+  툴 이름은 식별자라 낱말 중간(commen/t)에서 잘리면 읽기도 검색·복사도 어렵다.
+  기본 줄바꿈 규칙(word-break: normal)이면 하이픈 뒤에서만 접히므로 마디가 보존된다.
+  하이픈이 없는 아주 긴 이름은 마지막 수단으로만 쪼갠다(overflow-wrap: break-word).
+*/
+.matrix-table .cell-tool {
+  word-break: normal;
+  overflow-wrap: break-word;
+  min-width: 15rem;
+}
+
+/* 서버 그룹 헤더: 서버 공통 권고 문장을 여기 한 번만 싣는다 */
+
+.server-group-row > th {
+  background: var(--group-bg);
+  border-top: 1px solid var(--line-strong);
+  border-bottom: 1px solid var(--line-strong);
+  padding: 10px 12px;
+  font-weight: 600;
+  white-space: normal;
+}
+
+.server-group-name {
+  font-size: 14px;
+  margin-right: 10px;
+}
+
+.server-group-count {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+  margin-right: 10px;
+}
+
+.server-group-note {
+  display: inline-block;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: #7a5a1e;
+  background: #fdf3e2;
+  border: 1px solid #f0dcb8;
+  border-radius: 4px;
+  padding: 2px 8px;
+  word-break: keep-all;
+}
+
+/* 권고 배지와 이유 */
+
+.cell-recommendation {
+  min-width: 280px;
+}
+
+.recommendation-badge {
+  display: inline-block;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  padding: 1px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+  vertical-align: baseline;
+  margin-right: 8px; /* 배지와 본문이 붙지 않게 */
+}
+
+.recommendation-reason {
+  color: var(--fg);
+  word-break: keep-all;
+}
+
+.recommendation-reason.is-folded {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+/* 타임라인 */
+
+.timeline-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.timeline-controls label {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.timeline-controls select {
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--fg);
+  max-width: 460px;
+}
+
+.timeline-count {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.timeline-note {
+  color: #7a5a1e;
+  background: #fdf3e2;
+  border: 1px solid #f0dcb8;
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.timeline-bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.timeline-row {
+  display: grid;
+  grid-template-columns: 260px 1fr 120px;
+  align-items: center;
+  gap: 12px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.timeline-label {
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.timeline-track {
+  display: block;
+  width: 100%;
+  background: #f0f2f5;
+  border-radius: 3px;
+}
+
+.timeline-bar {
+  display: block;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.timeline-duration {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181c;
+    --fg: #e6e8eb;
+    --muted: #9aa2ad;
+    --line: #2a2e35;
+    --line-strong: #3a3f47;
+    --group-bg: #1e2127;
+  }
+
+  .timeline-controls select {
+    background: #1e2127;
+    border-color: var(--line-strong);
+  }
+
+  .timeline-track {
+    background: #262a31;
+  }
+
+  .server-group-note,
+  .timeline-note {
+    color: #e8c98a;
+    background: #2b2416;
+    border-color: #4a3d20;
+  }
+
+  .error {
+    color: #f3b7b7;
+    background: #33191a;
+    border-color: #5a2a2a;
+  }
+}

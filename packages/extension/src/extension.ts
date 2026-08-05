@@ -28,7 +28,6 @@ import { CodexHookInstaller } from './installers/codex.js';
 import { GeminiHookInstaller } from './installers/gemini.js';
 import { findBinary, runBin, nodeFs } from './claudeCli.js';
 import { bundledStamp, installedStamp, needsRuntimeRefresh, recordInstalledStamp } from './runtimeFreshness.js';
-import { approvalPendingClients, pendingHookClients } from './nudge.js';
 import { claimFirstRun, WALKTHROUGH_CATEGORY_ID } from './firstRun.js';
 import { buildAnalysisRows } from './analysisTree.js';
 import { buildAnalysisDetails } from './analysisDetails.js';
@@ -44,10 +43,12 @@ import { buildSetupRows } from './setupTree.js';
 import { SetupStatusProvider } from './setupTreeProvider.js';
 import { applyCollectionResult } from './collectionRefresh.js';
 import { noInstallTargetsMessage, installedSummaryMessage } from './installHooksAllMessage.js';
+import { openStoreWithRecovery } from './storeOpen.js';
 
 let watcher: LogWatcher | undefined;
 let store: LensStore | undefined;
 let lease: WriterLeaseManager | undefined;
+let coordinator: IngestionCoordinatorLike | undefined;
 let hooksPaused = false;
 
 type IngestionCoordinatorLike = {
@@ -78,7 +79,6 @@ export async function activate(ctx: vscode.ExtensionContext) {
   const setupStatusProvider = new SetupStatusProvider();
   ctx.subscriptions.push(vscode.window.registerTreeDataProvider('mcpLens.setupStatus', setupStatusProvider));
 
-  const DISMISS_KEY = 'mcpLens.hookInstall.dismissed';
 
   function bundledDirFor(client: HookClient): string {
     return path.join(__dirname,
@@ -180,8 +180,25 @@ export async function activate(ctx: vscode.ExtensionContext) {
       await computeCollection();
     }));
 
-  store = await LensStore.open(dbPath()); // 전역 제약 2: 공유 경로
-  const coordinator = coordinatorFor(store);
+  // 전역 제약 2: 공유 경로. 손상된 DB 하나 때문에 활성화 전체가 죽지 않도록 복구 경로를 거친다.
+  const opened = await openStoreWithRecovery(dbPath(), {
+    open: (filePath) => LensStore.open(filePath),
+    exists: (filePath) => fs.existsSync(filePath),
+    rename: (from, to) => fs.renameSync(from, to),
+    now: () => new Date(),
+  });
+  if (opened.kind === 'failed') {
+    // 여기서 멈춰도 activate 자체는 성공으로 끝난다. 앞서 등록한 커맨드는 살아 있고,
+    // 데이터가 필요한 기능은 store 가드가 안내 문구를 낸다.
+    item.text = 'Lens: DB error';
+    item.tooltip = opened.message;
+    void vscode.window.showErrorMessage(opened.message);
+    return;
+  }
+  store = opened.store;
+  if (opened.kind === 'recovered') void vscode.window.showWarningMessage(opened.message);
+  else if (opened.kind === 'degraded') void vscode.window.showErrorMessage(opened.message);
+  coordinator = coordinatorFor(store);
   const active = detectClients().filter((c) => c.installed);
   watcher = new LogWatcher(store,
     [new ClaudeAdapter(), new CodexAdapter(), new GeminiAdapter()]
@@ -278,6 +295,13 @@ export async function activate(ctx: vscode.ExtensionContext) {
   }
 
   async function computeCollection(): Promise<ClientRowInput[]> {
+    // installHooks 커맨드는 store 준비보다 먼저 등록된다. 활성화 극초반이나 DB 열기
+    // 실패 뒤에 불려도 죽지 않고 안내만 낸다.
+    if (!store) {
+      void vscode.window.showInformationMessage(
+        'MCP Lens: the database is still starting up. Try again in a moment.');
+      return [];
+    }
     const gen = ++collectionGeneration;
     const detected = detectClients().filter((c) => c.installed).map((c) => c.client);
     const byHealth = store!.collectionHealthByClient();
@@ -481,11 +505,15 @@ export async function activate(ctx: vscode.ExtensionContext) {
     void coordinator?.stopDraining().catch(() => {}); // pending 감시 중지(인플라이트 drain은 자연 종료)
     let lastMtime = 0;
     if (!roPoll) roPoll = setInterval(() => {
+      let acquired = false;
       try {
         const m = fs.statSync(dbPath()).mtimeMs;
         if (m !== lastMtime) { lastMtime = m; store!.reload(); refresh(); }
+        // 락 파일 권한 문제 등으로 acquire가 throw할 수 있다. 4초마다 미처리 예외를
+        // 내지 않도록 같은 try 안에 둔다. 승격 자체는 catch 밖에서 한다.
+        acquired = lease!.tryAcquire();
       } catch { /* 파일 없음/일시 오류 무시 */ }
-      if (lease!.tryAcquire()) enterWriter(); // 홀더가 죽었으면 승격
+      if (acquired) enterWriter(); // 홀더가 죽었으면 승격
     }, 4_000);
   }
 
@@ -499,43 +527,12 @@ export async function activate(ctx: vscode.ExtensionContext) {
       .then(undefined, () => {});
   }
 
-  void (async () => {
-    const dismissed = new Set<HookClient>(
-      (['claude-code', 'codex', 'gemini-cli'] as HookClient[])
-        .filter((c) => ctx.globalState.get<boolean>(`${DISMISS_KEY}.${c}`)));
-
-    const announce = async (): Promise<void> => {
-      const inputs = await computeCollection();
-      const detected = new Set(inputs.map((i) => i.client));
-      const states = new Map(inputs.map((i) => [i.client, i.install] as const));
-      const awaiting = approvalPendingClients(detected, states, dismissed);
-      if (awaiting.length === 0) return;
-      const pick = await vscode.window.showWarningMessage(
-        `MCP Lens: hooks are on for ${awaiting.join(', ')}. Run codex once and approve the prompt to start collection.`,
-        'Open setup view', "Don't show again");
-      if (pick === 'Open setup view') void vscode.commands.executeCommand('mcpLens.setupStatus.focus');
-      else if (pick === "Don't show again") {
-        for (const c of awaiting) await ctx.globalState.update(`${DISMISS_KEY}.${c}`, true);
-      }
-    };
-
-    const inputs = await computeCollection();
-    const detected = new Set(inputs.map((i) => i.client));
-    const states = new Map(inputs.map((i) => [i.client, i.install] as const));
-    const pending = pendingHookClients(detected, states, dismissed);
-    if (pending.length === 0) { await announce(); return; }
-
-    const choice = await vscode.window.showInformationMessage(
-      `MCP Lens: hook collection is off for ${pending.join(', ')}`, 'Install all', 'Open setup view', "Don't show again");
-    if (choice === 'Install all') {
-      for (const c of pending) await installerFor(c).install();
-      await announce();                       // 설치로 needs-approval이 됐는지 다시 본다
-    } else if (choice === 'Open setup view') {
-      void vscode.commands.executeCommand('mcpLens.setupStatus.focus');
-    } else if (choice === "Don't show again") {
-      for (const c of pending) await ctx.globalState.update(`${DISMISS_KEY}.${c}`, true);
-    }
-  })();
+  // 훅 설치·승인 권유는 알림 팝업으로 띄우지 않는다. 설치 직후 아무것도 안 한
+  // 사용자에게 팝업이 연달아 뜨는 것이 첫인상을 해쳤다. 같은 내용을 Setup Status 뷰가
+  // 행으로 항상 보여주고(미설치·승인 대기 상태와 실행 버튼), 워크스루 2단계가 안내한다.
+  // 로그인 필요 알림(maybeAuthPrompt)은 그대로 둔다. 그건 사용자가 스캔을 눌러 시작한
+  // 작업의 결과이고, 지금 답하지 않으면 그 서버를 잴 수 없어 시점이 중요하다.
+  void computeCollection();
 
   ctx.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
     if (e.affectsConfiguration('mcpLens.reportDays') ||
@@ -545,10 +542,27 @@ export async function activate(ctx: vscode.ExtensionContext) {
         e.affectsConfiguration('mcplens.dependencyAnalysis.rollout')) refresh();
   }));
 
-  void maybeAutoScan(store, refresh);                     // 시작 시 1회 판정
-  ctx.subscriptions.push(watchConfigSources(store, refresh)); // 이후 설정 파일 감시
+  /**
+   * 스캔이 새 정의를 적재하면 이어서 독립성 판정까지 돌린다. 스캔만으로는 "얼마인가"까지고,
+   * "꺼도 되는가"는 분석이 답한다. 두 답이 같이 있어야 사용자가 조치할 수 있다.
+   *
+   * 자동 경로라 동의창을 띄우지 않는다. 대신 제공자 CLI 토큰을 쓰는 동작이므로
+   * mcpLens.autoAnalyze로 끌 수 있고, 이미 분석한 툴은 다시 보내지 않는다.
+   */
+  const analyzeAfterScan = async (): Promise<void> => {
+    if (!vscode.workspace.getConfiguration('mcpLens').get<boolean>('autoAnalyze', false)) return;
+    await analysisCoordinator.analyze([], { auto: true });
+  };
+
+  void maybeAutoScan(store, refresh, analyzeAfterScan);                     // 시작 시 1회 판정
+  ctx.subscriptions.push(watchConfigSources(store, refresh, analyzeAfterScan)); // 이후 설정 파일 감시
   ctx.subscriptions.push(
-    registerScanNow(() => store!, refresh), registerOpenRolloutSetting(), registerAuthenticateServer(refresh));
+    // 수동 스캔에는 분석을 잇지 않는다. 이 커맨드는 워크스루 1단계 버튼이고, 누르면
+    // 3단계(분석)가 소리 없이 끝나면서 사용자 토큰까지 나간다. 4단계를 차례로 보여주는
+    // 화면에서 1단계가 3단계를 대신 해버리면 남은 단계가 무엇을 뜻하는지 알 수 없다.
+    // 자동 분석은 새 서버를 감지해 스스로 스캔한 경로에서만 이어진다.
+    registerScanNow(() => store!, refresh),
+    registerOpenRolloutSetting(), registerAuthenticateServer(refresh));
 
   const requestAnalysis = async (node?: LensNode, reanalyze = false) => {
     selectedProvider = undefined;
@@ -720,6 +734,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
 export async function deactivate() {
   await watcher?.stop();
+  // pending 감시 인터벌을 남기지 않는다. 프로세스 종료 경로지만 정리 순서를 명시한다.
+  await coordinator?.stopDraining().catch(() => {});
   try { store?.save(); }
   catch (e) {
     // read-only(비홀더)는 정상적으로 save()가 차단된다(StaleWriterError) — 무시.

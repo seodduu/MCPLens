@@ -124,6 +124,86 @@ describe('geminiAdapter.parseFile — 픽스처 chat-upfront.jsonl', () => {
     expect(first.cacheReadTokens).toBe(0);
   });
 
+  it('한 레코드에 MCP 호출이 여럿이면 tokens.tool을 나눠 담는다 (합계 불변)', () => {
+    const content = [
+      JSON.stringify({ sessionId: 's-1', startTime: '2026-07-20T00:00:00.000Z' }),
+      JSON.stringify({
+        type: 'gemini',
+        id: 'rec-1',
+        timestamp: '2026-07-20T00:00:01.000Z',
+        tokens: { input: 10, output: 5, cached: 0, tool: 100 },
+        toolCalls: [
+          { id: 'c1', name: 'mcp_alpha_one', status: 'success' },
+          { id: 'c2', name: 'mcp_alpha_two', status: 'success' },
+          { id: 'c3', name: 'mcp_alpha_three', status: 'success' },
+        ],
+      }),
+    ].join('\n');
+
+    const parsed = geminiAdapter.parseFile('/fake/multi.jsonl', content);
+
+    expect(parsed.toolCalls.length).toBe(3);
+    const total = parsed.toolCalls.reduce((s, t) => s + (t.responseTokens ?? 0), 0);
+    // 곱셈 버그면 300이 된다
+    expect(total).toBe(100);
+    // 나머지는 앞쪽 호출에 1씩 더한다
+    expect(parsed.toolCalls.map((t) => t.responseTokens)).toEqual([34, 33, 33]);
+  });
+
+  it('내장 툴이 섞여도 MCP 호출 수 기준으로만 분배한다', () => {
+    const content = JSON.stringify({
+      type: 'gemini',
+      id: 'rec-2',
+      timestamp: '2026-07-20T00:00:01.000Z',
+      tokens: { tool: 7 },
+      toolCalls: [
+        { id: 'c1', name: 'read_file', status: 'success' },
+        { id: 'c2', name: 'mcp_alpha_one', status: 'success' },
+        { id: 'c3', name: 'mcp_alpha_two', status: 'success' },
+      ],
+    });
+
+    const parsed = geminiAdapter.parseFile('/fake/mixed.jsonl', content);
+
+    expect(parsed.toolCalls.map((t) => t.responseTokens)).toEqual([4, 3]);
+  });
+
+  it('tokens.tool이 없으면 responseTokens는 null', () => {
+    const content = JSON.stringify({
+      type: 'gemini',
+      id: 'rec-3',
+      timestamp: '2026-07-20T00:00:01.000Z',
+      toolCalls: [
+        { id: 'c1', name: 'mcp_alpha_one', status: 'success' },
+        { id: 'c2', name: 'mcp_alpha_two', status: 'success' },
+      ],
+    });
+
+    const parsed = geminiAdapter.parseFile('/fake/notokens.jsonl', content);
+
+    expect(parsed.toolCalls.map((t) => t.responseTokens)).toEqual([null, null]);
+  });
+
+  it('중복 스트리밍 레코드가 있어도 분배가 두 번 적용되지 않는다', () => {
+    const rec = {
+      type: 'gemini',
+      id: 'rec-4',
+      timestamp: '2026-07-20T00:00:01.000Z',
+      tokens: { tool: 9 },
+      toolCalls: [
+        { id: 'c1', name: 'mcp_alpha_one', status: 'success' },
+        { id: 'c2', name: 'mcp_alpha_two', status: 'success' },
+      ],
+    };
+    const parsed = geminiAdapter.parseFile(
+      '/fake/dup.jsonl',
+      [JSON.stringify(rec), JSON.stringify(rec)].join('\n'),
+    );
+
+    expect(parsed.toolCalls.length).toBe(2);
+    expect(parsed.toolCalls.reduce((s, t) => s + (t.responseTokens ?? 0), 0)).toBe(9);
+  });
+
   it('모든 이벤트 sessionId 일관', () => {
     const id = result.session.sessionId;
     expect(result.toolCalls.every((t) => t.sessionId === id)).toBe(true);

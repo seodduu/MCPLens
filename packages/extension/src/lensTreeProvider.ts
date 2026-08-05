@@ -41,6 +41,12 @@ export class LensTreeProvider implements vscode.TreeDataProvider<LensNode> {
         arguments: [n],
       };
     }
+    if (n.kind === 'hint') {
+      // 스캔 전 안내. 행 자체가 버튼이다 — 클릭하면 바로 스캔이 돈다.
+      item.iconPath = new vscode.ThemeIcon('lightbulb', new vscode.ThemeColor('list.warningForeground'));
+      item.command = { command: 'mcp-lens.scanNow', title: 'Scan MCP servers' };
+      return item;
+    }
     if (n.kind === 'client') item.iconPath = new vscode.ThemeIcon('device-desktop');
     else if (n.kind === 'server') {
       item.iconPath = new vscode.ThemeIcon(n.enabled === false ? 'close' : 'server');
