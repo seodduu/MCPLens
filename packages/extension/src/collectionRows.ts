@@ -1,8 +1,9 @@
-import * as vscode from 'vscode';
+// vscode import 금지 — Setup Status 뷰의 한 그룹을 만드는 순수 행 빌더다.
 import { clientRowPresentation, type CollectionHealthPresentation, type CollectionHealthSnapshot } from './hookStatus.js';
 import type { HookClient, InstallState } from './hookInstall.js';
+import type { SetupIcon, SetupRow } from './setupTree.js';
 
-const ICON: Record<CollectionHealthPresentation['severity'], string> = {
+const ICON: Record<CollectionHealthPresentation['severity'], SetupIcon> = {
   ok: 'pass', info: 'clock', warning: 'warning', error: 'error', idle: 'circle-outline',
 };
 
@@ -43,30 +44,23 @@ export function toRow(input: ClientRowInput): ClientRow {
   };
 }
 
-export class HookStatusProvider implements vscode.TreeDataProvider<ClientRow> {
-  private readonly emitter = new vscode.EventEmitter<void>();
-  readonly onDidChangeTreeData = this.emitter.event;
-  private rows: ClientRow[] = [];
-
-  setClients(inputs: ClientRowInput[]): void {
-    this.rows = inputs.filter((i) => i.install !== 'client-missing').map(toRow);
-    this.emitter.fire();
-  }
-
-  getTreeItem(row: ClientRow): vscode.TreeItem {
-    const item = new vscode.TreeItem(row.label);
-    item.description = row.description;
-    item.tooltip = row.tooltip;
-    item.id = row.client;
-    item.contextValue = row.contextValue;
-    item.iconPath = new vscode.ThemeIcon(ICON[row.severity], new vscode.ThemeColor(row.colorId));
-    if (row.severity === 'warning' || row.severity === 'error') {
-      item.command = { command: 'mcp-lens.hooksDoctor', title: 'MCP Lens: Hook Doctor', arguments: [row.client] };
-    }
-    return item;
-  }
-
-  getChildren(element?: ClientRow): ClientRow[] {
-    return element ? [] : this.rows;
-  }
+/**
+ * 클라이언트별 수집 상태를 Setup Status 뷰의 Collection 그룹 행으로 만든다.
+ * `client-missing`(그 클라이언트가 아예 설치돼 있지 않음)은 보여줄 것이 없으므로 제외한다.
+ */
+export function collectionRows(inputs: ClientRowInput[]): SetupRow[] {
+  return inputs.filter((i) => i.install !== 'client-missing').map(toRow).map((row): SetupRow => ({
+    group: 'Collection',
+    label: row.label,
+    description: row.description,
+    icon: ICON[row.severity],
+    tooltip: row.tooltip,
+    colorId: row.colorId,
+    contextValue: row.contextValue,
+    id: row.client,
+    // 정상 행에는 클릭 동작을 두지 않는다 — 고칠 게 없는 행이다.
+    ...(row.severity === 'warning' || row.severity === 'error'
+      ? { command: 'mcp-lens.hooksDoctor', commandArgs: [row.client] }
+      : {}),
+  }));
 }

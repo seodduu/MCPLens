@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { noInstallTargetsMessage, installedSummaryMessage } from '../src/installHooksAllMessage.js';
-import type { ClientRowInput } from '../src/hookStatusProvider.js';
+import type { ClientRowInput } from '../src/collectionRows.js';
 
 describe('noInstallTargetsMessage', () => {
   it('모두 installed면 이미 설치됐다고 안내한다', () => {

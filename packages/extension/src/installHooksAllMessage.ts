@@ -1,4 +1,4 @@
-import type { ClientRowInput } from './hookStatusProvider.js';
+import type { ClientRowInput } from './collectionRows.js';
 
 /**
  * mcp-lens.installHooksAll 커맨드가 보여줄 안내 메시지를 판정하는 순수 함수.

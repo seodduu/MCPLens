@@ -20,7 +20,7 @@ import type { LensNode } from './matrixTree.js';
 import { LensTreeProvider } from './lensTreeProvider.js';
 import { maybeAutoScan, watchConfigSources } from './autoScan.js';
 import { reportOptions } from './reportCommand.js';
-import { HookStatusProvider, toRow, type ClientRowInput } from './hookStatusProvider.js';
+import { collectionRows, toRow, type ClientRowInput } from './collectionRows.js';
 import {
   ClaudeHookInstaller, type ClientHookInstaller, type HookClient, type InstallerDeps,
 } from './hookInstall.js';
@@ -75,8 +75,6 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
   const treeProvider = new LensTreeProvider();
   ctx.subscriptions.push(vscode.window.registerTreeDataProvider('mcpLens.matrix', treeProvider));
-  const hookStatusProvider = new HookStatusProvider();
-  ctx.subscriptions.push(vscode.window.registerTreeDataProvider('mcpLens.collection', hookStatusProvider));
   const setupStatusProvider = new SetupStatusProvider();
   ctx.subscriptions.push(vscode.window.registerTreeDataProvider('mcpLens.setupStatus', setupStatusProvider));
 
@@ -234,13 +232,14 @@ export async function activate(ctx: vscode.ExtensionContext) {
   }
   const analyzedServerCount = (s: LensStore): number => analyzedServerNames(s).size;
 
-  /** Setup Status 뷰 갱신 — computeCollection()이 매 refresh 사이클마다 함께 부른다. */
-  function refreshSetupRows(): void {
+  /** Setup Status 뷰 갱신 — computeCollection()이 매 refresh 사이클마다 함께 부른다.
+   * 수집 상태(Collection 그룹)도 같은 뷰의 첫 그룹이라 여기서 한 번에 채운다. */
+  function refreshSetupRows(inputs: ClientRowInput[]): void {
     const s = store!;
     const config = vscode.workspace.getConfiguration('mcpLens');
     const consent = s.currentInferenceConsent(CONSENT_POLICY_VERSION);
     const { specs } = collectAllSpecs();
-    setupStatusProvider.setRows(buildSetupRows({
+    setupStatusProvider.setRows([...collectionRows(inputs), ...buildSetupRows({
       serverNames: specs.map((spec) => spec.name),
       scanStatuses: s.serverScanStatuses(),
       authIgnore: config.get<string[]>('authIgnore', []),
@@ -249,7 +248,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
       definitionServers: new Set(s.allDefinitions().map((definition) => definition.serverName)),
       consent: consent?.status === 'accepted' ? { provider: consent.provider, model: consent.model } : undefined,
       rollout: dependencyRollout(),
-    }));
+    })]);
   }
 
   async function refreshSetupKeys(inputs: ClientRowInput[]): Promise<void> {
@@ -289,9 +288,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
     })));
     await applyCollectionResult(gen, () => collectionGeneration, inputs, {
       applyInputs: (i) => { lastCollectionInputs = i; },
-      setClients: (i) => hookStatusProvider.setClients(i),
       refreshSetupKeys: (i) => refreshSetupKeys(i),
-      refreshSetupRows: () => refreshSetupRows(),
+      refreshSetupRows: (i) => refreshSetupRows(i),
     });
     if (!runtimeChecked) {
       runtimeChecked = true;               // 세션당 1회 — 매 refresh마다 CLI를 돌리지 않는다
@@ -303,7 +301,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
   // 이벤트 유발 refresh는 고빈도(코디네이터/워처/설정/파일워처)로 몰려 들어올 수 있는데,
   // computeCollection()은 클라이언트마다 CLI 서브프로세스를 스폰한다(installerFor(...).detect()).
   // 가드 없이 각 이벤트가 computeCollection()을 직접 부르면 CLI 프로세스 폭주와
-  // lastCollectionInputs/hookStatusProvider에 대한 경쟁이 발생한다.
+  // lastCollectionInputs/Setup Status 행에 대한 경쟁이 발생한다.
   // 인플라이트 가드 + 트레일링 코얼레싱: 실행 중이면 대기만 표시하고,
   // 끝난 뒤 대기가 있었으면 정확히 한 번 더 실행한다(N개 큐잉 아님, 유실 없는 debounce도 아님).
   let collectionRefreshInFlight = false;
@@ -514,8 +512,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
       if (awaiting.length === 0) return;
       const pick = await vscode.window.showWarningMessage(
         `MCP Lens: hooks are on for ${awaiting.join(', ')}. Run codex once and approve the prompt to start collection.`,
-        'Open collection view', "Don't show again");
-      if (pick === 'Open collection view') void vscode.commands.executeCommand('mcpLens.collection.focus');
+        'Open setup view', "Don't show again");
+      if (pick === 'Open setup view') void vscode.commands.executeCommand('mcpLens.setupStatus.focus');
       else if (pick === "Don't show again") {
         for (const c of awaiting) await ctx.globalState.update(`${DISMISS_KEY}.${c}`, true);
       }
@@ -528,12 +526,12 @@ export async function activate(ctx: vscode.ExtensionContext) {
     if (pending.length === 0) { await announce(); return; }
 
     const choice = await vscode.window.showInformationMessage(
-      `MCP Lens: hook collection is off for ${pending.join(', ')}`, 'Install all', 'Open collection view', "Don't show again");
+      `MCP Lens: hook collection is off for ${pending.join(', ')}`, 'Install all', 'Open setup view', "Don't show again");
     if (choice === 'Install all') {
       for (const c of pending) await installerFor(c).install();
       await announce();                       // 설치로 needs-approval이 됐는지 다시 본다
-    } else if (choice === 'Open collection view') {
-      void vscode.commands.executeCommand('mcpLens.collection.focus');
+    } else if (choice === 'Open setup view') {
+      void vscode.commands.executeCommand('mcpLens.setupStatus.focus');
     } else if (choice === "Don't show again") {
       for (const c of pending) await ctx.globalState.update(`${DISMISS_KEY}.${c}`, true);
     }

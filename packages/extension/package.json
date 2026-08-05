@@ -174,12 +174,12 @@
       "view/item/context": [
         {
           "command": "mcp-lens.installHooks",
-          "when": "view == mcpLens.collection && viewItem == hook-installable",
+          "when": "view == mcpLens.setupStatus && viewItem == hook-installable",
           "group": "inline"
         },
         {
           "command": "mcp-lens.uninstallHooks",
-          "when": "view == mcpLens.collection && viewItem == hook-installed",
+          "when": "view == mcpLens.setupStatus && viewItem == hook-installed",
           "group": "1_actions"
         },
         {
@@ -208,10 +208,6 @@
         {
           "id": "mcpLens.matrix",
           "name": "Cost × Usage Matrix"
-        },
-        {
-          "id": "mcpLens.collection",
-          "name": "Collection Status"
         },
         {
           "id": "mcpLens.setupStatus",

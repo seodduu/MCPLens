@@ -2,11 +2,13 @@ import * as vscode from 'vscode';
 import type { SetupGroup, SetupIcon, SetupRow } from './setupTree.js';
 
 /** 트리 렌더링 순서 고정 — buildSetupRows 출력과 무관하게 항상 이 순서로 그룹을 보여준다. */
-const GROUPS: SetupGroup[] = ['MCP authentication', 'Dependency analysis', 'Global actions'];
+const GROUPS: SetupGroup[] =
+  ['Collection', 'MCP authentication', 'Dependency analysis', 'Global actions'];
 
 const ICON: Record<SetupIcon, string> = {
   pass: 'pass', warning: 'warning', 'circle-outline': 'circle-outline', error: 'error',
   'circle-slash': 'circle-slash', account: 'account', lock: 'lock', unlock: 'unlock',
+  clock: 'clock',
 };
 
 type SetupNode = { kind: 'group'; group: SetupGroup } | { kind: 'row'; row: SetupRow };
@@ -30,12 +32,18 @@ export class SetupStatusProvider implements vscode.TreeDataProvider<SetupNode> {
     const { row } = node;
     const item = new vscode.TreeItem(row.label);
     item.description = row.description;
-    item.iconPath = new vscode.ThemeIcon(ICON[row.icon]);
+    item.id = row.id ?? `${row.group}/${row.label}`;
+    item.tooltip = row.tooltip;
+    item.contextValue = row.contextValue;
+    item.iconPath = new vscode.ThemeIcon(
+      ICON[row.icon], row.colorId ? new vscode.ThemeColor(row.colorId) : undefined);
     if (row.command) {
       // reanalyzeServer는 { serverName } 모양의 LensNode를 기대한다(analysisTree.ts 관례).
       // authenticateServer도 같은 모양을 받아 서버 이름을 얻는다. scanNow/openRolloutSetting은
       // 인자를 안 받으므로 여분의 인자를 넘겨도 무해하다.
-      item.command = { command: row.command, title: row.label, arguments: [{ serverName: row.label }] };
+      // 수집 행처럼 다른 모양을 원하는 행은 commandArgs로 직접 지정한다.
+      item.command = { command: row.command, title: row.label,
+        arguments: row.commandArgs ?? [{ serverName: row.label }] };
     }
     return item;
   }

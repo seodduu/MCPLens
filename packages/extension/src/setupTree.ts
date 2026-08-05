@@ -1,11 +1,15 @@
 import type { ServerScanStatus } from '@mcp-lens/core';
 
-/** Setup Status 뷰의 최상위 그룹 3개. 순서 고정 — 트리 렌더링도 이 순서를 따른다. */
-export type SetupGroup = 'MCP authentication' | 'Dependency analysis' | 'Global actions';
+/** Setup Status 뷰의 최상위 그룹 4개. 순서 고정 — 트리 렌더링도 이 순서를 따른다.
+ * Collection은 옛 Collection Status 뷰를 흡수한 것이다. 행이 2~3개뿐인데 사이드바
+ * 섹션을 통째로 차지해, 정작 봐야 할 매트릭스가 밀려 있었다. */
+export type SetupGroup =
+  'Collection' | 'MCP authentication' | 'Dependency analysis' | 'Global actions';
 
 /** setupTreeProvider.ts가 ThemeIcon으로 매핑하는 아이콘 이름. */
 export type SetupIcon =
-  | 'pass' | 'warning' | 'circle-outline' | 'error' | 'circle-slash' | 'account' | 'lock' | 'unlock';
+  | 'pass' | 'warning' | 'circle-outline' | 'error' | 'circle-slash' | 'account' | 'lock' | 'unlock'
+  | 'clock';
 
 export interface SetupRow {
   group: SetupGroup;
@@ -14,6 +18,16 @@ export interface SetupRow {
   icon: SetupIcon;
   /** 클릭 시 실행할 커맨드 id. 없으면(undefined) 이 행은 클릭해도 아무 일도 안 한다. */
   command?: string;
+  /** 커맨드 인자. 생략하면 `[{ serverName: label }]`(서버 행 관례)로 넘어간다. */
+  commandArgs?: unknown[];
+  /** 호버 설명. 수집 상태처럼 한 줄로 못 담는 행에만 채운다. */
+  tooltip?: string;
+  /** 아이콘 강조색(ThemeColor id). 없으면 기본색. */
+  colorId?: string;
+  /** view/item/context 메뉴 라우팅용. */
+  contextValue?: string;
+  /** TreeItem id — 같은 label이 그룹 간에 겹칠 때 구분한다. 없으면 `group/label`. */
+  id?: string;
 }
 
 export interface BuildSetupRowsInput {
