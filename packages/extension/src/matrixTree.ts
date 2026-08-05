@@ -88,6 +88,10 @@ function perSessionCost(row: MatrixRow): CumulativeCost {
  * 노드의 비용 세그먼트 문구.
  * 업프론트: 호출 비용(누적)과 정의 비용(세션당)은 단위가 달라 분리 표기한다 — "호출 X · 정의 Y/세션".
  *   호출 비용은 세션마다 반복되지 않으므로 곱하지 않고 관측 구간 누적을 그대로 쓴다.
+ *   응답 토큰이 0이면(gemini-cli처럼 응답 크기를 못 재는 경우가 흔하다) 호출 쪽을 통째로
+ *   생략한다. 앞의 "N calls"가 이미 호출 사실을 말하므로 "3 calls · calls 0tok"은
+ *   같은 말을 두 번 하면서 0이라는 빈 값을 싣는 꼴이다. 이때는 한쪽만 남으므로
+ *   "calls"/"definition" 라벨도 필요 없다 — /session 접미가 정의임을 이미 밝힌다.
  * 지연 로딩: 정의·응답이 같은 누적 단위라 단일 누적값으로 합쳐 표기한다(기존 동작).
  * showUnmeasured=true(툴 노드)면 정의 미측정 꼬리표를 단다 — 상위 노드에서는 잡음이라 생략한다.
  */
@@ -99,9 +103,11 @@ function costSegment(
     const call = rows.reduce((s, r) => s + r.responseTokens, 0);
     const def = sumCosts(rows.map(perSessionCost));
     // 정의 미측정이면 0tok/세션은 거짓 신호 — 토큰·세션 표기 없이 미측정임만 밝힌다.
-    const defText = showUnmeasured && !def.definitionMeasured
-      ? 'definition unmeasured'
-      : `definition ${fmtTok(def.tokens)}/session`;
+    const unmeasured = showUnmeasured && !def.definitionMeasured;
+    if (call === 0) {
+      return unmeasured ? 'definition unmeasured' : `${fmtTok(def.tokens)}/session`;
+    }
+    const defText = unmeasured ? 'definition unmeasured' : `definition ${fmtTok(def.tokens)}/session`;
     return `calls ${fmtTok(call)} · ${defText}`;
   }
   const cost = sumCosts(rows.map(
@@ -196,18 +202,19 @@ export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set
           // 서버가 꺼져 있으면 툴 단위 토글은 무의미 — 메뉴 숨김(enabled 미부여)
           const enabled = client === 'claude-code' && serverEnabled !== false
             ? !deniedRules.has(mcpDenyRule(server, r.toolName)) : undefined;
-          // 확신 낮은 삭제 권고는 확정이 아니라 후보 — 판정이 아니라 표시만 강등한다
+          // 권고(keep·remove·inspect·filter-server)는 글로 쓰지 않는다. 판정은 아이콘이
+          // 전한다(lensTreeProvider의 체크·휴지통·경고·필터). 툴마다 같은 단어가 반복되면
+          // 정작 봐야 할 숫자가 밀리고, 낱말 하나로는 왜 그렇게 봤는지도 못 전한다.
+          // 확신이 낮으면 아이콘 자체를 억제하므로 "(candidate)" 표기도 필요 없다.
+          // 판정 근거는 행을 클릭해 여는 분석 상세와 리포트에 있다.
           const { action, confidence } = r.recommendation;
-          // keep은 기본값이라 글로 쓰지 않는다 (fmtCalls가 성공을 안 쓰는 것과 같은 원칙).
-          // 다수인 keep이 전 행에 반복되면 진짜 봐야 할 remove·inspect가 묻힌다.
-          // keep 자체는 아이콘(lensTreeProvider의 파란 체크)으로 계속 보인다.
-          const actionLabel = action === 'keep' ? ''
-            : confidence === 'low' && (action === 'remove' || action === 'filter-server')
-              ? ` · ${action} (candidate)` : ` · ${action}`;
-          const toolDesc = `${fmtCalls(r.callCount, r.reliability.errorCount)} · ${costSegment([r], callSessions, perSession, true)}${actionLabel}`;
+          const toolDesc = `${fmtCalls(r.callCount, r.reliability.errorCount)} · ${costSegment([r], callSessions, perSession, true)}`;
           const analysis = analysisByTool.get(`${server}\u0000${r.toolName}`);
-          const analysisText = analysis
-            ? ` · ${analysis.status}${analysis.summary ? ` · ${analysis.summary}` : ''}` : '';
+          // 요약 문장은 줄에 싣지 않는다. status와 같은 말을 길게 되풀이하는 경우가 많고
+          // ("Independent" · "Tool a operates independently without being used by other tools."),
+          // 한 줄에서 제일 긴 조각이라 옆의 숫자를 화면 밖으로 밀어낸다.
+          // 요약은 행을 클릭하면 열리는 분석 상세(openAnalysisDetails)에 그대로 있다.
+          const analysisText = analysis ? ` · ${analysis.status}` : '';
           const rolloutAllowed = actionAllowedByRollout(rollout, client);
           const activeAction = hasActiveGlobalAction(client, server, r.toolName);
           const canDisableGlobally = !activeAction && analysis?.canDisableGlobally === true

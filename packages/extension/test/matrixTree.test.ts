@@ -36,8 +36,8 @@ describe('buildTree', () => {
     expect(tool.description).toContain('50tok');
   });
 
-  // keep은 기본값 — 전 행에 반복되면 진짜 봐야 할 remove·inspect가 묻힌다.
-  it('기본값인 keep은 글로 쓰지 않는다 (아이콘으로만 보인다)', () => {
+  // 권고는 아이콘으로만 전한다 — 낱말이 툴마다 반복되면 숫자가 밀린다.
+  it('권고를 글로 쓰지 않아 꼬리 구분자도 남지 않는다', () => {
     const tool = buildTree(input)[1].children[0].children[0]; // codex/node_repl/js
     expect(tool.action).toBe('keep');
     expect(tool.description).not.toContain('keep');
@@ -59,6 +59,18 @@ describe('buildTree', () => {
     expect(search).toMatchObject({ analysisStatus: 'Independent', analysisSummary: 'Searches repositories.', analysisAction: 'Disable globally…', canDisableGlobally: true });
     expect(getFile).toMatchObject({ analysisStatus: 'Dependent', canDisableGlobally: false });
     expect(getFile.analysisAction).toBeUndefined();
+  });
+
+  // 요약은 status를 길게 되풀이하는 일이 잦고 한 줄에서 제일 긴 조각이라 숫자를 밀어낸다.
+  it('요약 문장은 줄에 싣지 않는다 — status만 남기고 요약은 상세 화면에 있다', () => {
+    const rows = [{ serverName: 'github', toolName: 'search', status: 'Independent' as const,
+      summary: 'Tool search operates independently without being used by other tools.',
+      canDisableGlobally: true }];
+    const search = buildTree(input, new Set(), [], new Set(), rows)[0].children[0].children
+      .find((tool) => tool.toolName === 'search')!;
+    expect(search.description).toContain('Independent');
+    expect(search.description).not.toContain('operates independently');
+    expect(search.analysisSummary).toBe(rows[0].summary);  // 상세 화면용으로는 남는다
   });
 
   it('hides action rows during off rollout', () => {
@@ -210,7 +222,7 @@ describe('buildTree', () => {
     expect(tool.description).not.toContain('not measured');
   });
 
-  it('확신이 낮은 권고는 물음표 없이 (후보)로 표시한다', () => {
+  it('권고는 글로 쓰지 않는다 — 판정은 action 필드로만 나가고 아이콘이 전한다', () => {
     const lowConfidence: EngineInput = {
       definitions: [{ serverName: 'notion', toolName: 'notion-update-page',
         definitionTokens: 3287, scannedAt: '2026-07-19T00:00:00Z',
@@ -221,8 +233,9 @@ describe('buildTree', () => {
       sessions: [session('c1', 'claude-code')],
     };
     const tool = buildTree(lowConfidence)[0].children[0].children[0];
-    expect(tool.description).toContain('remove (candidate)');
-    expect(tool.description).not.toContain('?');
+    expect(tool).toMatchObject({ action: 'remove', confidence: 'low' });
+    expect(tool.description).not.toContain('remove');
+    expect(tool.description).not.toContain('candidate');
   });
 
   it('로드만 되고 호출 0인 툴이 있을 때 클라이언트 노드가 0tok이 아니라 자식 합을 표시한다', () => {
@@ -504,15 +517,22 @@ describe('업프론트 클라이언트 세션당 정의 부담 표시', () => {
     sessionId, serverName: 'tiny', toolName: tool, calledAt: at(0),
     durationMs: null, isError: false, responseTokens: 50, responseText: null });
 
-  it('업프론트 미호출 툴은 0tok이 아니라 호출·정의를 분리해 표시한다', () => {
+  it('업프론트 미호출 툴은 0tok이 아니라 세션당 정의 부담으로 표시한다', () => {
     // 로드 이벤트가 없어 loadSessions=0 → 누적은 0tok이 되지만, 매 세션 로드되는 부담이 있다.
     const [client] = buildTree({
       definitions: [def('a', 800)], calls: [], loads: [], sessions: upfront(5) });
     const tool = client.children[0].children[0];
-    expect(tool.description).toContain('calls 0tok');
-    expect(tool.description).toContain('definition 800tok/session');
-    // 순서: 호출 → 정의
-    expect(tool.description.indexOf('calls')).toBeLessThan(tool.description.indexOf('definition'));
+    expect(tool.description).toContain('800tok/session');
+  });
+
+  // "3 calls · calls 0tok"은 호출을 두 번 말하면서 0이라는 빈 값을 싣는 꼴이다.
+  it('응답 토큰이 0이면 호출 비용 조각을 통째로 뺀다', () => {
+    const [client] = buildTree({
+      definitions: [def('a', 800)], calls: [], loads: [], sessions: upfront(5) });
+    const tool = client.children[0].children[0];
+    expect(tool.description).not.toContain('calls 0tok');
+    // 한쪽만 남으면 라벨도 필요 없다 — /session이 정의임을 이미 밝힌다
+    expect(tool.description).not.toContain('definition ');
   });
 
   it('호출 비용은 세션당이 아니라 누적 — 세션 수를 곱하지 않는다', () => {
@@ -530,8 +550,8 @@ describe('업프론트 클라이언트 세션당 정의 부담 표시', () => {
   it('서버·클라이언트 롤업도 호출·정의 분리로 표기한다', () => {
     const [client] = buildTree({
       definitions: [def('a', 800), def('b', 200)], calls: [], loads: [], sessions: upfront(5) });
-    expect(client.children[0].description).toContain('calls 0tok · definition 1,000tok/session'); // 800+200
-    expect(client.description).toContain('calls 0tok · definition 1,000tok/session');
+    expect(client.children[0].description).toContain('1,000tok/session'); // 800+200
+    expect(client.description).toContain('1,000tok/session');
   });
 
   it('정의 1토큰짜리 더미 툴도 0tok이 아니라 1tok/세션으로 보인다', () => {
@@ -539,7 +559,7 @@ describe('업프론트 클라이언트 세션당 정의 부담 표시', () => {
       definitions: [def('a', 1), def('b', 1), def('c', 1)], calls: [], loads: [],
       sessions: upfront(5) });
     for (const t of client.children[0].children)
-      expect(t.description).toContain('definition 1tok/session');
+      expect(t.description).toContain('1tok/session');
   });
 
   it('정의 미측정 툴은 0tok/세션이 아니라 "정의 미측정"만 표기한다', () => {
@@ -617,17 +637,17 @@ describe('확신 등급 렌더링', () => {
     return client.children[0].children[0];
   };
 
-  it('확신 높은 remove는 action 그대로 표시된다', () => {
+  it('확신 높은 remove는 확신 등급을 high로 내놓는다', () => {
     const node = toolNode(12);
     expect(node.confidence).toBe('high');
-    expect(node.description).toContain('remove');
-    expect(node.description).not.toContain('candidate');
+    expect(node.action).toBe('remove');
   });
 
-  it('확신 낮은 remove는 "후보" 라벨로 표시된다', () => {
+  // 확신이 낮으면 lensTreeProvider가 권고 아이콘 자체를 억제한다 — 강등을 글로 쓰지 않는다.
+  it('확신 낮은 remove는 확신 등급을 low로 내놓는다', () => {
     const node = toolNode(2);
     expect(node.confidence).toBe('low');
-    expect(node.description).toContain('candidate');
+    expect(node.description).not.toContain('candidate');
   });
 
   // splitByClient가 lastCallByTool을 버리면 이 툴은 "한 번도 안 쓴 툴"로 둔갑해 high가 난다.
@@ -640,6 +660,6 @@ describe('확신 등급 렌더링', () => {
     expect(node.action).toBe('remove');
     expect(node.confidence).toBe('medium');
     expect(node.confidence).not.toBe('high');
-    expect(node.description).not.toContain('candidate'); // 표시 강등은 low만
+    expect(node.description).not.toContain('candidate');
   });
 });
