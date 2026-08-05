@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, statSync, existsSync, chmodSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync, existsSync, chmodSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -8,6 +8,9 @@ import {
   clearStoredOAuth,
   storedTokenProvider,
   startCallbackServer,
+  readOAuthClients,
+  saveOAuthClient,
+  oauthClientsFile,
   type StoredOAuth,
 } from '../../src/scanner/oauth.js';
 
@@ -153,5 +156,41 @@ describe('startCallbackServer', () => {
     } finally {
       cb.server.close();
     }
+  });
+});
+
+describe('pre-registered oauth clients', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(path.join(tmpdir(), 'mcplens-oauth-clients-'));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('reads back a saved client', () => {
+    saveOAuthClient('github', { clientId: 'Iv1.abc', clientSecret: 's3cr3t' }, dir);
+    expect(readOAuthClients(dir)).toEqual({ github: { clientId: 'Iv1.abc', clientSecret: 's3cr3t' } });
+  });
+
+  it('keeps other servers when one is written', () => {
+    saveOAuthClient('github', { clientId: 'a' }, dir);
+    saveOAuthClient('figma', { clientId: 'b' }, dir);
+    expect(Object.keys(readOAuthClients(dir)).sort()).toEqual(['figma', 'github']);
+  });
+
+  it('stores the client secret with owner-only permissions', () => {
+    saveOAuthClient('github', { clientId: 'a', clientSecret: 's' }, dir);
+    expect(statSync(oauthClientsFile(dir)).mode & 0o777).toBe(0o600);
+  });
+
+  it('returns an empty map when the file is absent', () => {
+    expect(readOAuthClients(dir)).toEqual({});
+  });
+
+  /** A hand-edited file with a typo must not block a login that dynamic registration could handle. */
+  it('returns an empty map when the file is malformed', () => {
+    writeFileSync(oauthClientsFile(dir), '{ not json');
+    expect(readOAuthClients(dir)).toEqual({});
   });
 });

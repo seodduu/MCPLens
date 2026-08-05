@@ -25,6 +25,75 @@ export interface StoredOAuth {
   updatedAt: string;
 }
 
+/**
+ * An OAuth client the user registered by hand on the provider's side, for servers that refuse
+ * dynamic client registration (DCR). GitHub's remote MCP publishes no registration_endpoint at all,
+ * and Figma publishes one that answers 403 to every request, so for those two the only way in is a
+ * client id the user creates themselves.
+ */
+export interface PreregisteredClient {
+  clientId: string;
+  /** Public (PKCE-only) clients have none. */
+  clientSecret?: string;
+}
+
+/** The file the CLI reads pre-registered clients from: ~/.mcplens/oauth-clients.json. */
+export function oauthClientsFile(baseDir: string = oauthDir()): string {
+  return path.join(baseDir, 'clients.json');
+}
+
+/**
+ * Reads `{ "<serverName>": { "clientId": "...", "clientSecret": "..." } }`.
+ * An unreadable or malformed file yields an empty map: a bad hand-edited file must not stop a login
+ * that dynamic registration could have handled on its own.
+ */
+export function readOAuthClients(baseDir: string = oauthDir()): Record<string, PreregisteredClient> {
+  const file = oauthClientsFile(baseDir);
+  if (!existsSync(file)) return {};
+  try {
+    const parsed = JSON.parse(readFileSync(file, 'utf8')) as Record<string, PreregisteredClient>;
+    if (!parsed || typeof parsed !== 'object') return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+/** Writes one server's client into the shared file, keeping every other entry. Mode 0600: a client secret is a credential. */
+export function saveOAuthClient(
+  serverName: string, client: PreregisteredClient, baseDir: string = oauthDir()): void {
+  mkdirSync(baseDir, { recursive: true, mode: 0o700 });
+  chmodSync(baseDir, 0o700);
+  const file = oauthClientsFile(baseDir);
+  const all = { ...readOAuthClients(baseDir), [serverName]: client };
+  writeFileSync(file, JSON.stringify(all, null, 2), { mode: 0o600 });
+  chmodSync(file, 0o600);
+}
+
+/**
+ * Thrown when a login fails because the server would not register Lens as a client and no
+ * pre-registered client was supplied. The host catches it by name to ask for a client id instead of
+ * showing the raw SDK message, which says nothing about what the user should do.
+ */
+export class ClientRegistrationRequiredError extends Error {
+  override readonly name = 'ClientRegistrationRequiredError';
+  constructor(readonly serverName: string, readonly cause: string) {
+    super(
+      `${serverName} does not allow automatic client registration. ` +
+      `Register an OAuth app with this provider and give MCP Lens its client id. (${cause})`);
+  }
+}
+
+/**
+ * Whether an SDK failure means "registration was refused". Registration is the only step that runs
+ * before a browser is ever opened, so a 4xx from the first auth() pass with no client on hand is
+ * always the registration endpoint answering. Figma's 403 arrives that way; GitHub fails earlier,
+ * with the SDK's own message, because it publishes no registration endpoint at all.
+ */
+function isRegistrationFailure(message: string): boolean {
+  return /dynamic client registration/i.test(message) || /HTTP 4\d\d/.test(message);
+}
+
 /** Converts a server name into a safe file name (guards against path escape). */
 function safeFileName(serverName: string): string {
   const base = serverName.replace(/[^a-zA-Z0-9._-]/g, '_').replace(/^\.+/, '_');
@@ -75,6 +144,8 @@ class LensOAuthProvider implements OAuthClientProvider {
     private readonly _redirectUrl: string,
     private readonly onRedirect: (url: URL) => void | Promise<void>,
     private readonly baseDir: string,
+    /** Set only for servers that refuse DCR; it short-circuits registration entirely. */
+    private readonly preregistered?: PreregisteredClient,
   ) {}
 
   get redirectUrl(): string {
@@ -92,6 +163,14 @@ class LensOAuthProvider implements OAuthClientProvider {
   }
 
   clientInformation(): OAuthClientInformationMixed | undefined {
+    // A user-registered client wins over anything on disk: it is the newer decision, and returning
+    // it here is what makes the SDK skip registration on servers that refuse it.
+    if (this.preregistered) {
+      return {
+        client_id: this.preregistered.clientId,
+        ...(this.preregistered.clientSecret ? { client_secret: this.preregistered.clientSecret } : {}),
+      } as OAuthClientInformationMixed;
+    }
     const stored = loadStoredOAuth(this.serverName, this.baseDir);
     return stored?.clientInformation as OAuthClientInformationMixed | undefined;
   }
@@ -243,7 +322,13 @@ export async function startCallbackServer(): Promise<CallbackServer> {
  */
 export async function authenticateServer(
   spec: McpServerSpec,
-  opts: { openUrl: (url: string) => void | Promise<void>; timeoutMs?: number; baseDir?: string },
+  opts: {
+    openUrl: (url: string) => void | Promise<void>;
+    timeoutMs?: number;
+    baseDir?: string;
+    /** Pre-registered client for a server that refuses DCR. Omitted, registration is attempted as before. */
+    client?: PreregisteredClient;
+  },
 ): Promise<void> {
   if (specTransport(spec) !== 'http') {
     throw new Error(`authenticateServer: http servers only, got ${spec.name}`);
@@ -263,10 +348,22 @@ export async function authenticateServer(
         await opts.openUrl(url.toString());
       },
       baseDir,
+      opts.client,
     );
 
     // Pass 1: discovery + dynamic registration + PKCE start, which opens the browser and returns 'REDIRECT'
-    const first = await auth(provider, { serverUrl });
+    let first: Awaited<ReturnType<typeof auth>>;
+    try {
+      first = await auth(provider, { serverUrl });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // Only when Lens had no client of its own: with one supplied, a 4xx means something else
+      // (a wrong client id, a revoked app) and the original message is the more useful one.
+      if (!opts.client && isRegistrationFailure(message)) {
+        throw new ClientRegistrationRequiredError(spec.name, message);
+      }
+      throw err;
+    }
     if (first === 'AUTHORIZED') return; // already holds a valid token (rare)
 
     // Wait for the authorization code

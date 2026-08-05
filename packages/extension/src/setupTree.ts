@@ -64,7 +64,12 @@ function authRow(input: BuildSetupRowsInput, serverName: string): SetupRow {
   if (input.authIgnore.includes(serverName)) {
     // Ignoring is something the user chose and can undo at any time. Buried in grey, that server's
     // cost would keep going unmeasured unnoticed, so it stays red.
-    return { group: 'MCP authentication', label: serverName, description: 'ignored', icon: 'circle-slash', colorId: BROKEN };
+    // The row itself stays unclickable: an ignored server must not sign in by a stray click. Undoing
+    // is done through the hover (inline) sign-in button this contextValue routes.
+    return {
+      group: 'MCP authentication', label: serverName, description: 'ignored', icon: 'circle-slash',
+      colorId: BROKEN, contextValue: 'auth-ignored',
+    };
   }
   const status = input.scanStatuses.get(serverName);
   if (!status) {

@@ -44,6 +44,8 @@ describe('buildSetupRows', () => {
     const row = auth(rows).find((r) => r.label === 'linear');
     expect(row?.description).toBe('ignored');
     expect(row?.command).toBeUndefined();
+    // The hover sign-in button is routed by this contextValue, so an ignored server can be undone.
+    expect(row?.contextValue).toBe('auth-ignored');
   });
 
   it('turns a server in unsupportedServers into an unsupported row', () => {

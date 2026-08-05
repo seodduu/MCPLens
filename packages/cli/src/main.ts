@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { LensStore, LogWatcher, buildMatrix, sessionSavings, dbPath,
   ClaudeAdapter, CodexAdapter, GeminiAdapter,
   collectAllSpecs, configSources, collectFromSource,
-  authenticateServer, clearStoredOAuth,
+  authenticateServer, clearStoredOAuth, readOAuthClients, oauthClientsFile,
   type McpServerSpec, type ClientId, type ServerIdentity } from '@mcp-lens/core';
 import { formatReport } from './report.js';
 import { collectServerSpecs } from './scan-config.js';
@@ -258,17 +258,22 @@ async function runAuth(args: string[]) {
   }
 
   try {
-    await authenticateServer(target.spec, { openUrl });
+    // Servers that refuse dynamic registration only work with a client the user registered by hand.
+    // The same file is written by the extension's sign-in prompt, so registering once covers both.
+    await authenticateServer(target.spec, { openUrl, client: readOAuthClients()[name] });
   } catch (e) {
     // authenticateServer may rethrow SDK exceptions verbatim, so non-Error values arrive here.
     // Asserting (e as Error).message would throw a TypeError inside this catch block and expose
     // an unhandled crash instead of the DCR guidance below.
     const msg = e instanceof Error ? e.message : String(e);
     console.log(`${name}: login failed: ${msg}`);
-    if (/dynamic client registration/i.test(msg)) {
+    if (e instanceof Error && e.name === 'ClientRegistrationRequiredError') {
       console.log(
-        `  This server does not support dynamic client registration (DCR), e.g. GitHub remote MCP.\n` +
-        `  Put a PAT in the headers field of the config instead and it will scan:\n` +
+        `  This server does not register clients automatically (no DCR), e.g. GitHub and Figma remote MCP.\n` +
+        `  Either register an OAuth app with the provider and put its client id in\n` +
+        `  ${oauthClientsFile()}:\n` +
+        `  { "${name}": { "clientId": "<client id>", "clientSecret": "<optional>" } }\n` +
+        `  or put a PAT in the headers field of the config instead and it will scan:\n` +
         `  "${name}": { "type": "http", "url": "...", "headers": { "Authorization": "Bearer <token>" } }`);
     }
     process.exit(1);

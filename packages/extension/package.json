@@ -110,6 +110,10 @@
       {
         "command": "mcp-lens.authenticateServer",
         "title": "MCP Lens: Sign In to Server"
+      },
+      {
+        "command": "mcp-lens.signInIgnoredServer",
+        "title": "Sign in"
       }
     ],
     "menus": {
@@ -169,6 +173,10 @@
         {
           "command": "mcp-lens.authenticateServer",
           "when": "false"
+        },
+        {
+          "command": "mcp-lens.signInIgnoredServer",
+          "when": "false"
         }
       ],
       "view/item/context": [
@@ -181,6 +189,11 @@
           "command": "mcp-lens.uninstallHooks",
           "when": "view == mcpLens.setupStatus && viewItem == hook-installed",
           "group": "1_actions"
+        },
+        {
+          "command": "mcp-lens.signInIgnoredServer",
+          "when": "view == mcpLens.setupStatus && viewItem == auth-ignored",
+          "group": "inline"
         },
         {
           "command": "mcplens.disableGlobally",
@@ -265,6 +278,14 @@
           },
           "default": [],
           "markdownDescription": "MCP server names for which the sign-in-required notification will not be shown again. Automatically added via the `Don't ask for this server` button."
+        },
+        "mcpLens.oauthClients": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "string"
+          },
+          "markdownDescription": "OAuth client ids for MCP servers that refuse automatic (dynamic) client registration, such as GitHub's and Figma's remote servers: `{ \"github\": \"Iv1.abc123\" }`. Register an OAuth app with the provider and paste its client id. A client secret is never stored here; sign in from the Setup Status view and it is written to `~/.mcplens/oauth/clients.json` with owner-only permissions, where the `mcp-lens` CLI reads it too."
         },
         "mcpLens.unsupportedServers": {
           "type": "array",

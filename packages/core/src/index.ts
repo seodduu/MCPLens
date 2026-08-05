@@ -31,8 +31,13 @@ export {
   storedTokenProvider,
   authenticateServer,
   startCallbackServer,
+  readOAuthClients,
+  saveOAuthClient,
+  oauthClientsFile,
+  ClientRegistrationRequiredError,
   type StoredOAuth,
   type CallbackServer,
+  type PreregisteredClient,
 } from './scanner/oauth.js';
 export { readClaudeMcpConfig, specTransport, type McpServerSpec } from './scanner/configs.js';
 export { collectServerSpecs, type CollectResult } from './scanner/configs.js';
