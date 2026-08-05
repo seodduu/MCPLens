@@ -143,7 +143,7 @@ export async function maybeAutoScan(store: LensStore, onDone: () => void): Promi
   store.save(); // run()은 자동 저장하지 않는다 — 여기서 저장 안 하면 skip 경로(정상 정착 상태의 기본값)에서
                 // 매핑이 디스크에 반영되지 않고 다음 활성화 때 다시 빈 매핑으로 보인다.
   const config = vscode.workspace.getConfiguration('mcpLens');
-  const setting = config.get<AutoScanSetting>('autoScan', 'prompt');
+  const setting = config.get<AutoScanSetting>('autoScan', 'never');
   const scannedServers = store.serversWithDefinitionBodies();
   const action = decideScanAction({
     setting, specs, scannedServers, unsupported: new Set(unsupportedServers(config)) });

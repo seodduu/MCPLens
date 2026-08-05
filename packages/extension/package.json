@@ -250,11 +250,11 @@
             "always",
             "never"
           ],
-          "default": "prompt",
+          "default": "never",
           "enumDescriptions": [
-            "Asks when a new server to scan is detected (default)",
+            "Asks with a notification popup when a new server to scan is detected",
             "Scans automatically without asking",
-            "Never scans automatically (use `npx mcp-lens scan` manually)"
+            "Never scans on its own (default). Scan from the walkthrough, the matrix view, or the MCP Lens: Scan MCP Servers command"
           ],
           "markdownDescription": "Automatic scanning of MCP server tool definitions. Scanning briefly runs each registered stdio server and requests tools/list. No LLM tokens are spent and no config file is modified."
         },

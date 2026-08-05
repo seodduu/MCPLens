@@ -28,7 +28,6 @@ import { CodexHookInstaller } from './installers/codex.js';
 import { GeminiHookInstaller } from './installers/gemini.js';
 import { findBinary, runBin, nodeFs } from './claudeCli.js';
 import { bundledStamp, installedStamp, needsRuntimeRefresh, recordInstalledStamp } from './runtimeFreshness.js';
-import { approvalPendingClients, pendingHookClients } from './nudge.js';
 import { claimFirstRun, WALKTHROUGH_CATEGORY_ID } from './firstRun.js';
 import { buildAnalysisRows } from './analysisTree.js';
 import { buildAnalysisDetails } from './analysisDetails.js';
@@ -80,7 +79,6 @@ export async function activate(ctx: vscode.ExtensionContext) {
   const setupStatusProvider = new SetupStatusProvider();
   ctx.subscriptions.push(vscode.window.registerTreeDataProvider('mcpLens.setupStatus', setupStatusProvider));
 
-  const DISMISS_KEY = 'mcpLens.hookInstall.dismissed';
 
   function bundledDirFor(client: HookClient): string {
     return path.join(__dirname,
@@ -301,7 +299,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
     // 실패 뒤에 불려도 죽지 않고 안내만 낸다.
     if (!store) {
       void vscode.window.showInformationMessage(
-        'MCP Lens: 데이터베이스를 준비하는 중입니다. 잠시 뒤 다시 시도하세요.');
+        'MCP Lens: the database is still starting up. Try again in a moment.');
       return [];
     }
     const gen = ++collectionGeneration;
@@ -529,43 +527,12 @@ export async function activate(ctx: vscode.ExtensionContext) {
       .then(undefined, () => {});
   }
 
-  void (async () => {
-    const dismissed = new Set<HookClient>(
-      (['claude-code', 'codex', 'gemini-cli'] as HookClient[])
-        .filter((c) => ctx.globalState.get<boolean>(`${DISMISS_KEY}.${c}`)));
-
-    const announce = async (): Promise<void> => {
-      const inputs = await computeCollection();
-      const detected = new Set(inputs.map((i) => i.client));
-      const states = new Map(inputs.map((i) => [i.client, i.install] as const));
-      const awaiting = approvalPendingClients(detected, states, dismissed);
-      if (awaiting.length === 0) return;
-      const pick = await vscode.window.showWarningMessage(
-        `MCP Lens: hooks are on for ${awaiting.join(', ')}. Run codex once and approve the prompt to start collection.`,
-        'Open setup view', "Don't show again");
-      if (pick === 'Open setup view') void vscode.commands.executeCommand('mcpLens.setupStatus.focus');
-      else if (pick === "Don't show again") {
-        for (const c of awaiting) await ctx.globalState.update(`${DISMISS_KEY}.${c}`, true);
-      }
-    };
-
-    const inputs = await computeCollection();
-    const detected = new Set(inputs.map((i) => i.client));
-    const states = new Map(inputs.map((i) => [i.client, i.install] as const));
-    const pending = pendingHookClients(detected, states, dismissed);
-    if (pending.length === 0) { await announce(); return; }
-
-    const choice = await vscode.window.showInformationMessage(
-      `MCP Lens: hook collection is off for ${pending.join(', ')}`, 'Install all', 'Open setup view', "Don't show again");
-    if (choice === 'Install all') {
-      for (const c of pending) await installerFor(c).install();
-      await announce();                       // 설치로 needs-approval이 됐는지 다시 본다
-    } else if (choice === 'Open setup view') {
-      void vscode.commands.executeCommand('mcpLens.setupStatus.focus');
-    } else if (choice === "Don't show again") {
-      for (const c of pending) await ctx.globalState.update(`${DISMISS_KEY}.${c}`, true);
-    }
-  })();
+  // 훅 설치·승인 권유는 알림 팝업으로 띄우지 않는다. 설치 직후 아무것도 안 한
+  // 사용자에게 팝업이 연달아 뜨는 것이 첫인상을 해쳤다. 같은 내용을 Setup Status 뷰가
+  // 행으로 항상 보여주고(미설치·승인 대기 상태와 실행 버튼), 워크스루 2단계가 안내한다.
+  // 로그인 필요 알림(maybeAuthPrompt)은 그대로 둔다. 그건 사용자가 스캔을 눌러 시작한
+  // 작업의 결과이고, 지금 답하지 않으면 그 서버를 잴 수 없어 시점이 중요하다.
+  void computeCollection();
 
   ctx.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
     if (e.affectsConfiguration('mcpLens.reportDays') ||
