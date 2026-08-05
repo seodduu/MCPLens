@@ -11,4 +11,8 @@ async function main() {
   console.log(`MCP Lens 대시보드: http://127.0.0.1:${port}`);
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+// 스택트레이스 대신 조치 가능한 한 줄만 보여준다.
+main().catch((e) => {
+  console.error(e instanceof Error ? e.message : String(e));
+  process.exit(1);
+});

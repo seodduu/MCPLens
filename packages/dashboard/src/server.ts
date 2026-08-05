@@ -39,6 +39,8 @@ function loadEngineInput(store: LensStore, since: string): EngineInput {
     calls: store.callsSince(since),
     loads: store.loadsSince(since),
     sessions: store.sessionsSince(since),
+    // CLI 리포트와 같은 근거를 쓰도록 마지막 호출 시각 맵도 넘긴다.
+    lastCallByTool: store.lastCallByTool(),
   };
 }
 
@@ -102,16 +104,48 @@ export async function startDashboard(
     const { pathname } = url;
 
     if (pathname.startsWith('/api/')) {
+      // handleApi 안의 동기 throw 가 finally 콜백의 예외가 되면 unhandled rejection 으로
+      // 프로세스가 죽는다. 여기서 반드시 잡아 500 JSON 으로 응답한다.
       maybeReload()
         .catch(() => {})
-        .finally(() => handleApi(current, url, pathname, res));
+        .finally(() => {
+          try {
+            handleApi(current, url, pathname, res);
+          } catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
+            if (!res.headersSent) sendJson(res, 500, { error: '내부 오류', message });
+            else res.end();
+          }
+        });
       return;
     }
 
     serveStatic(req, res, pathname);
   });
 
-  await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
+  // listen 실패(포트 점유 등)는 'error' 이벤트로 온다. 리스너가 없으면 스택트레이스와 함께
+  // 프로세스가 죽으므로, 사용자가 조치할 수 있는 한국어 메시지로 바꿔 reject 한다.
+  await new Promise<void>((resolve, reject) => {
+    const onError = (e: NodeJS.ErrnoException) => {
+      server.removeListener('listening', onListening);
+      if (e.code === 'EADDRINUSE') {
+        reject(new Error(`포트 ${port}이 이미 사용 중입니다. 다른 포트를 지정하세요 (예: npm start -- 43118).`));
+        return;
+      }
+      if (e.code === 'EACCES') {
+        reject(new Error(`포트 ${port}을 열 권한이 없습니다. 1024 이상의 포트를 지정하세요.`));
+        return;
+      }
+      reject(new Error(`대시보드 서버를 시작하지 못했습니다: ${e.message}`));
+    };
+    const onListening = () => {
+      server.removeListener('error', onError);
+      resolve();
+    };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen(port, '127.0.0.1');
+  });
   return server;
 }
 
