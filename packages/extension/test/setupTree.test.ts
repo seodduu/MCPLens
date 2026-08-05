@@ -132,3 +132,42 @@ describe('buildSetupRows', () => {
     expect(row?.icon).toBe('unlock');
   });
 });
+
+// 회색 아이콘만 늘어놓으면 어느 줄이 내 일인지 훑어서 알 수 없다.
+describe('상태 색', () => {
+  const ok = new Map([['notion', { status: 'ok' as const, scannedAt: '2026-08-05T00:00:00.000Z' }]]);
+  const failed = new Map([['notion',
+    { status: 'failed' as const, scannedAt: '2026-08-05T00:00:00.000Z', errorCode: 'ENOENT' }]]);
+  const rowFor = (input: Partial<typeof base>, label: string, group: string) =>
+    buildSetupRows({ ...base, ...input }).find((r) => r.group === group && r.label === label);
+
+  it('끝난 일은 파랑 — 수집 그룹의 Healthy와 같은 색', () => {
+    expect(rowFor({ scanStatuses: ok }, 'notion', 'MCP authentication')?.colorId).toBe('charts.blue');
+    expect(rowFor({ definitionServers: new Set(['notion']), analyzedServers: new Set(['notion']) },
+      'notion', 'Dependency analysis')?.colorId).toBe('charts.blue');
+    expect(rowFor({ rollout: 'all' }, 'Global actions', 'Global actions')?.colorId).toBe('charts.blue');
+    expect(rowFor({ consent: { provider: 'codex', model: 'm' } }, 'Provider', 'Dependency analysis')
+      ?.colorId).toBe('charts.blue');
+  });
+
+  it('아직 안 한 일은 노랑 — 잠긴 전역 조치도 고장이 아니라 남은 일이다', () => {
+    expect(rowFor({}, 'notion', 'MCP authentication')?.colorId).toBe('charts.yellow');
+    expect(rowFor({ definitionServers: new Set(['notion']) }, 'notion', 'Dependency analysis')
+      ?.colorId).toBe('charts.yellow');
+    expect(rowFor({ rollout: 'off' }, 'Global actions', 'Global actions')?.colorId).toBe('charts.yellow');
+    expect(rowFor({}, 'Provider', 'Dependency analysis')?.colorId).toBe('charts.yellow');
+  });
+
+  it('실패한 스캔은 빨강', () => {
+    expect(rowFor({ scanStatuses: failed }, 'notion', 'MCP authentication')?.colorId).toBe('charts.red');
+  });
+
+  // 무시는 되돌릴 수 있는 사용자 선택이다. 회색으로 묻으면 그 서버 비용이 계속 안 잡히는 걸 놓친다.
+  it('무시한 서버는 빨강', () => {
+    expect(rowFor({ authIgnore: ['notion'] }, 'notion', 'MCP authentication')?.colorId).toBe('charts.red');
+  });
+
+  it('Lens가 지원 못 하는 서버는 색이 없다 — 사용자가 할 수 있는 게 없다', () => {
+    expect(rowFor({ unsupported: ['notion'] }, 'notion', 'MCP authentication')?.colorId).toBeUndefined();
+  });
+});

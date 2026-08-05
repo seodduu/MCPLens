@@ -60,9 +60,8 @@ function wasteSuffix(rows: MatrixRow[]): string {
  */
 function fmtTok(n: number): string {
   const v = Math.round(n);
-  return v >= 10_000
-    ? `${(v / 1000).toFixed(1)}ktok`
-    : `${v.toLocaleString('en-US')}tok`;
+  if (v >= 10_000) return `${(v / 1000).toFixed(1)}k tokens`;
+  return `${v.toLocaleString('en-US')} ${v === 1 ? 'token' : 'tokens'}`;
 }
 
 /** 지연 로딩 노드의 누적 비용 문구. 정의 미측정이면 응답분만 담긴 하한값이므로 ≥를 붙인다.
@@ -154,7 +153,7 @@ function zeroUsageServerNodes(managed: ManagedServer[], usedNames: Set<string>):
     kind: 'server',
     id: `claude-code/${s.name}`,
     label: s.name,
-    description: s.enabled ? '0 calls · 0tok' : '0 calls · 0tok · Disabled',
+    description: s.enabled ? '0 calls · 0 tokens' : '0 calls · 0 tokens · Disabled',
     client: 'claude-code', serverName: s.name, enabled: s.enabled,
     children: [],
   }));
@@ -258,7 +257,7 @@ export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set
   if (managedServers.length > 0 && !roots.some((r) => r.id === 'claude-code')) {
     roots.push({
       kind: 'client', id: 'claude-code', label: 'claude-code',
-      description: '0 sessions · total 0 calls · 0tok',
+      description: '0 sessions · total 0 calls · 0 tokens',
       children: zeroUsageServerNodes(managedServers, new Set()),
     });
   }

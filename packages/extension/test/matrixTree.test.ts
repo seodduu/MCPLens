@@ -33,7 +33,7 @@ describe('buildTree', () => {
   it('툴 노드 description에 호출수·응답토큰이 들어간다', () => {
     const tool = buildTree(input)[1].children[0].children[0]; // codex/node_repl/js
     expect(tool.description).toContain('1 call');
-    expect(tool.description).toContain('50tok');
+    expect(tool.description).toContain('50 tokens');
   });
 
   // 권고는 아이콘으로만 전한다 — 낱말이 툴마다 반복되면 숫자가 밀린다.
@@ -163,8 +163,8 @@ describe('buildTree', () => {
       sessions: [session('c1', 'claude-code')],
     };
     const tool = buildTree(loadedOnly)[0].children[0].children[0];
-    expect(tool.description).toContain('3,287tok');
-    expect(tool.description).not.toContain('0tok');
+    expect(tool.description).toContain('3,287 tokens');
+    expect(tool.description).not.toContain('0 tokens');
   });
 
   it('로드만 되고 호출 0인 툴은 searchedNotCalled로 표시한다', () => {
@@ -198,7 +198,7 @@ describe('buildTree', () => {
         session('c3', 'claude-code')],
     };
     const tool = buildTree(threeSessions)[0].children[0].children[0];
-    expect(tool.description).toContain('3,000tok');
+    expect(tool.description).toContain('3,000 tokens');
   });
 
   it('로드 기록이 없어도 호출된 세션 수로 정의 비용을 역산한다', () => {
@@ -212,13 +212,13 @@ describe('buildTree', () => {
     };
     const tool = buildTree(hookOnly)[0].children[0].children[0];
     // 정의 1721 × 2세션 = 3442, 응답 50 × 2회 = 100 → 합계 3542
-    expect(tool.description).toContain('3,542tok');
+    expect(tool.description).toContain('3,542 tokens');
   });
 
   // 미측정 = 정의 토큰이 빠진 값 = 하한. 긴 괄호 문구 대신 ≥ 한 글자로 같은 사실을 말한다.
   it('정의 토큰 미측정이면 응답분을 하한값(≥)으로 표시한다', () => {
     const tool = buildTree(input)[1].children[0].children[0]; // codex/node_repl/js
-    expect(tool.description).toContain('≥50tok');
+    expect(tool.description).toContain('≥50 tokens');
     expect(tool.description).not.toContain('not measured');
   });
 
@@ -238,7 +238,7 @@ describe('buildTree', () => {
     expect(tool.description).not.toContain('candidate');
   });
 
-  it('로드만 되고 호출 0인 툴이 있을 때 클라이언트 노드가 0tok이 아니라 자식 합을 표시한다', () => {
+  it('로드만 되고 호출 0인 툴이 있을 때 클라이언트 노드가 0이 아니라 자식 합을 표시한다', () => {
     const loadedOnly: EngineInput = {
       definitions: [{ serverName: 'notion', toolName: 'notion-update-page',
         definitionTokens: 3287, scannedAt: '2026-07-19T00:00:00Z',
@@ -252,9 +252,9 @@ describe('buildTree', () => {
     const toolNode = clientNode.children[0].children[0];
     // 클라이언트 노드는 접혀 있어도 자식(툴)과 모순되지 않아야 한다 —
     // 응답 토큰 합(0)이 아니라 서버·툴 노드와 동일한 누적 비용 fold를 써야 한다.
-    expect(clientNode.description).toContain('3,287tok');
-    expect(clientNode.description).not.toContain('0tok');
-    expect(clientNode.description).toContain(toolNode.description.match(/[\d,]+tok/)![0]);
+    expect(clientNode.description).toContain('3,287 tokens');
+    expect(clientNode.description).not.toContain('0 tokens');
+    expect(clientNode.description).toContain(toolNode.description.match(/[\d,.]+k? tokens/)![0]);
   });
 
   it('서버 노드 누적 비용은 자식 툴들의 합과 같다', () => {
@@ -273,7 +273,7 @@ describe('buildTree', () => {
       sessions: [session('c1', 'claude-code')],
     };
     const server = buildTree(twoTools)[0].children[0];
-    expect(server.description).toContain('5,813tok');   // 3287 + 2526
+    expect(server.description).toContain('5,813 tokens');   // 3287 + 2526
   });
 });
 
@@ -302,7 +302,7 @@ describe('비용 내림차순 정렬', () => {
     expect(big.children.map((t) => t.label)).toEqual(['x', 'y']);
   });
 
-  it('사용 이력 없는 managed 서버는 0tok이므로 뒤로 간다', () => {
+  it('사용 이력 없는 managed 서버는 0 tokens이므로 뒤로 간다', () => {
     const [client] = buildTree(input, new Set(), [{ name: 'idle', enabled: true, origins: ['user'] }]);
     expect(client.children.map((s) => s.label)).toEqual(['big', 'small', 'idle']);
   });
@@ -328,13 +328,13 @@ describe('토큰 표기 축약', () => {
 
   it('1만 이상은 k로 줄인다 — 트리는 비례폭이라 긴 자릿수가 비교에 도움이 안 된다', () => {
     const tool = buildTree(oneTool(126_604))[0].children[0].children[0];
-    expect(tool.description).toContain('126.6ktok');
+    expect(tool.description).toContain('126.6k tokens');
     expect(tool.description).not.toContain('126,604');
   });
 
   it('1만 미만은 전체 자릿수를 유지한다', () => {
     const tool = buildTree(oneTool(9_999))[0].children[0].children[0];
-    expect(tool.description).toContain('9,999tok');
+    expect(tool.description).toContain('9,999 tokens');
   });
 });
 
@@ -348,12 +348,12 @@ describe('집계 표시', () => {
   it('클라이언트 노드에 총 호출수·응답토큰 합이 들어간다', () => {
     const client = buildTree(input)[0];
     expect(client.description).toContain('total 2 calls');
-    expect(client.description).toContain('100tok'); // 50 + 50
+    expect(client.description).toContain('100 tokens'); // 50 + 50
   });
   it('서버 노드에 호출수·응답토큰 합이 들어간다', () => {
     const server = buildTree(input)[0].children[0];
     // 미측정 표기는 툴 노드에만 — 상위 노드에서 반복되면 잡음이 된다
-    expect(server.description).toBe('2 calls · 100tok');
+    expect(server.description).toBe('2 calls · 100 tokens');
   });
 
   it('미측정 표기는 서버·클라이언트 노드에 나타나지 않는다', () => {
@@ -458,7 +458,7 @@ describe('서버 단위 토글 표시', () => {
   it('사용 이력 없는 managed 서버는 0회 노드로 추가된다', () => {
     const claude = buildTree(input, new Set(), [m('github', true), m('lenstest', false)])[0];
     const zero = claude.children.find((s) => s.label === 'lenstest')!;
-    expect(zero.description).toBe('0 calls · 0tok · Disabled');
+    expect(zero.description).toBe('0 calls · 0 tokens · Disabled');
     expect(zero.enabled).toBe(false);
     expect(zero.children).toEqual([]);
   });
@@ -517,20 +517,20 @@ describe('업프론트 클라이언트 세션당 정의 부담 표시', () => {
     sessionId, serverName: 'tiny', toolName: tool, calledAt: at(0),
     durationMs: null, isError: false, responseTokens: 50, responseText: null });
 
-  it('업프론트 미호출 툴은 0tok이 아니라 세션당 정의 부담으로 표시한다', () => {
-    // 로드 이벤트가 없어 loadSessions=0 → 누적은 0tok이 되지만, 매 세션 로드되는 부담이 있다.
+  it('업프론트 미호출 툴은 0이 아니라 세션당 정의 부담으로 표시한다', () => {
+    // 로드 이벤트가 없어 loadSessions=0 → 누적은 0 tokens이 되지만, 매 세션 로드되는 부담이 있다.
     const [client] = buildTree({
       definitions: [def('a', 800)], calls: [], loads: [], sessions: upfront(5) });
     const tool = client.children[0].children[0];
-    expect(tool.description).toContain('800tok/session');
+    expect(tool.description).toContain('800 tokens/session');
   });
 
-  // "3 calls · calls 0tok"은 호출을 두 번 말하면서 0이라는 빈 값을 싣는 꼴이다.
+  // "3 calls · calls 0 tokens"은 호출을 두 번 말하면서 0이라는 빈 값을 싣는 꼴이다.
   it('응답 토큰이 0이면 호출 비용 조각을 통째로 뺀다', () => {
     const [client] = buildTree({
       definitions: [def('a', 800)], calls: [], loads: [], sessions: upfront(5) });
     const tool = client.children[0].children[0];
-    expect(tool.description).not.toContain('calls 0tok');
+    expect(tool.description).not.toContain('calls 0 tokens');
     // 한쪽만 남으면 라벨도 필요 없다 — /session이 정의임을 이미 밝힌다
     expect(tool.description).not.toContain('definition ');
   });
@@ -542,35 +542,35 @@ describe('업프론트 클라이언트 세션당 정의 부담 표시', () => {
       calls: [upcall('s0', 'a'), upcall('s0', 'a'), upcall('s1', 'a')],
       loads: [], sessions: upfront(5) });
     const tool = client.children[0].children[0];
-    expect(tool.description).toContain('calls 150tok');     // 50×3 누적
-    expect(tool.description).toContain('definition 800tok/session'); // 세션 수 미승산
+    expect(tool.description).toContain('calls 150 tokens');     // 50×3 누적
+    expect(tool.description).toContain('definition 800 tokens/session'); // 세션 수 미승산
     expect(tool.description).not.toContain('4,000');       // 800×5 아님
   });
 
   it('서버·클라이언트 롤업도 호출·정의 분리로 표기한다', () => {
     const [client] = buildTree({
       definitions: [def('a', 800), def('b', 200)], calls: [], loads: [], sessions: upfront(5) });
-    expect(client.children[0].description).toContain('1,000tok/session'); // 800+200
-    expect(client.description).toContain('1,000tok/session');
+    expect(client.children[0].description).toContain('1,000 tokens/session'); // 800+200
+    expect(client.description).toContain('1,000 tokens/session');
   });
 
-  it('정의 1토큰짜리 더미 툴도 0tok이 아니라 1tok/세션으로 보인다', () => {
+  it('정의 1토큰짜리 더미 툴도 0이 아니라 1 token/세션으로 보인다', () => {
     const [client] = buildTree({
       definitions: [def('a', 1), def('b', 1), def('c', 1)], calls: [], loads: [],
       sessions: upfront(5) });
     for (const t of client.children[0].children)
-      expect(t.description).toContain('1tok/session');
+      expect(t.description).toContain('1 token/session');
   });
 
-  it('정의 미측정 툴은 0tok/세션이 아니라 "정의 미측정"만 표기한다', () => {
+  it('정의 미측정 툴은 0 tokens/세션이 아니라 "정의 미측정"만 표기한다', () => {
     // 스캐너가 못 잡은 툴이 업프론트에서 호출됨 → 정의 토큰 null.
     const [client] = buildTree({
       definitions: [], calls: [upcall('s0', 'a')], loads: [], sessions: upfront(5) });
     const tool = client.children[0].children[0];
-    expect(tool.description).toContain('calls 50tok');
+    expect(tool.description).toContain('calls 50 tokens');
     expect(tool.description).toContain('definition unmeasured');
-    expect(tool.description).not.toContain('0tok/session');
-    expect(tool.description).not.toContain('definition 0tok');
+    expect(tool.description).not.toContain('0 tokens/session');
+    expect(tool.description).not.toContain('definition 0 tokens');
   });
 
   it('지연 로딩 클라이언트는 여전히 누적(/세션·호출 라벨 없음)으로 표시한다 — 회귀', () => {
@@ -584,9 +584,9 @@ describe('업프론트 클라이언트 세션당 정의 부담 표시', () => {
       sessions: [session('c1', 'claude-code')],
     };
     const tool = buildTree(loadedOnly)[0].children[0].children[0];
-    expect(tool.description).toContain('3,287tok');
+    expect(tool.description).toContain('3,287 tokens');
     expect(tool.description).not.toContain('/session');
-    expect(tool.description).not.toContain('calls 0tok'); // 지연 로딩은 누적 단일값
+    expect(tool.description).not.toContain('calls 0 tokens'); // 지연 로딩은 누적 단일값
   });
 });
 
