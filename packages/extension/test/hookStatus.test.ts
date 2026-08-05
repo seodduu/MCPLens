@@ -63,16 +63,16 @@ const healthy = { health: 'healthy', hookObserved: true, logObserved: true,
   consecutiveMisses: 0, consecutiveMatches: 1, waitingForCorrelation: 0, lastEventAt: null } as const;
 
 describe('clientRowPresentation', () => {
-  it('미설치는 미연결(설치 필요)로 표시', () => {
+  it('shows not installed as disconnected (installation required)', () => {
     const p = clientRowPresentation('not-installed', undefined);
     expect(p.label).toContain('Not connected');
     expect(p.severity).toBe('warning');
   });
-  it('설치+정상은 formatCollectionHealth 결과', () => {
+  it('shows installed and healthy as the formatCollectionHealth result', () => {
     const p = clientRowPresentation('installed', healthy);
     expect(p.label).toBe('Healthy');
   });
-  it('설치됐지만 관측 없으면 첫 이벤트 대기', () => {
+  it('shows installed with no observations as waiting for the first event', () => {
     const p = clientRowPresentation('installed', undefined);
     expect(p.label).toContain('Waiting');
   });

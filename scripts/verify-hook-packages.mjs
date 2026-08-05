@@ -213,13 +213,13 @@ function assertHookCommand(command, client, packageRoot, runner) {
 function expectedPendingEntry(entries) {
   assert.equal(entries.length, 1, `unexpected pending artifacts: ${JSON.stringify(entries)}`);
   assert.equal(entries[0].type, 'file', 'pending artifact must be a regular file');
-  // `~` 는 deliveryId의 `:` 를 파일명용으로 인코딩한 것이다(inbox.ts fileStem).
-  // Windows에서 `:` 가 예약 문자라 파일명에 그대로 쓸 수 없다.
+  // `~` is the file-name encoding of the `:` in a deliveryId (inbox.ts fileStem).
+  // On Windows `:` is reserved and cannot appear in a file name as it is.
   assert.match(entries[0].path, /^[A-Za-z0-9][A-Za-z0-9._~-]*\.json$/);
   return entries[0];
 }
 
-/** inbox.ts의 fileStem과 같은 인코딩 — `:` 는 Windows 파일명 예약 문자다. */
+/** Same encoding as fileStem in inbox.ts: `:` is a reserved file-name character on Windows. */
 function fileStem(deliveryId) {
   return deliveryId.replaceAll(':', '~');
 }

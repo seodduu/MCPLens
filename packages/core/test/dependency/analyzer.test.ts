@@ -92,7 +92,7 @@ async function input(
 }
 
 describe('analyzeUncachedServers', () => {
-  it('같은 hash+rulesVersion만 재사용하고 정의나 rulesVersion이 바뀐 서버만 miss 처리한다', async () => {
+  it('reuses only the same hash+rulesVersion and misses only servers whose definitions or rulesVersion changed', async () => {
     const store = await LensStore.open(':memory:');
     store.upsertDefinitionBodies([body('alpha', 'alpha-v1'), body('beta', 'beta-v1')]);
     store.saveDependencyAnalysis(complete('alpha-v1', 'alpha'));
@@ -120,7 +120,7 @@ describe('analyzeUncachedServers', () => {
     expect(batches[0]!.servers.map((server) => server.serverName)).toEqual(['alpha', 'beta']);
   });
 
-  it('여러 miss 서버를 provider budget까지 합치고 분석은 서버 hash별로 저장한다', async () => {
+  it('packs several missed servers up to the provider budget and stores the analysis per server hash', async () => {
     const store = await LensStore.open(':memory:');
     store.upsertDefinitionBodies([
       body('alpha', 'alpha-v1', 70_000),
@@ -143,7 +143,7 @@ describe('analyzeUncachedServers', () => {
     expect(store.findDependencyAnalysis('gamma-v1', 1)?.results[0]?.serverName).toBe('gamma');
   });
 
-  it('실패 batch의 서버만 failed로 저장하고 다른 batch와 기존 cache를 보존하며 재시도하지 않는다', async () => {
+  it('stores only the servers of a failed batch as failed, preserving other batches and the existing cache, and never retries', async () => {
     const store = await LensStore.open(':memory:');
     store.upsertDefinitionBodies([
       body('alpha', 'alpha-v1', 70_000),
@@ -181,7 +181,7 @@ describe('analyzeUncachedServers', () => {
     expect(store.findDependencyAnalysis('alpha-v1', 1)?.status).toBe('complete');
   });
 
-  it('정적·call-chain 집계를 payload에 넣고 검증된 LLM 결과와 병합한다', async () => {
+  it('puts the static and call-chain aggregates in the payload and merges the validated LLM result', async () => {
     const store = await LensStore.open(':memory:');
     store.upsertDefinitionBodies([
       { ...body('alpha', 'alpha-v1', 10, 'prepare'), description: 'Prepare data.' },
@@ -212,7 +212,7 @@ describe('analyzeUncachedServers', () => {
     });
   });
 
-  it('동의가 없거나 revoked이고 provider가 unavailable이면 runner를 호출하지 않는다', async () => {
+  it('never calls the runner when consent is absent or revoked and the provider is unavailable', async () => {
     const store = await LensStore.open(':memory:');
     store.upsertDefinitionBodies([body('alpha', 'alpha-v1')]);
     const run = successfulRunner([]);

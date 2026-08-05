@@ -1,2 +1,2 @@
-// core 구현으로 위임 (Wave 6A에서 승격) — CLI는 얇은 표면 원칙 유지
+// Delegates to the core implementation (promoted in Wave 6A); the CLI stays a thin surface.
 export { collectServerSpecs, type CollectResult } from '@mcp-lens/core';

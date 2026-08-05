@@ -63,20 +63,20 @@ describe('BaseHookInstaller never-throw guarantees', () => {
 });
 
 describe('absent', () => {
-  it('claude의 "not found in installed plugins" 문구를 true로 판정한다', () => {
+  it('reports true for claude\'s "not found in installed plugins" wording', () => {
     expect(absent('Error: mcp-lens@mcplens not found in installed plugins')).toBe(true);
   });
 
-  it('gemini의 \'Extension not found.\' 문구를 true로 판정한다', () => {
+  it('reports true for gemini\'s \'Extension not found.\' wording', () => {
     expect(absent('Failed to uninstall "mcp-lens": Extension not found.')).toBe(true);
   });
 
-  it('codex의 "not installed" / "no such" 문구를 true로 판정한다', () => {
+  it('reports true for codex\'s "not installed" / "no such" wording', () => {
     expect(absent('plugin is not installed')).toBe(true);
     expect(absent('no such plugin')).toBe(true);
   });
 
-  it('무관한 에러는 false로 판정한다', () => {
+  it('reports false for an unrelated error', () => {
     expect(absent('permission denied')).toBe(false);
   });
 });

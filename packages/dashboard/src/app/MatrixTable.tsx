@@ -2,31 +2,31 @@ import { Fragment } from 'react';
 import type { MatrixRow, RecommendationReason } from '@mcp-lens/core';
 
 const ACTION_COLOR: Record<MatrixRow['recommendation']['action'], string> = {
-  remove: '#d64545', // 빨강
-  'filter-server': '#e08a2e', // 주황
-  inspect: '#7a5cc4', // 보라 (점검)
-  keep: '#2e9e5b', // 초록
+  remove: '#d64545', // red
+  'filter-server': '#e08a2e', // orange
+  inspect: '#7a5cc4', // purple (inspect)
+  keep: '#2e9e5b', // green
   unknown: '#8a8a8a',
 };
 
 const ACTION_LABEL: Record<MatrixRow['recommendation']['action'], string> = {
-  remove: '제거',
-  'filter-server': '필터링',
-  inspect: '점검',
-  keep: '유지',
-  unknown: '불명',
+  remove: 'remove',
+  'filter-server': 'filter',
+  inspect: 'inspect',
+  keep: 'keep',
+  unknown: 'unknown',
 };
 
-/** 툴, 정의 토큰, 호출 수, 응답 토큰, 로드된 세션, 전체 세션, 권고 */
+/** tool, definition tokens, calls, response tokens, loaded sessions, total sessions, recommendation */
 const COLUMN_COUNT = 7;
 
-/** 이 길이 미만의 이유 문장은 접지 않는다 (접어도 줄지 않고 뜻만 흐려진다). */
+/** Reason sentences shorter than this are never folded (folding saves nothing and only obscures them). */
 const FOLD_MIN_LENGTH = 40;
 
 /**
- * 서버 공통 근거(serverBasis)를 뺀 "이 툴만의" 근거 문장.
- * 서버 단위 문장은 그룹 헤더에 한 번만 싣고, 행에는 툴별 내용만 남긴다.
- * 계산은 하지 않고 core가 준 조각을 고르고 잇기만 한다 (순수 표시 축약).
+ * The "tool-only" reason sentence, with the shared server basis (serverBasis) removed.
+ * The server-level sentence appears once in the group header, and rows keep only per-tool content.
+ * It computes nothing and only picks and joins the pieces core produced (pure display abbreviation).
  */
 function toolReasonText(parts: RecommendationReason): string {
   return [parts.basis, parts.effect, parts.caveat]
@@ -35,8 +35,8 @@ function toolReasonText(parts: RecommendationReason): string {
 }
 
 /**
- * 문장에서 숫자만 빼낸 "틀". 같은 틀이 이어지면 수치만 다른 같은 말이므로 접는다.
- * 예: "누적 부담 1,146,096토큰" 과 "누적 부담 854,448토큰" 은 같은 틀이다.
+ * The "shape" of a sentence with its numbers stripped. Consecutive identical shapes say the same
+ * thing with different numbers, so they are folded.
  */
 function reasonShape(text: string): string {
   return text.replace(/[\d,]+/g, '#');
@@ -44,12 +44,12 @@ function reasonShape(text: string): string {
 
 interface ServerGroup {
   serverName: string;
-  /** 이 서버 툴들이 공유하는 권고 문장. 없으면 null */
+  /** The recommendation sentence shared by this server's tools. null when absent. */
   serverBasis: string | null;
   rows: MatrixRow[];
 }
 
-/** 행 순서(비용 내림차순)를 유지한 채 서버 단위로 묶는다. */
+/** Groups rows per server while preserving row order (descending by cost). */
 function groupByServer(rows: MatrixRow[]): ServerGroup[] {
   const groups = new Map<string, ServerGroup>();
   for (const row of rows) {
@@ -66,18 +66,18 @@ function groupByServer(rows: MatrixRow[]): ServerGroup[] {
 }
 
 /**
- * 3자리마다 쉼표. core의 문구 생성이 쓰는 것과 같은 방식이라 한 열에서 표기가 엇갈리지 않는다.
- * `toLocaleString()`은 실행 환경 로케일을 타므로 쓰지 않는다.
+ * A comma every three digits. Same approach as core's text generation, so a column never mixes formats.
+ * `toLocaleString()` is avoided because it depends on the runtime locale.
  */
 function withThousands(value: number): string {
   return String(Math.round(value)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
-/** 접힌 행에 남길 한 줄. 수치는 core가 준 evidence 값을 형식만 바꿔 쓴다. */
+/** The single line kept on a folded row. The number is core's evidence value, only reformatted. */
 function shortFacts(row: MatrixRow): string {
   const cost = row.recommendation.evidence.totalObservedCost;
-  if (cost != null) return `누적 부담 ${withThousands(cost)}토큰 (권고 근거는 위와 같음)`;
-  return '위와 같음';
+  if (cost != null) return `accumulated cost ${withThousands(cost)} tokens (same recommendation basis as above)`;
+  return 'same as above';
 }
 
 export interface MatrixTableProps {
@@ -86,7 +86,7 @@ export interface MatrixTableProps {
 
 export function MatrixTable({ rows }: MatrixTableProps) {
   if (rows.length === 0) {
-    return <p>표시할 매트릭스 데이터가 없습니다.</p>;
+    return <p>No matrix data to display.</p>;
   }
 
   const groups = groupByServer(rows);
@@ -95,26 +95,26 @@ export function MatrixTable({ rows }: MatrixTableProps) {
     <table className="matrix-table">
       <thead>
         <tr>
-          <th>툴</th>
-          <th>정의 토큰</th>
-          <th>호출 수</th>
-          <th>응답 토큰</th>
-          <th>로드된 세션</th>
-          <th>전체 세션</th>
-          <th>권고</th>
+          <th>Tool</th>
+          <th>Definition tokens</th>
+          <th>Calls</th>
+          <th>Response tokens</th>
+          <th>Loaded sessions</th>
+          <th>Total sessions</th>
+          <th>Recommendation</th>
         </tr>
       </thead>
       <tbody>
         {groups.map((group) => {
-          // 서버 안에서 이미 한 번 보여 준 틀은 두 번째부터 수치 한 줄로 접는다.
-          // 사이에 다른 권고 행이 끼어도 접힘이 풀리지 않게 집합으로 기억한다.
+          // Within a server, a shape already shown once is folded to a single number line from the
+          // second occurrence on. It is remembered in a set so an unrelated row in between does not unfold it.
           const shownShapes = new Set<string>();
           return (
             <Fragment key={group.serverName}>
               <tr className="server-group-row">
                 <th colSpan={COLUMN_COUNT} scope="colgroup">
                   <span className="server-group-name">{group.serverName}</span>
-                  <span className="server-group-count">툴 {group.rows.length}개</span>
+                  <span className="server-group-count">{group.rows.length} tools</span>
                   {group.serverBasis && (
                     <span className="server-group-note">{group.serverBasis}</span>
                   )}
@@ -123,7 +123,7 @@ export function MatrixTable({ rows }: MatrixTableProps) {
               {group.rows.map((row) => {
                 const reason = toolReasonText(row.recommendation.reasonParts);
                 const shape = `${row.recommendation.action}|${reasonShape(reason)}`;
-                // 짧은 문장("8회 호출됨")은 접어 봐야 얻는 것이 없고 뜻만 흐려진다.
+                // A short sentence ("called 8 times") gains nothing from folding and only gets murkier.
                 const folded =
                   reason.length >= FOLD_MIN_LENGTH && shownShapes.has(shape);
                 shownShapes.add(shape);

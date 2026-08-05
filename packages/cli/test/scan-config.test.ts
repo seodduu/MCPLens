@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { collectServerSpecs } from '../src/scan-config.js';
 
 describe('collectServerSpecs', () => {
-  it('top-level 과 projects mcpServers 를 병합한다', () => {
+  it('merges top-level and projects mcpServers', () => {
     const json = JSON.stringify({
       mcpServers: {
         github: { command: 'gh-mcp', args: ['--stdio'] },
@@ -23,7 +23,7 @@ describe('collectServerSpecs', () => {
     expect(specs.find((s) => s.name === 'db')!.args).toEqual([]);
   });
 
-  it('서버명으로 중복 제거하며 top-level 을 우선한다', () => {
+  it('dedupes by server name and prefers top-level', () => {
     const json = JSON.stringify({
       mcpServers: { github: { command: 'top-cmd', args: ['top'] } },
       projects: {
@@ -35,7 +35,7 @@ describe('collectServerSpecs', () => {
     expect(specs[0].command).toBe('top-cmd');
   });
 
-  it('http(url) 서버는 스펙에 포함되고, 전송 판별 불가만 skip한다 (Wave 7A 계약)', () => {
+  it('includes http(url) servers and skips only servers with an undeterminable transport (Wave 7A contract)', () => {
     const json = JSON.stringify({
       mcpServers: {
         github: { command: 'gh-mcp' },
@@ -49,7 +49,7 @@ describe('collectServerSpecs', () => {
     expect(skipped).toEqual(['mystery']);
   });
 
-  it('잘못된 JSON 은 throw 하지 않고 빈 결과를 반환한다', () => {
+  it('returns an empty result for invalid JSON instead of throwing', () => {
     expect(collectServerSpecs('{not json')).toEqual({ specs: [], skipped: [] });
   });
 });

@@ -1,24 +1,25 @@
-# @mcp-lens/dashboard — 동결됨 (2026-07-20)
+# @mcp-lens/dashboard: frozen (2026-07-20)
 
-이 표면은 **동결(freeze)** 상태다. 삭제가 아니다 — 코드·테스트는 유지되며 전체 빌드·테스트는
-계속 통과해야 한다. 다만 신규 기능 반영(신뢰도 축, 클라이언트별 뷰, 모드 인지 필터 등)은
-하지 않는다.
+This surface is **frozen**. It is not deleted: the code and tests remain, and the full build and
+test run must keep passing. What stops is new feature work (the confidence axis, per-client views,
+the mode-aware filter and so on).
 
-## 동결 사유
+## Why it is frozen
 
-- 설계 시점(설계문서 6장)에는 "사람용 상시 인터페이스"였으나, 이후 추가된 **VS Code
-  사이드바 트리(확장)가 그 역할을 흡수**했다. 타겟 사용자는 에디터 안에 있고, 상시
-  확인은 상태바·사이드바가 그 자리에서 제공한다.
-- 유지 비용 실증: 코어 진화(신뢰도·클라이언트별·표시 필터)를 표면 3곳에 반영하는 동안
-  대시보드만 지속적으로 뒤처졌고, 별도 프로세스라서만 존재하는 결함(M8 리로드 경합)을
-  낳았다.
+- At design time (design doc ch. 6) it was "the always-on human interface", but the **VS Code
+  sidebar tree (the extension) added later absorbed that role**. The target users are inside the
+  editor, and the status bar and sidebar provide the always-on view right where they are.
+- Maintenance cost, demonstrated: while core evolution (confidence, per-client, display filter) was
+  applied to three surfaces, only the dashboard kept falling behind, and it produced a defect that
+  exists solely because it is a separate process (the M8 reload race).
 
-## 고유 기능의 거취
+## Where its unique feature goes
 
-- **세션 타임라인**(DevTools 스타일): 이 표면의 유일한 고유 가치. 필요해지면 VS Code
-  **웹뷰 패널**로 확장 안에 이식하는 것이 제품 방향에 맞다 (백로그 참조).
+- **Session timeline** (DevTools style): the one unique value of this surface. When it is needed,
+  porting it into the extension as a VS Code **webview panel** matches the product direction
+  (see the backlog).
 
-## 사용법 (동결 시점 기준 동작함)
+## Usage (working as of the freeze)
 
 ```bash
 npm start -w @mcp-lens/dashboard   # http://127.0.0.1:43117

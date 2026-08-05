@@ -96,7 +96,7 @@ function depsFor(child: FakeChild, dirs: string[] = []) {
 }
 
 describe('runInference', () => {
-  it('Claude CLI에 inline schema를 전달하고 빈 cwd에서 한 번 실행한다', async () => {
+  it('passes an inline schema to the Claude CLI and runs it once in an empty cwd', async () => {
     const child = new FakeChild();
     const dirs: string[] = [];
     const deps = depsFor(child, dirs);
@@ -146,7 +146,7 @@ describe('runInference', () => {
     expect(deps.rm).toHaveBeenCalledWith('/tmp/mcplens-inference-0', { recursive: true, force: true });
   });
 
-  it('Codex CLI를 read-only ephemeral 격리 인자로 실행한다', async () => {
+  it('runs the Codex CLI with read-only ephemeral isolation arguments', async () => {
     const child = new FakeChild();
     const deps = depsFor(child);
     const promise = runInference({ provider: 'codex', model: 'gpt-5.6-luna', batch }, deps);
@@ -182,7 +182,7 @@ describe('runInference', () => {
     await expect(promise).resolves.toEqual({ ok: true, value: validValue });
   });
 
-  it('두 provider에 동일한 고정 판정 지침과 허용된 batch context만 전달한다', async () => {
+  it('passes both providers the same fixed verdict instructions and only the allowed batch context', async () => {
     const claude = new FakeChild();
     const codex = new FakeChild();
     const claudePromise = runInference({ provider: 'claude', model: 'haiku', batch }, depsFor(claude));
@@ -221,7 +221,7 @@ describe('runInference', () => {
     await expect(codexPromise).resolves.toEqual({ ok: true, value: validValue });
   });
 
-  it('지시형 definition 문자열도 비신뢰 context로만 전달한다', async () => {
+  it('passes an imperative definition string as untrusted context only', async () => {
     const adversarialBatch: InferenceRunBatch = {
       batchId: 'batch-adversarial',
       servers: [{
@@ -271,7 +271,7 @@ describe('runInference', () => {
     });
   });
 
-  it('Claude raw schema object와 structured_output 없는 wrapper를 schema-mismatch로 거부한다', async () => {
+  it('rejects a Claude raw schema object and a wrapper without structured_output as schema-mismatch', async () => {
     const raw = new FakeChild();
     const rawPromise = runInference({ provider: 'claude', model: 'haiku', batch }, depsFor(raw));
     await vi.waitFor(() => expect(raw.stdinPayload).not.toBe(''));
@@ -290,7 +290,7 @@ describe('runInference', () => {
   it.each([
     ['error subtype', { type: 'result', subtype: 'error_max_structured_output_retries' }],
     ['wrong type', { type: 'assistant', subtype: 'success' }],
-  ])('Claude %s이면 유효한 structured_output도 거부한다', async (_name, wrapper) => {
+  ])('rejects even valid structured_output when Claude reports %s', async (_name, wrapper) => {
     const child = new FakeChild();
     const promise = runInference({ provider: 'claude', model: 'haiku', batch }, depsFor(child));
     await vi.waitFor(() => expect(child.stdinPayload).not.toBe(''));
@@ -299,7 +299,7 @@ describe('runInference', () => {
     await expect(promise).resolves.toEqual({ ok: false, errorCode: 'schema-mismatch', exitCode: 0 });
   });
 
-  it('출력 schema가 상태별 nullable, 비공백, printable ASCII 계약을 고정한다', () => {
+  it('pins the output schema contract: per-state nullable, non-blank, printable ASCII', () => {
     const items = INFERENCE_OUTPUT_SCHEMA.properties.results.items;
     expect(items).toHaveProperty('anyOf');
     const branches = 'anyOf' in items ? items.anyOf : [];
@@ -351,7 +351,7 @@ describe('runInference', () => {
     expect(JSON.stringify(INFERENCE_OUTPUT_SCHEMA)).not.toMatch(/minLength|maxLength/);
   });
 
-  it('timeout과 cancel은 child 정착 뒤 cleanup하고 grace 뒤 강제 종료한다', async () => {
+  it('cleans up after the child settles on timeout and cancel, and force-kills after the grace period', async () => {
     vi.useFakeTimers();
     try {
       const timedOut = new DelayedCloseChild();
@@ -399,7 +399,7 @@ describe('runInference', () => {
     }
   });
 
-  it('hard deadline까지 child가 정착하지 않으면 active cwd를 삭제하지 않는다', async () => {
+  it('does not delete the active cwd when the child never settles by the hard deadline', async () => {
     vi.useFakeTimers();
     try {
       const child = new DelayedCloseChild();
@@ -415,7 +415,7 @@ describe('runInference', () => {
     }
   });
 
-  it('timeout, cancel, nonzero, invalid-json, schema-mismatch를 구별하고 재시도하지 않는다', async () => {
+  it('distinguishes timeout, cancel, nonzero, invalid-json and schema-mismatch, and never retries', async () => {
     vi.useFakeTimers();
     const timedOut = new FakeChild();
     const timeoutDeps = depsFor(timedOut);

@@ -13,7 +13,7 @@ import { countTokens } from '../../tokenize.js';
 
 const MCP_NAME = /^mcp__(.+?)__(.+)$/;
 
-/** Claude Code(.claude/projects/*.jsonl) 세션 로그 어댑터. */
+/** Session log adapter for Claude Code (.claude/projects/*.jsonl). */
 export class ClaudeAdapter implements LogAdapter {
   readonly client = 'claude-code' as const;
 
@@ -52,7 +52,7 @@ export class ClaudeAdapter implements LogAdapter {
       const msg = rec.message;
       if (!msg || typeof msg !== 'object') continue;
 
-      // 토큰: message.usage 4필드
+      // Tokens: the 4 fields of message.usage
       if (msg.usage && typeof msg.usage === 'object') {
         usage.push({
           sessionId,
@@ -69,7 +69,7 @@ export class ClaudeAdapter implements LogAdapter {
         if (!part || typeof part !== 'object') continue;
 
         if (part.type === 'tool_use') {
-          // ToolSearch 호출 자체도 로드 신호(설계문서: 지연 세션 확정) → 모드 판별에만 사용
+          // A ToolSearch call is itself a load signal (design doc: confirms a deferred session), used only for mode detection
           if (part.name === 'ToolSearch') sawLoadSignal = true;
           const m = MCP_NAME.exec(part.name ?? '');
           const pendingKey = typeof part.id === 'string' ? part.id : null;
@@ -80,7 +80,7 @@ export class ClaudeAdapter implements LogAdapter {
             });
           }
         } else if (part.type === 'tool_result') {
-          // 로드 신호(핵심): tool_result content[]의 {type:'tool_reference', tool_name:'mcp__...'}
+          // Load signal (the important one): {type:'tool_reference', tool_name:'mcp__...'} inside tool_result content[]
           if (Array.isArray(part.content)) {
             for (const inner of part.content) {
               if (inner && inner.type === 'tool_reference') {
@@ -90,13 +90,13 @@ export class ClaudeAdapter implements LogAdapter {
                   sessionId,
                   serverName: load.server,
                   toolName: load.tool,
-                  loadedTokens: null, // Claude는 이름만 기록 → 스캐너 조인으로 산출
+                  loadedTokens: null, // Claude records only the name, so this is derived by joining with the scanner
                 });
               }
             }
           }
 
-          // MCP 실호출 응답 매칭
+          // Match a real MCP call response
           const u = pendingUse.get(part.tool_use_id);
           if (u) {
             pendingUse.delete(part.tool_use_id);
@@ -108,7 +108,7 @@ export class ClaudeAdapter implements LogAdapter {
               calledAt: u.at,
               durationMs: null,
               isError: part.is_error === true,
-              // Claude는 툴 응답 토큰을 분리 실측하지 않음 → 본문 tiktoken 추정 (설계문서 8장 원칙)
+              // Claude does not measure tool response tokens separately, so the body is estimated with tiktoken (design doc ch. 8 principle)
               responseTokens: responseText ? countTokens(responseText) : null,
               responseText,
               externalCallId: u.externalCallId,
@@ -135,14 +135,14 @@ function nativeId(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value : null;
 }
 
-/** mcp__<server>__<tool> 을 분해. 매칭 안 되면 server=null, tool=원본 이름. */
+/** Splits mcp__<server>__<tool>. On no match, server=null and tool is the original name. */
 function splitName(name: string): { server: string | null; tool: string } {
   const m = MCP_NAME.exec(name);
   if (m) return { server: m[1], tool: m[2] };
   return { server: null, tool: name };
 }
 
-/** tool_result 본문: 문자열이면 그대로, 배열이면 content[].text를 이어붙임. */
+/** tool_result body: a string is used as is, an array joins content[].text. */
 function flattenResult(content: unknown): string | null {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {

@@ -119,11 +119,11 @@ describe('dashboard HTTP contract', () => {
   });
 });
 
-describe('dashboard 실패 처리', () => {
-  it('API 핸들러가 throw 해도 프로세스가 죽지 않고 500 JSON 을 준다', async () => {
-    // store 메서드가 던지는 상황을 흉내낸다 (DB 손상, 파일 권한 등)
+describe('dashboard failure handling', () => {
+  it('answers 500 JSON without killing the process when an API handler throws', async () => {
+    // Simulates a store method throwing (DB corruption, file permissions, and so on)
     const brokenStore = {
-      allDefinitions() { throw new Error('store 고장'); },
+      allDefinitions() { throw new Error('store broken'); },
       callsSince() { return []; },
       loadsSince() { return []; },
       sessionsSince() { return []; },
@@ -138,19 +138,19 @@ describe('dashboard 실패 처리', () => {
       expect(res.status).toBe(500);
       expect(res.headers.get('content-type')).toContain('application/json');
       const body = await res.json();
-      expect(body.error).toBe('내부 오류');
+      expect(body.error).toBe('internal error');
     } finally {
       await new Promise<void>((resolve) => srv.close(() => resolve()));
     }
   });
 
-  it('포트가 이미 쓰이면 조치 가능한 한국어 메시지로 reject 한다', async () => {
+  it('rejects with an actionable message when the port is already in use', async () => {
     const store2 = await LensStore.open(':memory:');
     const first = await startDashboard(store2, 0);
     const { port } = first.address() as AddressInfo;
     try {
       await expect(startDashboard(store2, port)).rejects.toThrow(
-        `포트 ${port}이 이미 사용 중입니다`,
+        `Port ${port} is already in use`,
       );
     } finally {
       await new Promise<void>((resolve) => first.close(() => resolve()));
@@ -160,13 +160,13 @@ describe('dashboard 실패 처리', () => {
 });
 
 describe('dashboard with :memory: store (no watchFile → no reload path)', () => {
-  it('API 는 정상 동작하고 파일 재로딩을 시도하지 않는다', async () => {
+  it('serves the API normally and never tries to reload the file', async () => {
     const memStore = await LensStore.open(':memory:');
     memStore.upsertDefinitions([
       { serverName: 'github', toolName: 'search_issues', definitionTokens: 500, scannedAt: FIXED_ISO, firstScannedAt: FIXED_ISO },
     ]);
     memStore.ingest(fakeResult());
-    // watchFile 미지정 → 파일 stat/재오픈 경로를 타지 않음
+    // no watchFile, so the stat/reopen path is never taken
     const srv = await startDashboard(memStore, 0);
     const addr = srv.address() as AddressInfo;
     try {

@@ -54,13 +54,14 @@ function standaloneGeminiDecoder() {
 }
 
 /**
- * 런타임 내용 지문. 확장은 이 값으로 "설치된 훅 런타임이 번들과 같은가"를 판정한다.
+ * Content fingerprint of the runtime. The extension uses it to decide whether the installed hook
+ * runtime matches the bundle.
  *
- * 확장이 마켓플레이스에서 자동 업데이트돼도 이미 설치된 런타임 사본은 그대로
- * 남는다. 그 낡은 사본이 조용히 다른 형식을 만들어내면(실측: inbox 파일명)
- * 수집이 망가진 채로 원인 표시 없이 방치된다 — 그걸 감지하는 유일한 수단이다.
- * 버전 번호가 아니라 내용 해시인 이유: 런타임은 core에서 생성되므로 사람이
- * 올려야 하는 번호는 반드시 잊힌다.
+ * Even when the extension auto-updates from the marketplace, an already-installed runtime copy
+ * stays as it is. If that stale copy silently produces a different format (measured: the inbox file
+ * names), collection stays broken with nothing to indicate why. This is the only way to detect it.
+ * Why a content hash rather than a version number: the runtime is generated from core, so a number
+ * a human has to bump will inevitably be forgotten.
  */
 function runtimeStamp(entries) {
   const hash = createHash('sha256');
@@ -87,8 +88,8 @@ function baseRuntimeEntries() {
     ['package.json', '{\n  "type": "module"\n}\n'],
     ['ingest/contracts.js', compiled('ingest/contracts.js')],
     ['ingest/identity.js', compiled('ingest/identity.js')],
-    // inbox.js가 import하므로 반드시 함께 복사한다. core가 lease를 별도 모듈로
-    // 분리했을 때 이 목록이 갱신되지 않아, 재동기화 시 런타임이 깨졌다.
+    // inbox.js imports it, so it must always be copied along. When core split lease into its own
+    // module, this list was not updated and the resynced runtime broke.
     ['ingest/lease.js', compiled('ingest/lease.js')],
     ['ingest/inbox.js', standaloneInbox()],
     ['ingest/clients/claude/decoder.js', compiled('ingest/clients/claude/decoder.js')],

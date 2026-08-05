@@ -5,9 +5,9 @@ import type { LensStore, McpServerSpec, ServerIdentity, scanServer } from '@mcp-
 type ScanResult = Awaited<ReturnType<typeof scanServer>>;
 
 /**
- * `mcp-lens scan` 루프가 서버 여러 개를 도는 동안, 한 서버의 실패가 나머지 서버의
- * 기록과 마지막 store.save()를 통째로 날리지 않는지 이 단위에서 고정한다.
- * runScan 자체(for 루프, --config 분기, 콘솔 출력)는 이 태스크 범위 밖이다.
+ * Pins, at this unit, that one server's failure inside the `mcp-lens scan` loop cannot wipe out
+ * the other servers' records and the final store.save().
+ * runScan itself (the for loop, the --config branch, console output) is out of scope here.
  */
 function fakeStore() {
   const store = {
@@ -21,7 +21,7 @@ const spec: McpServerSpec = { name: 'srv', type: 'http', url: 'https://example.c
 const identities: ServerIdentity[] = [];
 
 describe('scanOneServer', () => {
-  it('성공 시 ok로 기록된다', async () => {
+  it('records ok on success', async () => {
     const { store, mocks } = fakeStore();
     const scan = vi.fn(async (): Promise<ScanResult> => ({
       definitions: [{ definitionTokens: 10 }, { definitionTokens: 5 }],
@@ -34,7 +34,7 @@ describe('scanOneServer', () => {
     expect(result).toEqual({ ok: true, toolCount: 2, totalTokens: 15 });
   });
 
-  it('auth-required 예외는 auth-required로 기록된다', async () => {
+  it('records auth-required exceptions as auth-required', async () => {
     const { store, mocks } = fakeStore();
     const scan = vi.fn(async (): Promise<ScanResult> => {
       throw new Error('auth-required: 401');
@@ -47,7 +47,7 @@ describe('scanOneServer', () => {
     expect(result.ok).toBe(false);
   });
 
-  it('그 외 예외는 failed와 errorCode로 기록된다', async () => {
+  it('records other exceptions as failed with an errorCode', async () => {
     const { store, mocks } = fakeStore();
     const scan = vi.fn(async (): Promise<ScanResult> => {
       throw new Error('spawn ENOENT');
@@ -59,16 +59,16 @@ describe('scanOneServer', () => {
       .toHaveBeenCalledWith('srv', 'failed', '2026-08-05T00:00:00.000Z', 'spawn ENOENT');
   });
 
-  it('예외가 나도 호출자에게 던지지 않는다', async () => {
+  it('never throws to the caller, even on an exception', async () => {
     const { store } = fakeStore();
-    // 비Error 예외(문자열)를 던져도 scanOneServer가 삼켜서, 이 서버 이후의 루프와
-    // 마지막 store.save()가 실행될 수 있게 한다.
+    // Even a non-Error exception (a string) is swallowed by scanOneServer so the rest of the
+    // loop and the final store.save() still run.
     const scan = vi.fn(async (): Promise<ScanResult> => {
       throw 'network down';
     });
 
-    // await 자체가 reject되면 여기서 테스트가 실패하므로, 정상 반환됐다는 사실이 곧
-    // scanOneServer가 예외를 삼켰다는 증거다.
+    // If the await itself rejected, this test would fail here, so a normal return is the proof
+    // that scanOneServer swallowed the exception.
     const result = await scanOneServer(store, spec, '2026-08-05T00:00:00.000Z', identities, scan);
     expect(result.ok).toBe(false);
   });

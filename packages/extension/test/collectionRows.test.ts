@@ -26,13 +26,13 @@ const healthy = {
   consecutiveMisses: 0, consecutiveMatches: 1, waitingForCorrelation: 0, lastEventAt: null };
 
 describe('toRow', () => {
-  it('미설치 클라이언트는 installable + 미연결', () => {
+  it('marks a client that is not installed as installable and disconnected', () => {
     const r = toRow({ client: 'codex', install: 'not-installed', snapshot: undefined });
     expect(r.contextValue).toBe('hook-installable');
     expect(r.description).toContain('Install needed');
     expect(r.client).toBe('codex');
   });
-  it('설치 클라이언트는 installed', () => {
+  it('marks an installed client as installed', () => {
     const r = toRow({ client: 'claude-code', install: 'installed', snapshot: healthy });
     expect(r.contextValue).toBe('hook-installed');
     expect(r.label).toContain('claude-code');
@@ -40,7 +40,7 @@ describe('toRow', () => {
 });
 
 describe('collectionRows', () => {
-  it('클라이언트마다 한 행, client-missing은 제외', () => {
+  it('emits one row per client, excluding client-missing', () => {
     const rows = collectionRows([
       { client: 'claude-code', install: 'installed', snapshot: undefined },
       { client: 'codex', install: 'not-installed', snapshot: undefined },
@@ -50,12 +50,12 @@ describe('collectionRows', () => {
     expect(rows.map((r) => r.id)).toEqual(['claude-code', 'codex']);
   });
 
-  it('모든 행이 Setup Status의 Collection 그룹에 들어간다', () => {
+  it('puts every row in the Collection group of Setup Status', () => {
     const rows = collectionRows([{ client: 'codex', install: 'not-installed', snapshot: undefined }]);
     expect(rows.every((r) => r.group === 'Collection')).toBe(true);
   });
 
-  it('색을 hook/로그 관측으로 정한다: hook 파랑 · 로그만 주황 · 없음 빨강', () => {
+  it('picks the colour from hook/log observation: hook blue, logs only orange, neither red', () => {
     const snap = (hookObserved: boolean, logObserved: boolean) => ({
       ...healthy, hookObserved, logObserved });
     const rows = collectionRows([
@@ -67,19 +67,19 @@ describe('collectionRows', () => {
       .toEqual(['charts.blue', 'charts.orange', 'charts.red']);
   });
 
-  it('경고·오류 행에만 hooksDoctor 커맨드를 단다', () => {
+  it('attaches the hooksDoctor command to warning and error rows only', () => {
     const [warn] = collectionRows([{ client: 'codex', install: 'not-installed', snapshot: undefined }]);
     expect(warn.command).toBe('mcp-lens.hooksDoctor');
     expect(warn.commandArgs).toEqual(['codex']);
   });
 
-  it('정상 행에는 커맨드를 달지 않는다 — 고칠 게 없는 행이다', () => {
+  it('attaches no command to healthy rows: there is nothing to fix on them', () => {
     const [ok] = collectionRows([{ client: 'claude-code', install: 'installed', snapshot: healthy }]);
     expect(ok.command).toBeUndefined();
   });
 });
 
-describe('Setup Status 뷰의 Collection 그룹 렌더링', () => {
+describe('rendering the Collection group of the Setup Status view', () => {
   const provider = () => {
     const p = new SetupStatusProvider();
     p.setRows(collectionRows([
@@ -90,12 +90,12 @@ describe('Setup Status 뷰의 Collection 그룹 렌더링', () => {
   };
   const rowsOf = (p: SetupStatusProvider) => p.getChildren(p.getChildren()[0]);
 
-  it('Collection이 첫 그룹 — 수집이 안 되면 나머지 숫자를 믿을 수 없다', () => {
+  it('puts Collection first: without collection the other numbers cannot be trusted', () => {
     const [first] = provider().getChildren();
     expect(first.kind === 'group' && first.group).toBe('Collection');
   });
 
-  it('행에 id·contextValue·description·아이콘·색을 채운다', () => {
+  it('fills id, contextValue, description, icon and colour on the row', () => {
     const p = provider();
     const item = p.getTreeItem(rowsOf(p)[0]) as unknown as {
       id?: string; contextValue?: string; description: string;
@@ -108,27 +108,27 @@ describe('Setup Status 뷰의 Collection 그룹 렌더링', () => {
     expect(item.iconPath.color?.id).toBe('charts.red');
   });
 
-  it('hooksDoctor는 서버 이름 객체가 아니라 클라이언트 이름을 받는다', () => {
+  it('gives hooksDoctor the client name rather than a server name object', () => {
     const p = provider();
     const item = p.getTreeItem(rowsOf(p)[0]);
     expect(item.command?.command).toBe('mcp-lens.hooksDoctor');
     expect(item.command?.arguments).toEqual(['codex']);
   });
 
-  it('설치 클라이언트에는 uninstall 메뉴용 contextValue가 붙는다', () => {
+  it('attaches the uninstall-menu contextValue to installed clients', () => {
     const p = provider();
     expect(p.getTreeItem(rowsOf(p)[1]).contextValue).toBe('hook-installed');
   });
 });
 
-describe('훅 메뉴 라우팅 매니페스트', () => {
-  it('설치·제거 메뉴가 Setup Status 뷰를 가리킨다', () => {
+describe('hook menu routing manifest', () => {
+  it('points the install and uninstall menus at the Setup Status view', () => {
     const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
     const hookItems = manifest.contributes.menus['view/item/context']
       .filter((item: { when?: string }) => item.when?.includes('hook-install'));
     expect(hookItems).toHaveLength(2);
     for (const item of hookItems) expect(item.when).toContain('view == mcpLens.setupStatus');
-    // 옛 뷰는 매니페스트에서 사라졌다 — 남아 있으면 빈 섹션이 다시 생긴다.
+    // The old view is gone from the manifest: leaving it would recreate the empty section.
     expect(manifest.contributes.views.mcpLens.map((v: { id: string }) => v.id))
       .not.toContain('mcpLens.collection');
   });

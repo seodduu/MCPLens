@@ -213,8 +213,8 @@ function argsFor(provider: InferenceProvider, model: string, cwd: string, schema
         '--no-session-persistence',
         '--strict-mcp-config',
         '--mcp-config',
-        // 빈 객체는 CLI가 거부한다("mcpServers: expected record, received undefined").
-        // MCP 서버를 하나도 붙이지 않는다는 뜻은 빈 mcpServers 레코드로 표현해야 한다.
+        // An empty object is rejected by the CLI ("mcpServers: expected record, received undefined").
+        // "Attach no MCP server at all" must be expressed as an empty mcpServers record.
         '{"mcpServers":{}}',
         '--output-format',
         'json',

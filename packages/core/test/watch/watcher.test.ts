@@ -22,7 +22,7 @@ const FIXTURE = path.join(__dirname, '../../../../fixtures/claude/session-toolse
 afterEach(() => vi.useRealTimers());
 
 describe('LogWatcher.backfill', () => {
-  it('루트의 모든 세션 파일을 파싱해 store에 적재한다', async () => {
+  it('parses every session file under the root and ingests it into the store', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'lens-'));
     copyFileSync(FIXTURE, path.join(dir, 's1.jsonl'));
     const store = await LensStore.open(':memory:');
@@ -32,7 +32,7 @@ describe('LogWatcher.backfill', () => {
     expect(store.callsSince('2000-01-01').length).toBeGreaterThan(0);
   });
 
-  it('mtime이 같으면 두 번째 backfill은 스킵한다', async () => {
+  it('skips the second backfill when the mtime is unchanged', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'lens-'));
     const f = path.join(dir, 's1.jsonl');
     copyFileSync(FIXTURE, f);
@@ -40,10 +40,10 @@ describe('LogWatcher.backfill', () => {
     const w = new LogWatcher(store, [new TestClaudeAdapter(dir)]);
     await w.backfill();
     const r2 = await w.backfill();
-    expect(r2.files).toBe(0); // 커서 mtime 일치 → 스킵
+    expect(r2.files).toBe(0); // the cursor mtime matches, so it is skipped
   });
 
-  it('mtime이 바뀌면 다시 적재한다', async () => {
+  it('ingests again when the mtime changes', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'lens-'));
     const f = path.join(dir, 's1.jsonl');
     copyFileSync(FIXTURE, f);
@@ -51,7 +51,7 @@ describe('LogWatcher.backfill', () => {
     const w = new LogWatcher(store, [new TestClaudeAdapter(dir)]);
     await w.backfill();
 
-    // mtime을 미래로 이동시켜 변경된 것처럼 만든다
+    // Move the mtime into the future to make it look changed
     const future = new Date(Date.now() + 60_000);
     utimesSync(f, future, future);
 
@@ -59,7 +59,7 @@ describe('LogWatcher.backfill', () => {
     expect(r2.files).toBe(1);
   });
 
-  it('파싱 실패 라인이 있으면 parseErrors에 누적된다', async () => {
+  it('accumulates parseErrors when a line fails to parse', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'lens-'));
     const f = path.join(dir, 's1.jsonl');
     const content = readFileSync(FIXTURE, 'utf8');
@@ -71,19 +71,19 @@ describe('LogWatcher.backfill', () => {
     expect(r.parseErrors).toBeGreaterThan(0);
   });
 
-  it('사라진/깨진 파일(dangling symlink)이 섞여 있어도 나머지는 정상 적재하고 던지지 않는다', async () => {
+  it('ingests the rest without throwing even with a missing or broken file (a dangling symlink)', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'lens-'));
     copyFileSync(FIXTURE, path.join(dir, 's1.jsonl'));
-    // 존재하지 않는 대상을 가리키는 깨진 심볼릭 링크 — stat/readFile 시 ENOENT 유발
+    // A broken symlink pointing at a nonexistent target, causing ENOENT on stat/readFile
     symlinkSync(path.join(dir, 'does-not-exist.jsonl'), path.join(dir, 'broken.jsonl'));
     const store = await LensStore.open(':memory:');
     const w = new LogWatcher(store, [new TestClaudeAdapter(dir)]);
     const r = await w.backfill();
-    expect(r.files).toBe(1); // 정상 파일만 카운트, 깨진 파일은 조용히 스킵
+    expect(r.files).toBe(1); // only the healthy file counts; the broken one is skipped silently
     expect(store.callsSince('2000-01-01').length).toBeGreaterThan(0);
   });
 
-  it('루트 밖의 유효한 파일을 가리키는 symlink는 읽지 않는다', async () => {
+  it('does not read a symlink pointing at a valid file outside the root', async () => {
     const root = mkdtempSync(path.join(tmpdir(), 'lens-root-'));
     const outside = mkdtempSync(path.join(tmpdir(), 'lens-outside-'));
     const outsideFile = path.join(outside, 'outside.jsonl');
@@ -100,7 +100,7 @@ describe('LogWatcher.backfill', () => {
     expect(store.callsSince('2000-01-01')).toEqual([]);
   });
 
-  it('어댑터 예외는 parseErrors로 계수하지만 처리 파일로 카운트하지 않는다', async () => {
+  it('counts an adapter exception as a parseError without counting the file as processed', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'lens-'));
     const file = path.join(dir, 's1.jsonl');
     copyFileSync(FIXTURE, file);
@@ -114,7 +114,7 @@ describe('LogWatcher.backfill', () => {
 });
 
 describe('LogWatcher.reconcilePath', () => {
-  it('허용 루트 밖 경로, 심볼릭 탈출, 디렉터리를 거부한다', async () => {
+  it('rejects paths outside the allowed roots, symlink escapes and directories', async () => {
     vi.useFakeTimers();
     const root = mkdtempSync(path.join(tmpdir(), 'lens-root-'));
     const outside = mkdtempSync(path.join(tmpdir(), 'lens-outside-'));
@@ -143,7 +143,7 @@ describe('LogWatcher.reconcilePath', () => {
     ]);
   });
 
-  it('같은 경로의 세 요청을 하나의 파싱으로 debounce한다', async () => {
+  it('debounces three requests for the same path into one parse', async () => {
     vi.useFakeTimers();
     const root = mkdtempSync(path.join(tmpdir(), 'lens-root-'));
     const file = path.join(root, 's.jsonl');
@@ -167,7 +167,7 @@ describe('LogWatcher.reconcilePath', () => {
     expect(receipts.map((receipt) => receipt.trigger)).toEqual(['hook', 'chokidar', 'hook']);
   });
 
-  it('트랜스크립트 지연을 250ms, 1s, 3s 순서로 재시도한다', async () => {
+  it('retries a delayed transcript at 250ms, 1s and 3s', async () => {
     vi.useFakeTimers();
     const root = mkdtempSync(path.join(tmpdir(), 'lens-root-'));
     const file = path.join(root, 'late.jsonl');
@@ -200,7 +200,7 @@ describe('LogWatcher.reconcilePath', () => {
     expect(receipts).toHaveLength(1);
   });
 
-  it('재시도 대기 중 transcript가 생기면 다음 시도에서 적재한다', async () => {
+  it('ingests on the next attempt when the transcript appears during the retry wait', async () => {
     vi.useFakeTimers();
     const root = mkdtempSync(path.join(tmpdir(), 'lens-root-'));
     const file = path.join(root, 'late.jsonl');
@@ -227,7 +227,7 @@ describe('LogWatcher.reconcilePath', () => {
     expect(adapter.parseCount).toBe(1);
   });
 
-  it('start의 chokidar 이벤트와 Hook 요청이 같은 pending parse를 공유한다', async () => {
+  it('shares one pending parse between a chokidar event from start and a hook request', async () => {
     vi.useFakeTimers();
     const root = mkdtempSync(path.join(tmpdir(), 'lens-root-'));
     const file = path.join(root, 's.jsonl');
@@ -260,7 +260,7 @@ describe('LogWatcher.reconcilePath', () => {
     await watcher.stop();
   });
 
-  it('어댑터 파싱 예외를 receipt로 기록하고 다음 요청을 처리한다', async () => {
+  it('records an adapter parse exception as a receipt and handles the next request', async () => {
     vi.useFakeTimers();
     const root = mkdtempSync(path.join(tmpdir(), 'lens-root-'));
     const file = path.join(root, 's.jsonl');
@@ -286,7 +286,7 @@ describe('LogWatcher.reconcilePath', () => {
     await expect(second).resolves.toEqual(expect.objectContaining({ status: 'ingested' }));
   });
 
-  it('저장이 한 번 실패하면 커서를 진행시키지 않고 변경 없는 다음 요청에서 다시 적재한다', async () => {
+  it('does not advance the cursor after one failed save and re-ingests on the next unchanged request', async () => {
     vi.useFakeTimers();
     const root = mkdtempSync(path.join(tmpdir(), 'lens-root-'));
     const file = path.join(root, 's.jsonl');
@@ -311,7 +311,7 @@ describe('LogWatcher.reconcilePath', () => {
     expect(save).toHaveBeenCalledTimes(2);
   });
 
-  it('ingested listener 예외가 영속화 성공을 parse-failed로 바꾸지 않는다', async () => {
+  it('does not let an ingested listener exception turn a successful persist into parse-failed', async () => {
     vi.useFakeTimers();
     const root = mkdtempSync(path.join(tmpdir(), 'lens-root-'));
     const file = path.join(root, 's.jsonl');
@@ -334,7 +334,7 @@ describe('LogWatcher.reconcilePath', () => {
     expect(laterListener).toHaveBeenCalledWith(realpathSync(file));
   });
 
-  it('receipt listener 예외에도 debounce된 모든 caller promise를 해결한다', async () => {
+  it('resolves every debounced caller promise even when a receipt listener throws', async () => {
     vi.useFakeTimers();
     const root = mkdtempSync(path.join(tmpdir(), 'lens-root-'));
     const file = path.join(root, 's.jsonl');

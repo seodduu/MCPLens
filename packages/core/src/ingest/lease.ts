@@ -13,8 +13,8 @@ import { dirname, join } from 'node:path';
 
 export interface Lease { token: string; expiresAt: number; }
 
-// ── 이동해 온 저수준 (installLease/readLease/takeOverLease/lockInstanceToken/reapingPath/isBusy/isCode) ──
-// inbox.ts에서 verbatim 이동. LockLease 타입만 Lease로 이름을 바꿔 사용.
+// -- Low-level parts moved here (installLease/readLease/takeOverLease/lockInstanceToken/reapingPath/isBusy/isCode) --
+// Moved verbatim from inbox.ts. Only the LockLease type was renamed to Lease.
 
 export function installLease(lockPath: string, lease: Lease): boolean {
   const candidate = `${lockPath}.candidate-${lease.token}`;
@@ -33,15 +33,15 @@ export function installLease(lockPath: string, lease: Lease): boolean {
 export function readLease(lockPath: string): Lease | null {
   const owner = readOwner(lockPath);
   if (!owner) return owner;
-  // 정체성(token)은 항상 owner.json에서. 만료(expiresAt)는 별도 사이드카(expiry.json)가
-  // 존재하고 그 token이 owner의 token과 일치할 때만 반영한다(renew 소유물임을 표식).
+  // Identity (token) always comes from owner.json. Expiry (expiresAt) lives in a separate sidecar (expiry.json) that
+  // is applied only when it exists and its token matches the owner's token (marking it as renew's own).
   const expiry = readExpiry(lockPath);
   return expiry && expiry.token === owner.token
     ? { token: owner.token, expiresAt: expiry.expiresAt }
     : owner;
 }
 
-/** owner.json만으로 결정되는 정체성 리스. expiry 사이드카는 보지 않는다. */
+/** Identity lease decided by owner.json alone. The expiry sidecar is not consulted. */
 function readOwner(lockPath: string): Lease | null {
   try {
     const raw = readFileSync(join(lockPath, 'owner.json'), 'utf8');
@@ -62,7 +62,7 @@ function readOwner(lockPath: string): Lease | null {
   }
 }
 
-/** 만료 사이드카를 읽는다. 없거나 형식이 어긋나면 null(=owner.json 만료를 사용). */
+/** Reads the expiry sidecar. null when missing or malformed (= use the owner.json expiry). */
 function readExpiry(lockPath: string): Lease | null {
   try {
     const raw = readFileSync(join(lockPath, 'expiry.json'), 'utf8');
@@ -87,11 +87,11 @@ export function reapingPath(lockPath: string, token: string): string {
 }
 
 /**
- * 락 디렉터리가 있는 곳의 reaping 잔해를 지운다.
+ * Removes reaping debris next to the lock directory.
  *
- * reaping 이름은 락을 그 이름으로 rename한 뒤에만 존재한다. 즉 그 시점에 이미 활성 리스가
- * 아니다. 지우다 실패해도 무시한다 — 다른 프로세스가 같은 잔해를 동시에 치우는 것뿐이다.
- * 반환값은 지운 개수.
+ * A reaping name exists only after the lock was renamed to it, which means it is already not an
+ * active lease. A failed removal is ignored: it just means another process is clearing the same
+ * debris. Returns how many were removed.
  */
 export function sweepReapingDirs(directory: string): number {
   let removed = 0;
@@ -106,7 +106,7 @@ export function sweepReapingDirs(directory: string): number {
     try {
       rmSync(join(directory, entry), { recursive: true, force: true });
       removed += 1;
-    } catch { /* 경쟁자가 먼저 치웠거나 권한 문제 — 잔해는 무해하므로 넘어간다 */ }
+    } catch { /* a competitor cleared it first, or a permission issue; the debris is harmless, so move on */ }
   }
   return removed;
 }
@@ -132,9 +132,9 @@ export function isBusy(error: unknown): boolean {
   return isCode(error, 'EEXIST') || isCode(error, 'ENOTEMPTY');
 }
 
-/** 한 번 시도: 설치 성공 또는 만료 리스 인수 후 설치. 유효 홀더가 있으면 null. */
+/** One attempt: install, or take over an expired lease and then install. null when a valid holder exists. */
 export function acquireLease(lockPath: string, ttlMs: number, nowMs: () => number = () => Date.now()): Lease | null {
-  // rename과 rm 사이에서 죽은 이전 실행의 잔해를 여기서 회수한다.
+  // Debris from a previous run that died between rename and rm is reclaimed here.
   sweepReapingDirs(dirname(lockPath));
   const now = nowMs();
   const lease: Lease = { token: randomUUID(), expiresAt: now + ttlMs };
@@ -148,19 +148,19 @@ export function acquireLease(lockPath: string, ttlMs: number, nowMs: () => numbe
 }
 
 /**
- * 내가 여전히 홀더면 만료를 연장한다. 인수당했으면 null.
+ * Extends the expiry if I am still the holder. null if taken over.
  *
- * RACE-FREE 불변식(정체성/만료 분리):
- * renew는 정체성의 원천인 owner.json을 절대 건드리지 않고, 만료만 담은 사이드카
- * expiry.json({token, expiresAt})을 tmp+rename으로 원자적 기록한다. check(readLease)와
- * write 사이에 경쟁자 B가 takeOverLease+installLease로 인수해도:
- *  - B의 owner.json은 renew가 안 쓰므로 정체성 오염 불가.
- *  - A가 쓴 expiry.json의 token(A)은 B의 owner token과 불일치 → readLease가 무시(B 만료도 안전).
- *  - write 후 재확인에서 owner token이 B이므로 A는 null을 받는다(A가 졌다).
- * additive & inbox-inert: inbox는 renew를 호출하지 않아 expiry.json이 없고 readLease 동작 불변.
+ * RACE-FREE invariant (identity/expiry split):
+ * renew never touches owner.json, the source of identity, and atomically writes the sidecar
+ * expiry.json ({token, expiresAt}) with tmp+rename. Even if competitor B takes over with
+ * takeOverLease+installLease between the check (readLease) and the write:
+ *  - B's owner.json is never written by renew, so identity cannot be corrupted.
+ *  - the token (A) in the expiry.json A wrote does not match B's owner token, so readLease ignores it (B's expiry is safe too).
+ *  - on the re-check after the write the owner token is B, so A gets null (A lost).
+ * additive & inbox-inert: inbox never calls renew, so expiry.json is absent and readLease behaves unchanged.
  *
- * hooks.beforeWrite는 check 직후·기록 직전에 호출되는 테스트 전용 seam(레이스 재현용).
- * WriterLeaseManager는 이 인자를 넘기지 않으므로 무해하다.
+ * hooks.beforeWrite is a test-only seam called right after the check and right before the write (to reproduce the race).
+ * WriterLeaseManager does not pass this argument, so it is harmless.
  */
 export function renewLease(
   lockPath: string,
@@ -179,14 +179,14 @@ export function renewLease(
     renameSync(tmp, join(lockPath, 'expiry.json'));
   } catch (error) {
     try { rmSync(tmp, { force: true }); } catch { /* ignore */ }
-    if (isCode(error, 'ENOENT')) return null; // 락 디렉토리 사라짐(인수됨)
+    if (isCode(error, 'ENOENT')) return null; // the lock directory vanished (taken over)
     throw error;
   }
   const after = readLease(lockPath);
   return after && after.token === token ? after : null;
 }
 
-/** 내 토큰일 때만 해제하고 흔적 정리. */
+/** Releases only when the token is mine, and cleans up the traces. */
 export function releaseLease(lockPath: string, token: string): void {
   if (readLease(lockPath)?.token !== token) return;
   const reaping = reapingPath(lockPath, token);

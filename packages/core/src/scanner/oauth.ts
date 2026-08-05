@@ -12,26 +12,26 @@ import { oauthDir } from '../paths.js';
 import { specTransport, type McpServerSpec } from './configs.js';
 
 /**
- * Lens가 한 http MCP 서버에 대해 정식 발급받은 OAuth 자격증명의 디스크 표현.
- * 클라이언트(Claude Code 등)가 저장한 토큰은 절대 재사용하지 않는다 — Lens 명의로 발급.
+ * Disk representation of the OAuth credentials Lens itself was issued for one http MCP server.
+ * Tokens stored by a client (Claude Code and friends) are never reused; Lens issues its own.
  */
 export interface StoredOAuth {
   serverName: string;
   serverUrl: string;
-  /** SDK 동적 클라이언트 등록 결과 (OAuthClientInformationMixed 직렬화) */
+  /** SDK dynamic client registration result (serialized OAuthClientInformationMixed) */
   clientInformation?: unknown;
-  /** access/refresh 토큰 (OAuthTokens 직렬화) */
+  /** access/refresh tokens (serialized OAuthTokens) */
   tokens?: unknown;
   updatedAt: string;
 }
 
-/** 서버명을 파일명으로 안전하게 변환 (경로 이탈 방지). */
+/** Converts a server name into a safe file name (guards against path escape). */
 function safeFileName(serverName: string): string {
   const base = serverName.replace(/[^a-zA-Z0-9._-]/g, '_').replace(/^\.+/, '_');
   return `${base || '_'}.json`;
 }
 
-/** ~/.mcplens/oauth/<serverName>.json 을 읽는다. 없거나 파싱 실패면 null. */
+/** Reads ~/.mcplens/oauth/<serverName>.json. null when missing or unparsable. */
 export function loadStoredOAuth(serverName: string, baseDir: string = oauthDir()): StoredOAuth | null {
   const file = path.join(baseDir, safeFileName(serverName));
   if (!existsSync(file)) return null;
@@ -42,29 +42,29 @@ export function loadStoredOAuth(serverName: string, baseDir: string = oauthDir()
   }
 }
 
-/** 자격증명을 0600 모드로 저장한다 (평문 — 아래 보안 주석 참조). */
+/** Saves credentials with mode 0600 (plaintext; see the security note below). */
 export function saveStoredOAuth(data: StoredOAuth, baseDir: string = oauthDir()): void {
   mkdirSync(baseDir, { recursive: true, mode: 0o700 });
-  // mkdirSync의 mode도 신규 생성 시에만 적용되므로, 기존에 더 느슨한 권한으로
-  // 존재하던 디렉토리도 chmod로 강제한다 (파일의 chmod 패턴과 동일).
+  // mkdirSync's mode applies only on creation, so a directory that already existed with looser
+  // permissions is forced with chmod too (same pattern as for the file).
   chmodSync(baseDir, 0o700);
   const file = path.join(baseDir, safeFileName(data.serverName));
-  // writeFileSync의 mode는 신규 생성 시에만 적용되므로 chmod로 기존 파일까지 강제한다.
+  // writeFileSync's mode applies only on creation, so chmod forces it on an existing file too.
   writeFileSync(file, JSON.stringify(data, null, 2), { mode: 0o600 });
   chmodSync(file, 0o600);
 }
 
-/** 저장된 자격증명을 삭제한다 (없으면 무시). */
+/** Deletes the stored credentials (ignored when absent). */
 export function clearStoredOAuth(serverName: string, baseDir: string = oauthDir()): void {
   const file = path.join(baseDir, safeFileName(serverName));
   rmSync(file, { force: true });
 }
 
 /**
- * SDK OAuthClientProvider 구현체.
- * 토큰·클라이언트 등록 정보는 StoredOAuth 파일에 영속하고, PKCE code verifier는
- * 인메모리로만 (같은 로그인 플로우 내 두 auth() 호출 사이 유지, 디스크 미저장).
- * redirect 처리(브라우저 열기)는 host가 주입하는 onRedirect 콜백에 위임한다.
+ * SDK OAuthClientProvider implementation.
+ * Tokens and client registration persist in the StoredOAuth file; the PKCE code verifier stays in
+ * memory only (kept between the two auth() calls of one login flow, never written to disk).
+ * Redirect handling (opening the browser) is delegated to the onRedirect callback the host injects.
  */
 class LensOAuthProvider implements OAuthClientProvider {
   private _codeVerifier?: string;
@@ -82,7 +82,7 @@ class LensOAuthProvider implements OAuthClientProvider {
   }
 
   get clientMetadata(): OAuthClientMetadata {
-    // client_name = "MCP Lens" → 서버 동의 화면에 Lens 명의가 표시된다 (자격증명 원칙).
+    // client_name = "MCP Lens" makes the server consent screen show Lens by name (credential principle).
     return {
       client_name: 'MCP Lens',
       redirect_uris: [this._redirectUrl],
@@ -138,15 +138,15 @@ class LensOAuthProvider implements OAuthClientProvider {
   }
 
   codeVerifier(): string {
-    if (!this._codeVerifier) throw new Error('code verifier가 설정되지 않았습니다 (인증 플로우 순서 오류)');
+    if (!this._codeVerifier) throw new Error('code verifier is not set (authentication flow out of order)');
     return this._codeVerifier;
   }
 }
 
 /**
- * 저장 토큰이 있는 http spec에 쓸 비인터랙티브 Provider.
- * 저장 데이터/토큰이 없거나 http가 아니면 null. redirectToAuthorization은 즉시 throw —
- * 스캔 중 브라우저가 열리는 일은 없다 (스캔 비인터랙티브 불변).
+ * Non-interactive provider for an http spec that already has stored tokens.
+ * null when there is no stored data or token, or when the spec is not http. redirectToAuthorization
+ * throws immediately: a scan never opens a browser (the scan stays non-interactive).
  */
 export function storedTokenProvider(
   spec: McpServerSpec,
@@ -158,21 +158,21 @@ export function storedTokenProvider(
   return new LensOAuthProvider(
     spec.name,
     spec.url!,
-    'http://127.0.0.1/callback', // 플레이스홀더 — 스캔 중엔 redirect가 일어나지 않는다
+    'http://127.0.0.1/callback', // placeholder; no redirect happens during a scan
     () => {
       throw new Error(
-        `auth-required: ${spec.name} — 로그인이 필요합니다 (mcp-lens auth ${spec.name})`,
+        `auth-required: ${spec.name} needs a login (mcp-lens auth ${spec.name})`,
       );
     },
     baseDir,
   );
 }
 
-/** 127.0.0.1 임시 포트 콜백 서버. authorization code 수신부를 분리 테스트 가능하게 노출한다. */
+/** Callback server on an ephemeral 127.0.0.1 port. Exposes the authorization-code receiver for isolated testing. */
 export interface CallbackServer {
   server: http.Server;
   port: number;
-  /** timeoutMs 안에 /callback?code=... 을 수신하면 code로 resolve, 아니면 reject. */
+  /** Resolves with the code when /callback?code=... arrives within timeoutMs, otherwise rejects. */
   waitForCode(timeoutMs: number): Promise<string>;
 }
 
@@ -183,8 +183,8 @@ export async function startCallbackServer(): Promise<CallbackServer> {
     resolveCode = res;
     rejectCode = rej;
   });
-  // waitForCode가 호출되기 전에 콜백이 도착/실패할 수 있으므로, 지연-거부가
-  // unhandled rejection으로 새지 않게 무해한 핸들러를 즉시 붙인다.
+  // The callback can arrive or fail before waitForCode is called, so attach a harmless handler
+  // right away to keep a late rejection from leaking as an unhandled rejection.
   codePromise.catch(() => {});
 
   const server = http.createServer((req, res) => {
@@ -199,13 +199,13 @@ export async function startCallbackServer(): Promise<CallbackServer> {
     if (code) {
       res.end(
         '<!doctype html><html lang="ko"><body style="font-family:sans-serif;text-align:center;padding:3rem">' +
-          '<h2>MCP Lens 로그인 완료</h2><p>이 창을 닫아도 됩니다.</p></body></html>',
+          '<h2>MCP Lens login complete</h2><p>You can close this window.</p></body></html>',
       );
       resolveCode(code);
     } else {
       res.end(
         '<!doctype html><html lang="ko"><body style="font-family:sans-serif;text-align:center;padding:3rem">' +
-          `<h2>로그인 실패</h2><p>${error ?? 'authorization code 없음'}</p></body></html>`,
+          `<h2>Login failed</h2><p>${error ?? 'no authorization code'}</p></body></html>`,
       );
       rejectCode(new Error(`oauth callback error: ${error ?? 'missing authorization code'}`));
     }
@@ -234,19 +234,19 @@ export async function startCallbackServer(): Promise<CallbackServer> {
 }
 
 /**
- * 인터랙티브 로그인 전체 플로우. openUrl은 host가 주입 (CLI: 셸 open / 확장: vscode.env.openExternal).
- * 내부: 127.0.0.1 임시 포트 콜백 서버 기동 → SDK auth() (동적 등록 + PKCE) →
- * redirectToAuthorization에서 브라우저 열기 → authorization code 수신 →
- * auth(code)로 토큰 교환 → saveTokens. 타임아웃 기본 120초.
+ * The full interactive login flow. openUrl is injected by the host (CLI: shell open, extension: vscode.env.openExternal).
+ * Internally: start the ephemeral 127.0.0.1 callback server, run the SDK auth() (dynamic
+ * registration + PKCE), open the browser from redirectToAuthorization, receive the authorization
+ * code, exchange it with auth(code), then saveTokens. Timeout defaults to 120 seconds.
  *
- * 전체 인터랙티브 경로(실 브라우저·외부 서버 왕복)는 유닛 불가 — Wave 8C 스모크에서 검증.
+ * The whole interactive path (real browser, external server round trip) cannot be unit tested; it is verified in the Wave 8C smoke run.
  */
 export async function authenticateServer(
   spec: McpServerSpec,
   opts: { openUrl: (url: string) => void | Promise<void>; timeoutMs?: number; baseDir?: string },
 ): Promise<void> {
   if (specTransport(spec) !== 'http') {
-    throw new Error(`authenticateServer: http 서버만 지원 — ${spec.name}`);
+    throw new Error(`authenticateServer: http servers only, got ${spec.name}`);
   }
   const baseDir = opts.baseDir ?? oauthDir();
   const timeoutMs = opts.timeoutMs ?? 120_000;
@@ -265,17 +265,17 @@ export async function authenticateServer(
       baseDir,
     );
 
-    // 1차: 디스커버리 + 동적 등록 + PKCE 시작 → 브라우저 열림, 'REDIRECT' 반환
+    // Pass 1: discovery + dynamic registration + PKCE start, which opens the browser and returns 'REDIRECT'
     const first = await auth(provider, { serverUrl });
-    if (first === 'AUTHORIZED') return; // 이미 유효 토큰 보유 (드묾)
+    if (first === 'AUTHORIZED') return; // already holds a valid token (rare)
 
-    // authorization code 수신 대기
+    // Wait for the authorization code
     const code = await cb.waitForCode(timeoutMs);
 
-    // 2차: code → 토큰 교환 + saveTokens
+    // Pass 2: exchange the code for tokens and saveTokens
     const final = await auth(provider, { serverUrl, authorizationCode: code });
     if (final !== 'AUTHORIZED') {
-      throw new Error(`authenticateServer: 토큰 교환 실패 — ${spec.name}`);
+      throw new Error(`authenticateServer: token exchange failed for ${spec.name}`);
     }
   } finally {
     cb.server.close();

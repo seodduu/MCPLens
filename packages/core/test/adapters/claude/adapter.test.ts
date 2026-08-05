@@ -9,19 +9,19 @@ const fx = (f: string) =>
 describe('ClaudeAdapter', () => {
   const a = new ClaudeAdapter();
 
-  it('client 및 sessionRoots 계약', () => {
+  it('honours the client and sessionRoots contract', () => {
     expect(a.client).toBe('claude-code');
     expect(a.sessionRoots().some((p) => p.endsWith(path.join('.claude', 'projects')))).toBe(true);
   });
 
-  it('matches는 .claude/projects 밑 jsonl만 승인', () => {
+  it('matches only jsonl files under .claude/projects', () => {
     expect(a.matches('/home/u/.claude/projects/-x-y/abc.jsonl')).toBe(true);
     expect(a.matches('/home/u/.codex/sessions/2026/r.jsonl')).toBe(false);
     expect(a.matches('/home/u/.claude/projects/-x-y/abc.json')).toBe(false);
     expect(a.matches('/home/u/.claude/todos/x.jsonl')).toBe(false);
   });
 
-  it('sessionId는 파일 경로에 대해 결정적', () => {
+  it('derives sessionId deterministically from the file path', () => {
     const r1 = a.parseFile('/fake/s.jsonl', fx('session-toolsearch.jsonl'));
     const r2 = a.parseFile('/fake/s.jsonl', fx('session-toolsearch.jsonl'));
     expect(r1.session.sessionId).toBe(r2.session.sessionId);
@@ -29,13 +29,13 @@ describe('ClaudeAdapter', () => {
     expect(r1.toolCalls[0].sessionId).toBe(r1.session.sessionId);
   });
 
-  it('픽스처의 native sessionId를 externalSessionId로 보존한다', () => {
+  it('preserves the fixture native sessionId as externalSessionId', () => {
     const r = a.parseFile('/fake/s.jsonl', fx('session-toolsearch.jsonl'));
 
     expect(r.session.externalSessionId).toBe('cdef9879-14b5-4044-a9ea-31f0986cfc48');
   });
 
-  it('tool_use/tool_result 쌍을 ToolCallEvent로 뽑고 서버/툴 이름을 분해한다', () => {
+  it('extracts tool_use/tool_result pairs as ToolCallEvents and splits the server and tool names', () => {
     const r = a.parseFile('/fake/s.jsonl', fx('session-toolsearch.jsonl'));
     expect(r.toolCalls.length).toBeGreaterThan(0);
     const c = r.toolCalls[0];
@@ -44,24 +44,24 @@ describe('ClaudeAdapter', () => {
     expect(c.serverName).toBe('claude_ai_PlayMCP');
     expect(c.externalCallId).toBe('toolu_01XpoajJqCnxc7TBh4SJFjjG');
     expect(c.responseText === null || typeof c.responseText === 'string').toBe(true);
-    // 응답 본문이 있으면 tiktoken 추정치, 없으면 null
+    // A tiktoken estimate when the response body exists, null otherwise
     if (c.responseText) expect(c.responseTokens).toBeGreaterThan(0);
     else expect(c.responseTokens).toBeNull();
     expect(typeof c.isError).toBe('boolean');
-    // 내장 툴(ToolSearch/AskUserQuestion)은 toolCalls에 들어가지 않는다
+    // Builtin tools (ToolSearch/AskUserQuestion) never enter toolCalls
     for (const tc of r.toolCalls) expect(tc.serverName).toBe('claude_ai_PlayMCP');
   });
 
-  it('tool_reference가 있으면 DEFERRED_MEASURABLE + toolLoads 산출', () => {
+  it('produces DEFERRED_MEASURABLE and toolLoads when tool_reference is present', () => {
     const r = a.parseFile('/fake/s.jsonl', fx('session-toolsearch.jsonl'));
     expect(r.session.mode).toBe('DEFERRED_MEASURABLE');
     expect(r.toolLoads.length).toBeGreaterThan(0);
-    expect(r.toolLoads[0].loadedTokens).toBeNull(); // 조인 전엔 이름만
+    expect(r.toolLoads[0].loadedTokens).toBeNull(); // only the name before the join
     expect(r.toolLoads[0].toolName.length).toBeGreaterThan(0);
     expect(r.toolLoads[0].toolName).not.toContain('__');
   });
 
-  it('usage를 TokenUsageEvent로 적재한다', () => {
+  it('ingests usage as TokenUsageEvents', () => {
     const r = a.parseFile('/fake/s.jsonl', fx('session-toolsearch.jsonl'));
     expect(r.usage.length).toBeGreaterThan(0);
     expect(r.usage[0].inputTokens).toBeGreaterThanOrEqual(0);
@@ -73,7 +73,7 @@ describe('ClaudeAdapter', () => {
     }
   });
 
-  it('session-upfront는 MCP 신호가 없어 DEFERRED_OPAQUE + toolCalls/toolLoads 0', () => {
+  it('gives session-upfront DEFERRED_OPAQUE with 0 toolCalls/toolLoads, since it has no MCP signal', () => {
     const r = a.parseFile('/fake/s.jsonl', fx('session-upfront.jsonl'));
     expect(r.toolCalls.length).toBe(0);
     expect(r.toolLoads.length).toBe(0);
@@ -82,19 +82,19 @@ describe('ClaudeAdapter', () => {
     expect(r.usage.length).toBeGreaterThan(0);
   });
 
-  it('깨진 줄은 throw 없이 parseErrors로 계수', () => {
+  it('counts a broken line as a parseError instead of throwing', () => {
     const r = a.parseFile('/fake/s.jsonl', 'not-json\n' + fx('session-upfront.jsonl'));
     expect(r.parseErrors).toBe(1);
   });
 
-  it('빈 content도 throw 없이 안전 처리', () => {
+  it('handles empty content safely without throwing', () => {
     const r = a.parseFile('/fake/empty.jsonl', '');
     expect(r.parseErrors).toBe(0);
     expect(r.toolCalls).toEqual([]);
     expect(r.session.mode).toBe('DEFERRED_OPAQUE');
   });
 
-  it('공백 native session/call ID를 null로 정규화한다', () => {
+  it('normalizes blank native session/call IDs to null', () => {
     const content = [
       JSON.stringify({
         sessionId: '   ', timestamp: '2026-07-20T00:00:00.000Z',
@@ -113,8 +113,8 @@ describe('ClaudeAdapter', () => {
   });
 });
 
-describe('응답 토큰 추정 (tiktoken 폴백)', () => {
-  it('응답 본문이 있는 호출은 responseTokens가 양수 추정치로 채워진다', () => {
+describe('response token estimation (the tiktoken fallback)', () => {
+  it('fills responseTokens with a positive estimate for a call with a response body', () => {
     const a = new ClaudeAdapter();
     const r = a.parseFile('/fake/s.jsonl', fx('session-toolsearch.jsonl'));
     const withBody = r.toolCalls.filter((c) => c.responseText && c.responseText.length > 0);

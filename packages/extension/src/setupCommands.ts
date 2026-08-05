@@ -6,14 +6,14 @@ import {
   AUTOMATION_SCAN_ONLY_LABEL, automationChoiceFrom, automationSettings,
 } from './automationConsent.js';
 
-/** 온보딩 워크스루의 "Scan servers" 버튼이 가리키는 커맨드. */
+/** The command the "Scan servers" button of the onboarding walkthrough points at. */
 export function registerScanNow(store: () => LensStore, refresh: () => void, afterScan?: AfterScan): vscode.Disposable {
   return vscode.commands.registerCommand('mcp-lens.scanNow', async () => {
     try {
       await scanNow(store(), refresh, afterScan);
     } catch (err) {
-      // store.save()는 이 창이 writer 리스를 쥐고 있지 않으면 StaleWriterError를 던진다.
-      // 워크스루의 주 버튼이라 원본 익스텐션 호스트 에러를 그대로 노출하지 않고 안내로 바꾼다.
+      // store.save() throws StaleWriterError unless this window holds the writer lease.
+      // This is the walkthrough's primary button, so the raw extension host error becomes guidance.
       if (err instanceof Error && err.name === 'StaleWriterError') {
         void vscode.window.showInformationMessage(
           'MCP Lens: another VS Code window is currently writing to the Lens database. Try again in a moment.');
@@ -25,11 +25,11 @@ export function registerScanNow(store: () => LensStore, refresh: () => void, aft
 }
 
 /**
- * 온보딩 워크스루의 "Open Global Actions setting" 버튼이 가리키는 커맨드.
+ * The command the "Open Global Actions setting" button of the onboarding walkthrough points at.
  *
- * 설정을 열기 전에 새 서버 자동 처리 동의를 한 번 받는다. 온보딩의 마지막 단계라
- * 사용자가 제공자를 고르고 분석까지 마친 뒤이므로, 무엇에 동의하는지 이미 겪어 본
- * 시점이다. 답은 설정에 적히고 이후로는 다시 묻지 않는다.
+ * Before opening the setting, consent for handling new servers automatically is collected once. It
+ * is the last onboarding step, after the user has chosen a provider and finished an analysis, so
+ * they have already experienced what they are consenting to. The answer is written to settings and never asked again.
  */
 export function registerOpenRolloutSetting(): vscode.Disposable {
   return vscode.commands.registerCommand('mcp-lens.openRolloutSetting', async () => {
@@ -39,7 +39,7 @@ export function registerOpenRolloutSetting(): vscode.Disposable {
   });
 }
 
-/** 이미 답한 적이 있으면 묻지 않는다. 판정은 설정이 명시적으로 적혀 있는가로 한다. */
+/** Never asks again once answered. The test is whether the setting is explicitly written. */
 async function askAutomationConsentOnce(): Promise<void> {
   const config = vscode.workspace.getConfiguration('mcpLens');
   if (config.inspect<string>('autoScan')?.globalValue !== undefined) return;
@@ -54,9 +54,9 @@ async function askAutomationConsentOnce(): Promise<void> {
 }
 
 /**
- * Setup Status 뷰의 "sign in to scan" 행 클릭 전용 커맨드. 팔레트에서는 숨긴다(when: false) —
- * 서버 이름 인자 없이 실행할 방법이 없기 때문이다. autoScan.ts의 maybeAuthPrompt와 같은
- * 호출 방식(openUrl → vscode.env.openExternal)을 그대로 따른다.
+ * Command used only by the "sign in to scan" row of the Setup Status view. Hidden from the palette
+ * (when: false) because there is no way to run it without a server name argument. It follows exactly
+ * the call style of maybeAuthPrompt in autoScan.ts (openUrl -> vscode.env.openExternal).
  */
 export function registerAuthenticateServer(refresh: () => void): vscode.Disposable {
   return vscode.commands.registerCommand(

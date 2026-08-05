@@ -14,52 +14,52 @@ const fixturePath = path.resolve(
 const fixture = readFileSync(fixturePath, 'utf8');
 
 describe('splitFlattenedName', () => {
-  it('mcp_ 접두어 벗기고 첫 _에서 서버/툴 분리', () => {
+  it('strips the mcp_ prefix and splits server from tool at the first _', () => {
     expect(splitFlattenedName('mcp_github_list_issues')).toEqual({
       server: 'github',
       tool: 'list_issues',
     });
   });
-  it('픽스처의 이름도 올바르게 분해', () => {
+  it('splits the fixture names correctly too', () => {
     expect(splitFlattenedName('mcp_lenstest_lens_get_weather')).toEqual({
       server: 'lenstest',
       tool: 'lens_get_weather',
     });
   });
-  it('mcp_ 접두어 없는 내장 툴은 null', () => {
+  it('returns null for a builtin tool without the mcp_ prefix', () => {
     expect(splitFlattenedName('read_file')).toBeNull();
   });
-  it('mcp_ 뒤 _ 없는 잔여 문자열은 server=tool=rest', () => {
+  it('sets server=tool=rest when the remainder after mcp_ has no _', () => {
     expect(splitFlattenedName('mcp_solo')).toEqual({ server: 'solo', tool: 'solo' });
   });
 });
 
 describe('geminiAdapter.matches', () => {
   const root = path.join(os.homedir(), '.gemini', 'tmp');
-  it('.gemini/tmp/<hash>/chats/*.jsonl 승인', () => {
+  it('matches .gemini/tmp/<hash>/chats/*.jsonl', () => {
     expect(geminiAdapter.matches(path.join(root, 'abc123', 'chats', 's.jsonl'))).toBe(true);
   });
-  it('.json 확장자도 승인', () => {
+  it('matches the .json extension too', () => {
     expect(geminiAdapter.matches(path.join(root, 'abc123', 'chats', 's.json'))).toBe(true);
   });
-  it('chats 밖 경로는 거부', () => {
+  it('rejects paths outside chats', () => {
     expect(geminiAdapter.matches(path.join(root, 'abc123', 'notes', 's.jsonl'))).toBe(false);
   });
-  it('다른 클라이언트 로그는 거부', () => {
+  it('rejects logs of other clients', () => {
     expect(
       geminiAdapter.matches(path.join(os.homedir(), '.claude', 'projects', 'x.jsonl')),
     ).toBe(false);
   });
 });
 
-describe('geminiAdapter.parseFile — 픽스처 chat-upfront.jsonl', () => {
+describe('geminiAdapter.parseFile with the chat-upfront.jsonl fixture', () => {
   const result = geminiAdapter.parseFile(fixturePath, fixture);
 
-  it('파싱 에러 없음', () => {
+  it('reports no parse errors', () => {
     expect(result.parseErrors).toBe(0);
   });
 
-  it('MCP toolCall이 1개(중복 레코드에서도 dedup)', () => {
+  it('reports one MCP toolCall (deduped across duplicate records)', () => {
     expect(result.toolCalls.length).toBe(1);
     const tc = result.toolCalls[0];
     expect(tc.serverName).toBe('lenstest');
@@ -70,16 +70,16 @@ describe('geminiAdapter.parseFile — 픽스처 chat-upfront.jsonl', () => {
     expect(tc.externalCallId).toBe('mcp_lenstest_lens_get_weather__1jlcieln');
   });
 
-  it('responseText에 untrusted_context 래퍼 포함', () => {
+  it('includes the untrusted_context wrapper in responseText', () => {
     expect(result.toolCalls[0].responseText).toContain('untrusted_context');
   });
 
-  it('mode는 UPFRONT, toolLoads는 빈 배열', () => {
+  it('reports mode UPFRONT with an empty toolLoads', () => {
     expect(result.session.mode).toBe('UPFRONT');
     expect(result.toolLoads).toEqual([]);
   });
 
-  it('세션 메타: client, startedAt, sessionId(파일경로 sha256 앞16)', () => {
+  it('fills session metadata: client, startedAt and sessionId (first 16 of the file path sha256)', () => {
     expect(result.session.client).toBe('gemini-cli');
     expect(result.session.startedAt).toBe('2026-07-18T17:16:43.930Z');
     expect(result.session.filePath).toBe(fixturePath);
@@ -92,7 +92,7 @@ describe('geminiAdapter.parseFile — 픽스처 chat-upfront.jsonl', () => {
     expect(result.session.externalSessionId).toBe('b0b95759-2271-4ec1-a4ef-88a649c60ba5');
   });
 
-  it('공백 native session/call ID를 null로 정규화한다', () => {
+  it('normalizes blank native session/call IDs to null', () => {
     const content = [
       JSON.stringify({ sessionId: '  ', startTime: '2026-07-20T00:00:00.000Z' }),
       JSON.stringify({
@@ -107,24 +107,24 @@ describe('geminiAdapter.parseFile — 픽스처 chat-upfront.jsonl', () => {
     expect(parsed.toolCalls[0].externalCallId).toBeNull();
   });
 
-  it('usage는 고유 gemini 레코드 수(2)만큼 — 스트리밍 중복 이중계상 방지', () => {
+  it('emits usage once per unique gemini record (2), avoiding double counting of streaming duplicates', () => {
     expect(result.usage.length).toBe(2);
     const totalInput = result.usage.reduce((s, u) => s + u.inputTokens, 0);
-    // 17861 + 18237 (중복 17861 재계상되면 35722 초과)
+    // 17861 + 18237 (recounting the duplicate 17861 would exceed 35722)
     expect(totalInput).toBe(36098);
     const totalCacheRead = result.usage.reduce((s, u) => s + u.cacheReadTokens, 0);
     expect(totalCacheRead).toBe(16201);
     expect(result.usage.every((u) => u.cacheCreationTokens === 0)).toBe(true);
   });
 
-  it('usage 토큰 매핑 (input→inputTokens 등)', () => {
+  it('maps the usage tokens (input to inputTokens and so on)', () => {
     const first = result.usage[0];
     expect(first.inputTokens).toBe(17861);
     expect(first.outputTokens).toBe(24);
     expect(first.cacheReadTokens).toBe(0);
   });
 
-  it('한 레코드에 MCP 호출이 여럿이면 tokens.tool을 나눠 담는다 (합계 불변)', () => {
+  it('splits tokens.tool across several MCP calls in one record (the sum is preserved)', () => {
     const content = [
       JSON.stringify({ sessionId: 's-1', startTime: '2026-07-20T00:00:00.000Z' }),
       JSON.stringify({
@@ -144,13 +144,13 @@ describe('geminiAdapter.parseFile — 픽스처 chat-upfront.jsonl', () => {
 
     expect(parsed.toolCalls.length).toBe(3);
     const total = parsed.toolCalls.reduce((s, t) => s + (t.responseTokens ?? 0), 0);
-    // 곱셈 버그면 300이 된다
+    // A multiplication bug would give 300
     expect(total).toBe(100);
-    // 나머지는 앞쪽 호출에 1씩 더한다
+    // The remainder adds 1 to the earlier calls
     expect(parsed.toolCalls.map((t) => t.responseTokens)).toEqual([34, 33, 33]);
   });
 
-  it('내장 툴이 섞여도 MCP 호출 수 기준으로만 분배한다', () => {
+  it('distributes only by the MCP call count even when builtin tools are mixed in', () => {
     const content = JSON.stringify({
       type: 'gemini',
       id: 'rec-2',
@@ -168,7 +168,7 @@ describe('geminiAdapter.parseFile — 픽스처 chat-upfront.jsonl', () => {
     expect(parsed.toolCalls.map((t) => t.responseTokens)).toEqual([4, 3]);
   });
 
-  it('tokens.tool이 없으면 responseTokens는 null', () => {
+  it('leaves responseTokens null when tokens.tool is absent', () => {
     const content = JSON.stringify({
       type: 'gemini',
       id: 'rec-3',
@@ -184,7 +184,7 @@ describe('geminiAdapter.parseFile — 픽스처 chat-upfront.jsonl', () => {
     expect(parsed.toolCalls.map((t) => t.responseTokens)).toEqual([null, null]);
   });
 
-  it('중복 스트리밍 레코드가 있어도 분배가 두 번 적용되지 않는다', () => {
+  it('does not apply the distribution twice when a duplicate streaming record exists', () => {
     const rec = {
       type: 'gemini',
       id: 'rec-4',
@@ -204,7 +204,7 @@ describe('geminiAdapter.parseFile — 픽스처 chat-upfront.jsonl', () => {
     expect(parsed.toolCalls.reduce((s, t) => s + (t.responseTokens ?? 0), 0)).toBe(9);
   });
 
-  it('모든 이벤트 sessionId 일관', () => {
+  it('keeps sessionId consistent across every event', () => {
     const id = result.session.sessionId;
     expect(result.toolCalls.every((t) => t.sessionId === id)).toBe(true);
     expect(result.usage.every((u) => u.sessionId === id)).toBe(true);

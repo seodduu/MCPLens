@@ -1,23 +1,23 @@
 export interface McpServerSpec {
   name: string;
-  /** stdio 서버: 실행 커맨드. http 서버: undefined */
+  /** stdio server: the command to run. http server: undefined. */
   command?: string;
   args?: string[];
   env?: Record<string, string>;
-  /** http 서버: 접속 URL. stdio 서버: undefined */
+  /** http server: the URL to connect to. stdio server: undefined. */
   url?: string;
-  /** http 서버: 요청에 실을 커스텀 헤더 (PAT 등, 예: Authorization: Bearer ...) */
+  /** http server: custom headers to send (a PAT, say: Authorization: Bearer ...). */
   headers?: Record<string, string>;
 }
 
-/** command 있으면 'stdio', 없고 url 있으면 'http', 둘 다 없으면 'unknown'. */
+/** 'stdio' with a command, 'http' with a url and no command, otherwise 'unknown'. */
 export function specTransport(s: McpServerSpec): 'stdio' | 'http' | 'unknown' {
   if (s.command) return 'stdio';
   if (s.url) return 'http';
   return 'unknown';
 }
 
-/** ~/.claude.json의 mcpServers 필드를 파싱. 실패해도 throw 하지 않고 빈 배열 반환. */
+/** Parses the mcpServers field of ~/.claude.json. Never throws; returns an empty array on failure. */
 export function readClaudeMcpConfig(jsonText: string): McpServerSpec[] {
   try {
     const cfg = JSON.parse(jsonText);
@@ -38,17 +38,17 @@ export function readClaudeMcpConfig(jsonText: string): McpServerSpec[] {
 }
 
 export interface CollectResult {
-  /** stdio/http 서버 스펙 (top-level + projects, 서버명으로 dedupe). */
+  /** stdio/http server specs (top-level + projects, deduped by server name). */
   specs: McpServerSpec[];
-  /** 전송 방식을 판별할 수 없어(unknown) 건너뛴 서버명 목록. */
+  /** Names of servers skipped because the transport could not be determined (unknown). */
   skipped: string[];
 }
 
 /**
- * ~/.claude.json 텍스트에서 MCP 서버 스펙(stdio·http)을 수집한다.
- * top-level mcpServers 와 projects.<path>.mcpServers 를 병합하며 서버명으로 중복 제거한다.
- * core의 readClaudeMcpConfig(top-level만 파싱)를 프로젝트 단위로 재사용한다.
- * 파싱 실패 시 throw 하지 않고 빈 결과를 반환한다.
+ * Collects MCP server specs (stdio and http) from the text of ~/.claude.json.
+ * Merges top-level mcpServers with projects.<path>.mcpServers, deduping by server name.
+ * Reuses core's readClaudeMcpConfig (which parses only the top level) per project.
+ * Returns an empty result instead of throwing on a parse failure.
  */
 export function collectServerSpecs(jsonText: string): CollectResult {
   let cfg: any;
@@ -63,11 +63,11 @@ export function collectServerSpecs(jsonText: string): CollectResult {
 
   const mergeSection = (servers: Record<string, any> | undefined | null): void => {
     if (!servers || typeof servers !== 'object') return;
-    // stdio/http 스펙 추출 (readClaudeMcpConfig 재사용)
+    // Extract stdio/http specs (reusing readClaudeMcpConfig)
     const parsed = readClaudeMcpConfig(JSON.stringify({ mcpServers: servers }));
     const parsedNames = new Set(parsed.map((s) => s.name));
     for (const s of parsed) if (!byName.has(s.name)) byName.set(s.name, s);
-    // 전송 판별 불가(unknown, 예: {} 또는 {type:"http"} without url) 서버는 skip 통지
+    // Report servers whose transport cannot be determined (unknown, e.g. {} or {type:"http"} without url) as skipped
     for (const name of Object.keys(servers)) {
       if (!parsedNames.has(name) && !byName.has(name)) skipped.add(name);
     }
@@ -81,6 +81,6 @@ export function collectServerSpecs(jsonText: string): CollectResult {
     }
   }
 
-  // 다른 섹션에서 stdio 로 잡힌 서버는 skip 목록에서 제외
+  // A server found as stdio in another section drops out of the skipped list
   return { specs: [...byName.values()], skipped: [...skipped].filter((n) => !byName.has(n)) };
 }

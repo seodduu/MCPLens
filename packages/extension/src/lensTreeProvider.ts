@@ -6,7 +6,7 @@ const ACTION_ICON: Record<string, string> = {
   inspect: 'warning', remove: 'trash', 'filter-server': 'filter', keep: 'check',
 };
 
-/** 아이콘 강조색 — keep(체크) 파랑, inspect(위험) 빨강. 나머지는 기본색. */
+/** Icon accent colour: keep (check) blue, inspect (danger) red. Everything else uses the default. */
 const ACTION_COLOR: Record<string, string> = {
   keep: 'charts.blue', inspect: 'charts.red',
 };
@@ -32,8 +32,8 @@ export class LensTreeProvider implements vscode.TreeDataProvider<LensNode> {
         : vscode.TreeItemCollapsibleState.None);
     item.id = n.id;
     item.description = n.description;
-    // 호버 설명은 두지 않는다 — 툴·클라이언트마다 문구가 갈려 읽는 비용만 컸다.
-    // 마우스를 올렸을 때의 행동은 삭제 가능한 툴의 disable 액션 하나로 통일한다.
+    // No hover description: wording diverged per tool and client and only cost reading effort.
+    // Hover behaviour is unified into the single disable action on removable tools.
     if (n.kind === 'tool' && n.analysisStatus) {
       item.command = {
         command: 'mcplens.openAnalysisDetails',
@@ -42,7 +42,7 @@ export class LensTreeProvider implements vscode.TreeDataProvider<LensNode> {
       };
     }
     if (n.kind === 'hint') {
-      // 스캔 전 안내. 행 자체가 버튼이다 — 클릭하면 바로 스캔이 돈다.
+      // Pre-scan guidance. The row itself is the button: clicking it runs a scan immediately.
       item.iconPath = new vscode.ThemeIcon('lightbulb', new vscode.ThemeColor('list.warningForeground'));
       item.command = { command: 'mcp-lens.scanNow', title: 'Scan MCP servers' };
       return item;
@@ -57,12 +57,12 @@ export class LensTreeProvider implements vscode.TreeDataProvider<LensNode> {
       item.iconPath = new vscode.ThemeIcon('close');
       item.contextValue = 'mcpTool-disabled';
     } else if (n.searchedNotCalled) {
-      // 로드는 됐으나 호출 0회 — "검색만 되고 호출은 안 됨" 뉘앙스.
-      // 확신이 낮아 권고 아이콘은 억제되더라도 이 사실 자체는 항상 표시한다.
+      // Loaded but never called: the nuance is "found by search, never invoked".
+      // This fact is always shown, even when low confidence suppresses the recommendation icon.
       item.iconPath = new vscode.ThemeIcon('search', new vscode.ThemeColor('list.warningForeground'));
       if (n.enabled === true) item.contextValue = 'mcpTool-enabled';
     } else {
-      // 확신 낮은 권고는 아이콘으로 강조하지 않는다 (후보일 뿐 확정 아님)
+      // Low-confidence recommendations get no icon emphasis (a candidate, not a verdict)
       if (n.action && n.confidence !== 'low')
         item.iconPath = actionIcon(n.action);
       if (n.enabled === true) item.contextValue = 'mcpTool-enabled';

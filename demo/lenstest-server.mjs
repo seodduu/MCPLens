@@ -1,6 +1,6 @@
-// 데모/스모크용 MCP stdio 서버 — 툴 12개.
-// 시연 시나리오: get_weather만 호출하고 나머지 11개는 방치 → Lens가 remove 권고 발화.
-// 등록:  claude mcp add lenstest -- node /path/to/MCPLens-V2/demo/lenstest-server.mjs
+// MCP stdio server for demos and smoke runs: 12 tools.
+// Demo scenario: call only get_weather and leave the other 11 alone, so Lens issues a remove recommendation.
+// Registration:  claude mcp add lenstest -- node /path/to/MCPLens-V2/demo/lenstest-server.mjs
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';

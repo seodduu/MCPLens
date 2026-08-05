@@ -32,10 +32,10 @@ export class AnalysisCoordinator {
   }
 
   /**
-   * @param options.auto 스캔 직후 자동으로 도는 호출이다. 사람이 답할 자리가 없으므로
-   *   동의창을 띄우지 않고, 사용자가 온보딩에서 고르고 동의한 제공자·모델을 그대로 쓴다.
-   *   동의한 적이 없으면 분석을 건너뛴다.
-   *   자동 분석을 끄는 스위치는 mcpLens.autoAnalyze 설정이며, 호출자가 그것을 본다.
+   * @param options.auto This call runs automatically right after a scan. There is nowhere for a
+   *   human to answer, so no consent dialog is shown and the provider and model the user chose and
+   *   consented to during onboarding are used as they are.
+   *   Without any prior consent, the analysis is skipped.
    */
   async analyze(
     reanalyzeServerNames: readonly string[] = [],
@@ -46,10 +46,10 @@ export class AnalysisCoordinator {
     const store = this.deps.store();
     const consent = store.currentInferenceConsent(CONSENT_POLICY_VERSION);
     const accepted = consent !== null && consent.status === 'accepted' ? consent : null;
-    // 'choose'는 제공자가 둘 다 깔려 있어 사람에게 묻는 상태다. 자동 경로에는 물을 자리가
-    // 없으므로, 사용자가 온보딩에서 이미 고르고 동의한 제공자를 그대로 쓴다. 여기서 임의의
-    // 우선순위로 고르면 Codex를 고른 사용자의 선택이 무시되고, 동의와 어긋나 분석이 영영
-    // 조용히 건너뛰어진다.
+    // 'choose' means both providers are installed and a human is being asked. The automatic path has
+    // nowhere to ask, so it uses the provider the user already chose and consented to during
+    // onboarding. Picking by some arbitrary priority here would ignore a user who chose Codex and,
+    // clashing with their consent, silently skip the analysis forever.
     const chosen = resolution.kind === 'resolved'
       ? { provider: resolution.provider, model: resolution.model }
       : options.auto && accepted && resolution.choices.includes(accepted.provider)
@@ -59,9 +59,9 @@ export class AnalysisCoordinator {
     const usable = accepted !== null
       && accepted.provider === chosen.provider && accepted.model === chosen.model;
     if (!usable) {
-      // 자동 경로는 묻지 않는 대신, 사용자가 아직 제공자를 고르고 동의한 적이 없으면
-      // 그냥 멈춘다. 여기서 대신 골라 주면 워크스루의 제공자 선택이 무의미해지고,
-      // 사용자가 승낙한 적 없는 계정에서 토큰이 나간다. 철회한 경우도 같다.
+      // Instead of asking, the automatic path simply stops when the user has never chosen a provider
+      // and consented. Choosing for them here would make the walkthrough's provider selection
+      // tokens from an account that never approved it. The same holds after a withdrawal.
       if (options.auto) return;
       await this.deps.requestConsent?.({ provider: chosen.provider, model: chosen.model });
       return;

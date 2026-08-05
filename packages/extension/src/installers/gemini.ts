@@ -2,24 +2,24 @@ import { join } from 'node:path';
 import type { InstallResult, InstallState } from '../hookInstall.js';
 import { absent, BaseHookInstaller } from './base.js';
 
-/** `packages/gemini-extension/gemini-extension.json`의 `name`과 일치해야 한다. */
+/** Must match the `name` in `packages/gemini-extension/gemini-extension.json`. */
 export const GEMINI_EXT_NAME = 'mcp-lens';
 
-/** `gemini extensions list -o json`의 실측 스키마 (gemini-cli 0.51.0) — 항목은 객체다. */
+/** Measured schema of `gemini extensions list -o json` (gemini-cli 0.51.0): the entries are objects. */
 interface GeminiExtensionEntry { name?: string }
 
 /**
- * Gemini CLI 훅 설치기.
+ * Gemini CLI hook installer.
  *
- * 실측 기준(gemini-cli 0.51.0):
- * - 감지: `gemini extensions list -o json` → 최상위가 배열이고 항목은 `{ name, version, path, ... }` 객체.
- *   미설치 상태의 출력은 정확히 `[]`. (`-o|--output-format` 은 `text`|`json` 만 받는다.)
- * - 설치: `gemini extensions install <source>` — source는 git URL 또는 **로컬 경로 위치인자**.
- *   마켓플레이스 개념이 없어 번들 디렉터리를 그대로 넘긴다(복사 단계 없음).
- *   `--consent` 가 없으면 훅 포함 확장은 `Do you want to continue? [Y/n]` 프롬프트에서 **무한 대기**한다.
- *   비대화형 실행이 전제이므로 `--consent`와 `--skip-settings`를 함께 넘긴다.
- * - 제거: `gemini extensions uninstall <name>` — 경로가 아니라 확장 이름을 받는다.
- *   미설치 상태면 exit 1 + stderr `Failed to uninstall "mcp-lens": Extension not found.`
+ * Measured against gemini-cli 0.51.0:
+ * - Detect: `gemini extensions list -o json` returns a top-level array of `{ name, version, path, ... }` objects.
+ *   The output when nothing is installed is exactly `[]`. (`-o|--output-format` accepts only `text`|`json`.)
+ * - Install: `gemini extensions install <source>`, where source is a git URL or a **local path positional**.
+ *   There is no marketplace concept, so the bundle directory is passed as is (no copy step).
+ *   Without `--consent`, an extension containing hooks **waits forever** at the `Do you want to continue? [Y/n]` prompt.
+ *   Non-interactive execution is a given, so `--consent` and `--skip-settings` are passed together.
+ * - Uninstall: `gemini extensions uninstall <name>` takes the extension name, not the path.
+ *   When nothing is installed it exits 1 with stderr `Failed to uninstall "mcp-lens": Extension not found.`
  */
 export class GeminiHookInstaller extends BaseHookInstaller {
   readonly client = 'gemini-cli' as const;
@@ -30,8 +30,8 @@ export class GeminiHookInstaller extends BaseHookInstaller {
     const r = await this.run(bin, ['extensions', 'list', '-o', 'json']);
     if (r.code !== 0) return 'not-installed';
     try {
-      // gemini-cli 0.51.0은 TTY 없이 spawn되면 `-o json` 출력을 stdout이 아니라
-      // stderr로 보낸다(stdout 빈 문자열). 확장은 항상 비TTY로 spawn하므로 stderr 폴백이 실사용 경로다.
+      // Spawned without a TTY, gemini-cli 0.51.0 sends `-o json` output to stderr rather than stdout
+      // (stdout is empty). The extension always spawns without a TTY, so the stderr fallback is the real path.
       const raw = r.stdout.trim() !== '' ? r.stdout : r.stderr;
       const parsed: unknown = JSON.parse(raw);
       const has = Array.isArray(parsed)
@@ -45,10 +45,10 @@ export class GeminiHookInstaller extends BaseHookInstaller {
     if (bin === null) return { kind: 'client-missing' };
     if (await this.detect() === 'installed') return { kind: 'ok', alreadyInstalled: true };
 
-    // --consent 로도 프롬프트가 하나 더 남는다: 로컬 경로 설치는 "Do you trust the
-    // files in this folder? [y/N]" 를 띄우고, 이걸 끄는 플래그가 없다(0.51.0
-    // `extensions install --help` 실측). stdin을 닫아도 종료되지 않으므로 유일한
-    // 비대화형 경로는 소스 폴더를 미리 신뢰 목록에 넣는 것이다. 반드시 install 전에.
+    // Even with --consent one more prompt remains: a local-path install raises "Do you trust the
+    // files in this folder? [y/N]" and there is no flag to disable it (measured with 0.51.0
+    // `extensions install --help`). Closing stdin does not end it either, so the only
+    // non-interactive path is to add the source folder to the trust list first. It must precede install.
     this.trustBundledDir();
 
     // --consent is required or `gemini extensions install` blocks on an
@@ -69,9 +69,9 @@ export class GeminiHookInstaller extends BaseHookInstaller {
   }
 
   /**
-   * 번들 디렉터리를 `~/.gemini/trustedFolders.json` 에 등록한다. 우리가 배포한
-   * 디렉터리 하나만 대상이고 다른 항목은 보존한다. 실패는 삼킨다 — 이미 신뢰된
-   * 폴더일 수도 있고, 이 단계 때문에 설치가 막히면 안 된다(fail-open).
+   * Registers the bundle directory in `~/.gemini/trustedFolders.json`. Only the one directory we ship
+   * is targeted and every other entry is preserved. Failures are swallowed: the folder may already be
+   * trusted, and this step must never block the install (fail-open).
    */
   private trustBundledDir(): void {
     const path = join(this.deps.home, '.gemini', 'trustedFolders.json');
@@ -83,12 +83,12 @@ export class GeminiHookInstaller extends BaseHookInstaller {
           trusted = parsed as Record<string, string>;
         }
       } catch {
-        // 파일이 없거나 깨졌다 — 새로 쓴다. 기존 내용이 깨진 경우까지 살릴 수는 없다.
+        // The file is missing or broken: rewrite it. Broken existing content cannot be salvaged.
       }
       trusted[this.deps.bundledDir] = 'TRUST_FOLDER';
       this.deps.fs.writeFile(path, `${JSON.stringify(trusted, null, 2)}\n`);
     } catch {
-      // 쓰기 불가 — 설치를 계속 시도한다.
+      // Cannot write: continue attempting the install.
     }
   }
 

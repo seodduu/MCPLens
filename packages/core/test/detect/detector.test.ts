@@ -18,7 +18,7 @@ function makeFile(filePath: string, mtime: Date) {
 const NOW = new Date('2026-07-19T00:00:00Z');
 
 describe('detectClients', () => {
-  it('로그 루트가 존재하지 않는 클라이언트는 installed:false, activeWithinDays:null', () => {
+  it('reports installed:false and activeWithinDays:null when the log root does not exist', () => {
     const missingRoot = path.join(scratchDir(), 'does-not-exist');
     const roots = new Map<ClientId, string[]>([
       ['claude-code', [missingRoot]],
@@ -31,7 +31,7 @@ describe('detectClients', () => {
     expect(claude.activeWithinDays).toBeNull();
   });
 
-  it('설치되어 있고 최근 파일이 있으면 now 기준 경과일수를 계산한다', () => {
+  it('computes the elapsed days against now when it is installed with a recent file', () => {
     const root = scratchDir();
     const recent = new Date('2026-07-17T00:00:00Z'); // 2 days before NOW
     makeFile(path.join(root, 'session.jsonl'), recent);
@@ -46,7 +46,7 @@ describe('detectClients', () => {
     expect(claude.activeWithinDays).toBe(2);
   });
 
-  it('설치되어 있지만 .jsonl 파일이 없으면 activeWithinDays는 null', () => {
+  it('reports activeWithinDays null when it is installed but has no .jsonl file', () => {
     const root = scratchDir();
     // create a non-jsonl file only
     makeFile(path.join(root, 'notes.txt'), NOW);
@@ -61,7 +61,7 @@ describe('detectClients', () => {
     expect(claude.activeWithinDays).toBeNull();
   });
 
-  it('중첩 디렉토리 안의 .jsonl 파일도 탐색한다 (walk depth)', () => {
+  it('finds .jsonl files inside nested directories too (walk depth)', () => {
     const root = scratchDir();
     const nested = new Date('2026-07-10T00:00:00Z'); // 9 days before NOW
     makeFile(path.join(root, 'a', 'b', 'c', 'deep.jsonl'), nested);
@@ -76,7 +76,7 @@ describe('detectClients', () => {
     expect(claude.activeWithinDays).toBe(9);
   });
 
-  it('결과에 3개 클라이언트가 모두 포함된다', () => {
+  it('includes all three clients in the result', () => {
     const missingRoot = path.join(scratchDir(), 'does-not-exist');
     const roots = new Map<ClientId, string[]>([
       ['claude-code', [missingRoot]],
@@ -88,7 +88,7 @@ describe('detectClients', () => {
     expect(ids).toEqual(['claude-code', 'codex', 'gemini-cli']);
   });
 
-  it('.jsonl과 .json 파일 중 가장 최신 mtime을 사용한다', () => {
+  it('uses the newest mtime across .jsonl and .json files', () => {
     const root = scratchDir();
     makeFile(path.join(root, 'old.jsonl'), new Date('2026-07-01T00:00:00Z')); // 18 days
     makeFile(path.join(root, 'new.jsonl'), new Date('2026-07-18T00:00:00Z')); // 1 day
@@ -102,10 +102,10 @@ describe('detectClients', () => {
     expect(claude.activeWithinDays).toBe(1);
   });
 
-  it('사라진/깨진 파일(dangling symlink)이 섞여 있어도 나머지 파일 기준으로 탐지를 계속한다', () => {
+  it('keeps detecting from the remaining files even with a missing or broken file (a dangling symlink)', () => {
     const root = scratchDir();
     makeFile(path.join(root, 'valid.jsonl'), new Date('2026-07-17T00:00:00Z')); // 2 days before NOW
-    // 존재하지 않는 대상을 가리키는 깨진 심볼릭 링크 — statSync 시 ENOENT 유발
+    // A broken symlink pointing at a nonexistent target, causing ENOENT on statSync
     symlinkSync(path.join(root, 'does-not-exist.jsonl'), path.join(root, 'broken.jsonl'));
     const roots = new Map<ClientId, string[]>([
       ['claude-code', [root]],
@@ -115,6 +115,6 @@ describe('detectClients', () => {
     const result = detectClients(NOW, roots);
     const claude = result.find((r) => r.client === 'claude-code')!;
     expect(claude.installed).toBe(true);
-    expect(claude.activeWithinDays).toBe(2); // 깨진 심볼릭 링크는 무시하고 정상 파일 기준
+    expect(claude.activeWithinDays).toBe(2); // the broken symlink is ignored and the healthy file decides
   });
 });

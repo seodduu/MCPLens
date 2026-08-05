@@ -8,8 +8,9 @@ export type TomlArrayPatchResult =
 type PatchOperation = 'add' | 'remove';
 
 /**
- * TOML을 다시 직렬화하지 않고 특정 MCP 서버 테이블의 disabled_tools만 바꾼다.
- * `smol-toml`은 입력과 결과의 의미 검증에만 쓰므로, 관련 없는 주석과 바이트는 보존된다.
+ * Changes only disabled_tools in one MCP server table, without re-serializing the TOML.
+ * `smol-toml` is used purely to validate the meaning of the input and result, so unrelated
+ * comments and bytes are preserved.
  */
 export function patchDisabledTools(
   source: string,
@@ -54,7 +55,7 @@ interface PropertyRange { lineStart: number; lineEnd: number; valueStart: number
 
 function parseConfig(source: string): TomlObject | null {
   try {
-    // smol-toml은 BOM을 허용하지 않지만, Codex 설정 원문은 BOM을 보존한 채 지원해야 한다.
+    // smol-toml rejects a BOM, but the raw Codex config must be supported with its BOM preserved.
     const value: unknown = parseToml(source.replace(/^\uFEFF/, ''));
     return value !== null && !Array.isArray(value) && typeof value === 'object' ? value as TomlObject : null;
   } catch {
@@ -122,7 +123,7 @@ function findDisabledToolsProperty(source: string, table: TableRange): PropertyR
   return { lineStart, lineEnd, valueStart, valueEnd };
 }
 
-/** 실제 TOML의 multiline basic/literal string에 속한 행을 식별한다. */
+/** Identifies lines that belong to a real multiline basic/literal TOML string. */
 function multilineStringLines(source: string): Set<number> {
   const lines = new Set<number>();
   let state: 'basic' | 'literal' | null = null;

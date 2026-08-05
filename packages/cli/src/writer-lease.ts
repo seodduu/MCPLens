@@ -4,15 +4,17 @@ import { dirname } from 'node:path';
 import { acquireLease, renewLease, releaseLease, dbWriterLockPath, type Lease } from '@mcp-lens/core';
 
 /**
- * CLI용 writer lease.
+ * Writer lease for the CLI.
  *
- * 저장 경로가 "sql.js 전체 파일 export + 원자적 rename"이라 DB 파일을 쓰는 프로세스는
- * 항상 하나여야 한다. VS Code 확장이 살아 있는 동안 CLI가 리스 없이 save()하면,
- * CLI가 open한 뒤 확장이 적재한 관측이 통째로 덮여 사라진다. 그래서 쓰기 커맨드는
- * 확장과 같은 락(dbWriterLockPath)을 두고 경쟁하고, 획득한 쪽만 저장한다.
+ * The save path is "export the whole sql.js file + atomic rename", so exactly one process may
+ * write the DB file. If the CLI calls save() without a lease while the VS Code extension is
+ * alive, every observation the extension ingested after the CLI opened the file is overwritten
+ * and lost. Write commands therefore contend for the same lock as the extension
+ * (dbWriterLockPath), and only the winner saves.
  *
- * 확장 쪽 WriterLeaseManager와 같은 저수준 API(core의 acquire/renew/releaseLease)를
- * 쓰지만, CLI는 단발성 프로세스라 강등·승격 상태 기계가 필요 없다. 획득 아니면 중단이다.
+ * It uses the same low-level API as the extension's WriterLeaseManager (core's
+ * acquire/renew/releaseLease), but the CLI is a one-shot process, so it needs no
+ * demote/promote state machine: acquire or abort.
  */
 
 export interface WriterLeaseDeps {
@@ -33,7 +35,7 @@ const DEFAULT_DEPS: WriterLeaseDeps = {
   release: releaseLease,
   setInterval: (fn, ms) => {
     const timer = setInterval(fn, ms);
-    // 하트비트 타이머가 이벤트 루프를 붙잡아 CLI가 안 끝나는 일을 막는다.
+    // Keeps the heartbeat timer from holding the event loop open and preventing the CLI from exiting.
     timer.unref?.();
     return timer;
   },
@@ -45,13 +47,13 @@ const DEFAULT_DEPS: WriterLeaseDeps = {
 };
 
 export const LEASE_BUSY_MESSAGE =
-  'VS Code 확장이 MCP Lens DB를 쓰는 중이라 지금은 이 명령을 실행할 수 없습니다.\n' +
-  '확장 창(또는 실행 중인 다른 mcp-lens)을 닫은 뒤 다시 시도하세요. 잠시 후 자동으로 풀리기도 합니다.';
+  'The VS Code extension is writing the MCP Lens DB, so this command cannot run right now.\n' +
+  'Close the extension window (or the other running mcp-lens) and try again. It may also clear on its own shortly.';
 
 export interface WriterLeaseHandle {
-  /** 지금도 내가 홀더인가. 하트비트가 인수를 감지하면 false로 바뀐다. */
+  /** Am I still the holder? Flips to false once the heartbeat detects a takeover. */
   isHolder(): boolean;
-  /** 해제는 여러 번 불러도 안전하다. */
+  /** Releasing more than once is safe. */
   release(): void;
 }
 
@@ -59,11 +61,11 @@ export type WriterLeaseResult =
   | { ok: true; lease: WriterLeaseHandle }
   | { ok: false; message: string };
 
-/** 리스를 한 번 시도한다. 유효한 다른 홀더가 있으면 안내 메시지와 함께 실패를 돌려준다. */
+/** Tries the lease once. Returns a failure with guidance when another valid holder exists. */
 export function acquireWriterLease(overrides: Partial<WriterLeaseDeps> = {}): WriterLeaseResult {
   const deps = { ...DEFAULT_DEPS, ...overrides };
   const lockPath = deps.lockPath();
-  // LensStore.open()은 최초 save() 전까지 ~/.mcplens를 만들지 않으므로 락 자리를 먼저 보장한다.
+  // LensStore.open() does not create ~/.mcplens until the first save(), so make room for the lock first.
   deps.ensureDir(dirname(lockPath));
 
   let lease = deps.acquire(lockPath, deps.ttlMs);
@@ -72,7 +74,7 @@ export function acquireWriterLease(overrides: Partial<WriterLeaseDeps> = {}): Wr
   let timer: unknown = deps.setInterval(() => {
     if (!lease) return;
     const renewed = deps.renew(lockPath, lease.token, deps.ttlMs);
-    lease = renewed; // null이면 인수당한 것 → 즉시 비홀더가 되어 write guard가 save를 막는다
+    lease = renewed; // null means taken over: we become a non-holder at once and the write guard blocks save
     if (!renewed) stopTimer();
   }, deps.renewMs);
 
@@ -93,8 +95,8 @@ export function acquireWriterLease(overrides: Partial<WriterLeaseDeps> = {}): Wr
 }
 
 /**
- * 리스를 잡고 body를 실행한 뒤 반드시 해제한다(예외 경로 포함).
- * 획득 실패면 body를 아예 실행하지 않는다 — DB를 열지도 않는다는 뜻이다.
+ * Takes the lease, runs body, and always releases it (including on the exception path).
+ * On acquisition failure body never runs, which means the DB is never even opened.
  */
 export async function withWriterLease<T>(
   body: (lease: WriterLeaseHandle) => Promise<T>,

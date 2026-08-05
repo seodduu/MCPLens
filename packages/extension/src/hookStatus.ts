@@ -68,7 +68,7 @@ export function clientRowPresentation(
       'The hook is on, but codex trust approval is still pending. Run codex once to see the consent prompt. '
       + 'Until it is approved, MCP calls from this client are collected from the log only.', 'warning');
   }
-  // installed: 관측이 있으면 그 건강도, 없으면 idle(첫 이벤트 대기)
+  // installed: its health when observations exist, otherwise idle (waiting for the first event)
   return formatCollectionHealth(
     snapshot ?? { health: 'idle', hookObserved: false, logObserved: false,
       consecutiveMisses: 0, consecutiveMatches: 0, waitingForCorrelation: 0, lastEventAt: null },

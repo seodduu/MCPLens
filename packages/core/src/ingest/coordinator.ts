@@ -40,11 +40,11 @@ export interface IngestionCoordinatorOptions {
   store: CoordinatorStore;
   reconcile?: (path: string, trigger: string) => MaybePromise<IngestionResult>;
   drainer?: InboxDrainer;
-  /** pending 워처 팩토리(테스트 주입). 기본 chokidar.watch. */
+  /** pending watcher factory (injected in tests). Defaults to chokidar.watch. */
   watchFactory?: (paths: string[], options: WatchOptions) => PendingWatchHandle;
-  /** debounce 타이머 주입(테스트). 기본 setTimeout. */
+  /** debounce timer injection (tests). Defaults to setTimeout. */
   setTimer?: (callback: () => void, delayMs: number) => TimerHandle;
-  /** debounce 지연(ms). 기본 50(LogWatcher와 동일). */
+  /** debounce delay in ms. Defaults to 50 (same as LogWatcher). */
   drainDebounceMs?: number;
 }
 
@@ -99,23 +99,23 @@ export class IngestionCoordinator extends EventEmitter {
     return { ingested, parseErrors: claims.parseErrors };
   }
 
-  /** pending 감시를 시작하고, chokidar 초기 스캔(ready) 완료 후 1회 drain(밀린 봉투 흡수). 멱등. */
+  /** Starts watching pending and drains once after chokidar's initial scan (ready) to absorb the backlog. Idempotent. */
   async startDraining(): Promise<void> {
-    if (this.paused) return;               // ← 중지 중 승격/재승격이 수집을 되살리지 못한다
+    if (this.paused) return;               // a promotion while paused must not revive collection
     if (this.pendingWatcher) return;
-    const pendingDir = inboxPaths(this.options.inbox ?? {}).pending; // 디렉토리 생성 보장
+    const pendingDir = inboxPaths(this.options.inbox ?? {}).pending; // ensures the directory exists
     const watcher = this.watchFactory([pendingDir], {
       ignoreInitial: true,
       awaitWriteFinish: { stabilityThreshold: 500 },
     });
-    this.pendingWatcher = watcher;                        // await 이전에 세팅 → 멱등성 강화
-    watcher.on('add', () => this.scheduleDrain());        // ready await 이전에 배선 → ready 이후 add 무손실
-    await new Promise<void>((resolve) => watcher.on('ready', () => resolve())); // 초기 스캔 종료 대기
-    if (this.pendingWatcher !== watcher) return;          // startup 중 stopDraining 발생 → 닫힌 워처 drain/재배선 금지
-    await this.drainInbox();                              // ready 이후 실행 → 스캔 억제분 + 기존 파일 흡수
+    this.pendingWatcher = watcher;                        // set before the await, strengthening idempotence
+    watcher.on('add', () => this.scheduleDrain());        // wired before awaiting ready, so no add after ready is lost
+    await new Promise<void>((resolve) => watcher.on('ready', () => resolve())); // wait for the initial scan to finish
+    if (this.pendingWatcher !== watcher) return;          // stopDraining happened during startup: never drain or rewire a closed watcher
+    await this.drainInbox();                              // runs after ready, absorbing what the scan suppressed plus pre-existing files
   }
 
-  /** 감시를 멈춘다. 인플라이트 drain은 자연 종료시킨다. 멱등. */
+  /** Stops watching. An in-flight drain is allowed to finish. Idempotent. */
   async stopDraining(): Promise<void> {
     const watcher = this.pendingWatcher;
     this.pendingWatcher = null;
@@ -127,15 +127,15 @@ export class IngestionCoordinator extends EventEmitter {
     await watcher?.close();
   }
 
-  /** 훅 수집을 일시 중지한다(세션 한정). pending 봉투는 inbox에 남고 재개 시 흡수된다. 멱등. */
+  /** Pauses hook collection (for this session). Pending envelopes stay in the inbox and are absorbed on resume. Idempotent. */
   async pause(): Promise<void> {
     this.paused = true;
     await this.stopDraining();
   }
 
   /**
-   * 일시 중지를 해제한다. 감시 재개는 호출자가 startDraining()으로 한다 —
-   * 재개해도 되는지(writer 리스 보유 여부)는 코어가 아니라 확장만 안다. 멱등.
+   * Clears the pause. The caller resumes watching with startDraining(): only the extension, not
+   * core, knows whether resuming is safe (whether it holds the writer lease). Idempotent.
    */
   resume(): void {
     this.paused = false;
@@ -144,7 +144,7 @@ export class IngestionCoordinator extends EventEmitter {
   get isPaused(): boolean { return this.paused; }
 
   private scheduleDrain(): void {
-    if (this.drainScheduled) return;          // debounce 창이 이미 열림
+    if (this.drainScheduled) return;          // the debounce window is already open
     this.drainScheduled = true;
     this.drainTimer = this.setTimer(() => { void this.runDrain(); }, this.drainDebounceMs);
   }
@@ -152,18 +152,18 @@ export class IngestionCoordinator extends EventEmitter {
   private async runDrain(): Promise<void> {
     this.drainScheduled = false;
     this.drainTimer = null;
-    if (!this.pendingWatcher) return;          // 창 도중 stop됨 → 스킵(강등 안전)
+    if (!this.pendingWatcher) return;          // stopped during the window: skip (safe demotion)
     if (this.drainInFlight) { this.drainQueued = true; return; }
     this.drainInFlight = true;
     try {
       await this.drainInbox();
     } catch (error) {
-      this.emit('drain-error', error);         // 확장이 StaleWriterError 흡수
+      this.emit('drain-error', error);         // the extension absorbs StaleWriterError
     } finally {
       this.drainInFlight = false;
       if (this.drainQueued) {
         this.drainQueued = false;
-        this.scheduleDrain();                  // 트레일링 코얼레싱
+        this.scheduleDrain();                  // trailing coalescing
       }
     }
   }

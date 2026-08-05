@@ -33,7 +33,7 @@ async function main() {
   if (cmd === 'hooks') { await runHooks(args); return; }
   if (cmd === 'hook') { runHookCapture(args); return; }
   if (cmd !== 'report') {
-    console.error(`알 수 없는 커맨드: ${cmd}\n`);
+    console.error(`unknown command: ${cmd}\n`);
     console.error(HELP_TEXT);
     process.exit(1);
   }
@@ -89,9 +89,10 @@ async function runReport(args: string[]) {
   const format = parseFormat(argValue(args, '--format'));
   if (!format.ok) { console.error(format.message); process.exit(1); return; }
 
-  // report는 읽기 커맨드지만 backfill이 관측을 적재하며 save()를 한다. 리스를 잡으면
-  // 그 적재분을 디스크에 남기고, 확장이 홀더라 못 잡으면 write guard를 비홀더로 걸어
-  // 저장만 건너뛴다. 메모리에 적재된 관측은 그대로 이번 리포트에 반영되므로 결과는 같다.
+  // report is a read command, but backfill ingests observations and calls save(). With the
+  // lease we persist that ingest; without it (the extension holds it) the write guard marks us
+  // a non-holder and only the save is skipped. The in-memory ingest still feeds this report,
+  // so the output is identical either way.
   const acquired = acquireWriterLease();
   const lease: WriterLeaseHandle | null = acquired.ok ? acquired.lease : null;
   try {
@@ -102,7 +103,7 @@ async function runReport(args: string[]) {
       ({ files } = await watcherFor(store).backfill());
     } catch (e) {
       if (!isStaleWriterError(e)) throw e;
-      console.error('(다른 프로세스가 DB를 쓰는 중이라 이번 실행은 읽기 전용으로 진행합니다)');
+      console.error('(another process is writing the DB, so this run is read-only)');
     }
     const since = new Date(Date.now() - days.value * 86_400_000).toISOString();
     const input = {
@@ -124,12 +125,12 @@ function watcherFor(store: LensStore): LogWatcher {
   return new LogWatcher(store, [new ClaudeAdapter(), new CodexAdapter(), new GeminiAdapter()]);
 }
 
-/** 비홀더가 save()를 시도했을 때 core가 던지는 가드 예외. 이름으로만 판별한다(클래스 비공개). */
+/** Guard error core throws when a non-holder calls save(). Detected by name only (the class is private). */
 function isStaleWriterError(e: unknown): boolean {
   return e instanceof Error && e.name === 'StaleWriterError';
 }
 
-/** configSources() 각 파일을 읽어 소스 종류별 발견 스펙 수를 센다 (읽기 전용). */
+/** Reads every configSources() file and counts discovered specs per source kind (read-only). */
 function sourceDiscoveryCounts(): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const source of configSources()) {
@@ -158,10 +159,10 @@ async function runScan(args: string[]) {
     try {
       jsonText = readFileSync(configPath, 'utf8');
     } catch {
-      // 사용자가 명시한 경로가 없는 것은 실패다. 스크립트가 감지할 수 있게 exit 1로 끝낸다
-      // (설정 파일을 지정하지 않은 전체 스캔에서 서버가 0개인 것과는 다른 상황이다).
-      console.error(`설정 파일을 찾을 수 없습니다: ${configPath}`);
-      console.error('경로를 확인하거나, --config 없이 실행해 감지된 설정을 모두 읽게 하세요.');
+      // A path the user named explicitly must exist. Exit 1 so scripts can detect it
+      // (this differs from a full scan that simply finds zero servers).
+      console.error(`config file not found: ${configPath}`);
+      console.error('Check the path, or run without --config to read every detected config.');
       process.exit(1);
       return;
     }
@@ -174,26 +175,27 @@ async function runScan(args: string[]) {
     replaceable = result.replaceable;
     identities = result.identities;
     const summary = formatSourceCounts(sourceDiscoveryCounts());
-    if (summary) console.log(`발견: ${summary}`);
+    if (summary) console.log(`discovered: ${summary}`);
   }
 
   for (const name of skipped)
-    console.log(`- ${name}: stdio 서버가 아니어서 건너뜀 (command 필드 없음)`);
-  // --config 단일 파일 스캔에서 서버가 0개면 여기서 끝 — 매핑을 건드리지 않는다
-  // (전체 소스를 관찰하지 않았으므로 attribution이 애초에 undefined).
+    console.log(`- ${name}: skipped, not a stdio server (no command field)`);
+  // Zero servers in a single-file --config scan ends here; the mapping stays untouched
+  // (attribution is undefined because we never observed every source).
   if (specs.length === 0 && attribution === undefined) {
-    console.log('스캔할 MCP 서버가 없습니다.');
+    console.log('No MCP servers to scan.');
     return;
   }
 
-  // 여기서부터 DB에 쓴다. 리스 없이 열면 open 이후 확장이 적재한 관측이 save()에서 통째로
-  // 덮여 사라진다. 설정 읽기·경로 검증은 위에서 이미 끝냈으므로 락은 필요한 구간만 쥔다.
+  // Writing to the DB starts here. Opening without a lease means save() overwrites every
+  // observation the extension ingested after open. Config reading and path validation are
+  // already done above, so the lock covers only the section that needs it.
   const written = await withWriterLease((lease) =>
     scanIntoStore(specs, attribution, replaceable, identities, lease));
   if (!written.ok) { console.error(written.message); process.exit(1); }
 }
 
-/** 스캔 결과를 DB에 적재한다. writer lease를 쥔 상태에서만 호출한다. */
+/** Ingests scan results into the DB. Only call while holding the writer lease. */
 async function scanIntoStore(
   specs: McpServerSpec[],
   attribution: Map<string, Set<ClientId>> | undefined,
@@ -202,16 +204,16 @@ async function scanIntoStore(
   lease: WriterLeaseHandle,
 ): Promise<void> {
   const store = await LensStore.open(dbPath());
-  // 리스를 잃으면(확장에 인수당함) save가 StaleWriterError로 막힌다. 남의 관측을 덮는 것보다
-  // 이번 스캔 결과를 버리는 쪽이 낫다.
+  // If the lease is lost (taken over by the extension) save is blocked with StaleWriterError.
+  // Dropping this scan is better than overwriting someone else's observations.
   store.setWriteGuard(() => lease.isHolder());
-  // --config 단일 파일 스캔에서는 undefined — 전체 소스를 관찰하지 않았으므로
-  // 교체하면 다른 클라이언트의 매핑이 잘못 지워진다.
+  // Undefined for a single-file --config scan: we never observed every source, so replacing
+  // would wrongly erase another client's mapping.
   if (attribution !== undefined && replaceable !== undefined)
     store.upsertClientServers(attribution, replaceable);
   if (specs.length === 0) {
-    // 전체 스캔 경로에서 서버가 0개 — 매핑은 위에서 이미 갱신(비움)했다. 스캔할 것만 없다.
-    console.log('스캔할 MCP 서버가 없습니다.');
+    // Zero servers on the full-scan path; the mapping was already updated (emptied) above.
+    console.log('No MCP servers to scan.');
     store.save();
     store.close();
     return;
@@ -220,7 +222,7 @@ async function scanIntoStore(
     const scannedAt = new Date().toISOString();
     const result = await scanOneServer(store, spec, scannedAt, identities);
     if (result.ok) {
-      console.log(`- ${spec.name}: ${result.toolCount}개 툴, ${result.totalTokens} 토큰`);
+      console.log(`- ${spec.name}: ${result.toolCount} tools, ${result.totalTokens} tokens`);
     } else {
       console.log(result.line);
     }
@@ -229,21 +231,21 @@ async function scanIntoStore(
   store.close();
 }
 
-/** `mcp-lens auth <serverName> [--clear]` — http 서버 OAuth 로그인 후 즉시 1개 서버만 스캔·적재. */
+/** `mcp-lens auth <serverName> [--clear]`: OAuth login for an http server, then rescan just that server. */
 async function runAuth(args: string[]) {
   const rest = args.slice(1);
   const clear = rest.includes('--clear');
   const name = rest.find((a) => !a.startsWith('--'));
 
   if (!name) {
-    console.log('사용법: mcp-lens auth <serverName> [--clear]');
+    console.log('usage: mcp-lens auth <serverName> [--clear]');
     process.exit(1);
     return;
   }
 
   if (clear) {
     clearStoredOAuth(name);
-    console.log(`${name}: 저장된 인증 정보를 삭제했습니다.`);
+    console.log(`${name}: stored credentials deleted.`);
     return;
   }
 
@@ -258,23 +260,23 @@ async function runAuth(args: string[]) {
   try {
     await authenticateServer(target.spec, { openUrl });
   } catch (e) {
-    // authenticateServer가 SDK 예외를 그대로 재던질 수 있어 Error가 아닌 값도 들어온다.
-    // (e as Error).message로 단정하면 이 catch 블록 안에서 TypeError가 나
-    // DCR 안내 메시지 대신 처리되지 않은 크래시가 사용자에게 노출된다.
+    // authenticateServer may rethrow SDK exceptions verbatim, so non-Error values arrive here.
+    // Asserting (e as Error).message would throw a TypeError inside this catch block and expose
+    // an unhandled crash instead of the DCR guidance below.
     const msg = e instanceof Error ? e.message : String(e);
-    console.log(`${name}: 로그인 실패 — ${msg}`);
+    console.log(`${name}: login failed: ${msg}`);
     if (/dynamic client registration/i.test(msg)) {
       console.log(
-        `  이 서버는 동적 클라이언트 등록(DCR)을 지원하지 않습니다 (예: GitHub 원격 MCP).\n` +
-        `  대신 설정의 headers 필드에 PAT를 넣으면 스캔됩니다:\n` +
-        `  "${name}": { "type": "http", "url": "...", "headers": { "Authorization": "Bearer <토큰>" } }`);
+        `  This server does not support dynamic client registration (DCR), e.g. GitHub remote MCP.\n` +
+        `  Put a PAT in the headers field of the config instead and it will scan:\n` +
+        `  "${name}": { "type": "http", "url": "...", "headers": { "Authorization": "Bearer <token>" } }`);
     }
     process.exit(1);
     return;
   }
 
-  // 리스는 DB를 여는 직전에만 잡는다. 브라우저 로그인은 사용자가 얼마든지 붙잡고 있을 수
-  // 있어서, 그 시간까지 락을 쥐면 확장이 그동안 아무것도 저장하지 못한다.
+  // Take the lease only right before opening the DB. Browser login can take arbitrarily long,
+  // and holding the lock through it would block the extension from saving anything.
   const rescan = await withWriterLease(async (lease) => {
     const store = await LensStore.open(dbPath());
     store.setWriteGuard(() => lease.isHolder());
@@ -282,7 +284,7 @@ async function runAuth(args: string[]) {
     await runAuthRescan(store, target.spec, scannedAt);
   });
   if (!rescan.ok) {
-    console.error(`${name}: 로그인은 끝났지만 결과를 저장하지 못했습니다.`);
+    console.error(`${name}: login succeeded but the result could not be saved.`);
     console.error(rescan.message);
     process.exit(1);
   }

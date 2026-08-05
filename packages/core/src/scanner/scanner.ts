@@ -10,15 +10,15 @@ import { canonicalJson, computeDefinitionSetHash, toolToRawBody } from './server
 
 type AuthProvider = NonNullable<ReturnType<typeof storedTokenProvider>>;
 
-/** HTTP 응답/에러 메시지에서 인증 요구(401/403·OAuth) 신호를 감지한다.
- *  일부 서버(GitHub 원격 MCP)는 표준 401 대신 400 + "missing required Authorization header"로
- *  거절하므로 Authorization 헤더 언급도 인증 요구로 분류한다 (실기기 관찰, 2026-07-20). */
+/** Detects an authentication demand (401/403, OAuth) in an HTTP response or error message.
+ *  Some servers (GitHub remote MCP) reject with 400 + "missing required Authorization header"
+ *  instead of a standard 401, so a mention of the Authorization header counts too (observed on a real device, 2026-07-20). */
 export function isAuthRequired(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   return /\b401\b|\b403\b|unauthor|forbidden|oauth|invalid_token|www-authenticate|authorization header/i.test(msg);
 }
 
-/** spec의 전송 방식에 맞는 클라이언트 transport를 생성한다 (생성만 분기, 이후 로직은 공유). */
+/** Creates the client transport matching the spec's transport (only creation branches; the rest is shared). */
 function createTransport(spec: McpServerSpec, authProvider: AuthProvider | undefined): Transport {
   const kind = specTransport(spec);
   if (kind === 'stdio') {
@@ -31,7 +31,7 @@ function createTransport(spec: McpServerSpec, authProvider: AuthProvider | undef
   if (kind === 'http') {
     return new StreamableHTTPClientTransport(new URL(spec.url!), {
       ...(authProvider ? { authProvider } : {}),
-      // PAT 등 커스텀 헤더 패스스루 (설정의 headers 필드 — GitHub 원격 MCP류)
+      // Pass through custom headers such as a PAT (the headers field of the config, for GitHub remote MCP and friends)
       ...(spec.headers ? { requestInit: { headers: spec.headers } } : {}),
     });
   }
@@ -39,17 +39,17 @@ function createTransport(spec: McpServerSpec, authProvider: AuthProvider | undef
 }
 
 /**
- * 지정된 MCP 서버를 stdio 또는 streamable http로 기동해 tools/list를 조회하고
- * 정의 토큰을 계산한다. stdio는 프로세스 spawn, http는 네트워크를 사용하므로
- * 실기기 자원 검증은 Wave 4 스모크에서 다룬다 (http는 루프백 유닛테스트 존재).
- * 인증 요구(401/403·OAuth) http 서버는 메시지에 `auth-required`를 포함해 throw한다.
+ * Starts the given MCP server over stdio or streamable http, queries tools/list and computes the
+ * definition tokens. stdio spawns a process and http uses the network, so real-device resource
+ * verification happens in the Wave 4 smoke run (http does have a loopback unit test).
+ * An http server demanding authentication (401/403, OAuth) throws with `auth-required` in the message.
  */
 export async function scanServer(
   spec: McpServerSpec,
   timeoutMs = 15000,
 ): Promise<{ definitions: ToolDefinition[]; bodies: ToolDefinitionBody[] }> {
-  // 저장된 Lens 명의 토큰이 있으면 자동 첨부 (비인터랙티브 — redirect는 throw).
-  // catch 블록의 token-expired 힌트에도 재사용해 이중 read를 피한다.
+  // Attach the stored Lens-issued token when present (non-interactive: a redirect throws).
+  // Reused for the token-expired hint in the catch block to avoid a second read.
   const authProvider: AuthProvider | undefined = storedTokenProvider(spec) ?? undefined;
   const transport = createTransport(spec, authProvider);
   const client = new Client({ name: 'mcp-lens-scanner', version: '0.1.0' });
@@ -67,7 +67,7 @@ export async function scanServer(
         JSON.stringify({ name: t.name, description: t.description, inputSchema: t.inputSchema }),
       ),
       scannedAt: now,
-      firstScannedAt: now, // 저장 시 COALESCE가 기존 최초값을 지켜준다
+      firstScannedAt: now, // COALESCE on save preserves the existing first value
     }));
     const bodies: ToolDefinitionBody[] = definitions.map((definition, index) => ({
       serverName: definition.serverName,
@@ -80,10 +80,10 @@ export async function scanServer(
     }));
     return { definitions, bodies };
   } catch (err) {
-    // 인증 요구는 정상 실패 — 표면이 "인증 필요 — 스킵"으로 안내하도록 신호를 담는다.
+    // An authentication demand is a normal failure; carry the signal so the surface can say "authentication required, skipped".
     if (isAuthRequired(err)) {
       const base = err instanceof Error ? err.message : String(err);
-      // 저장 토큰을 첨부했는데도 인증 실패 → 만료+갱신 실패로 보고 재로그인 유도 힌트를 추가한다.
+    // Authentication failed even with a stored token, so treat it as expired + refresh failure and add a re-login hint.
       const hadTokens = authProvider != null;
       const hint = hadTokens ? ' (token-expired)' : '';
       throw new Error(`auth-required: ${spec.name} — ${base}${hint}`);

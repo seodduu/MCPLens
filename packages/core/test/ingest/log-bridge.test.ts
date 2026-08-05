@@ -32,7 +32,7 @@ const result: AdapterResult = {
 };
 
 describe('adapterResultToObservations', () => {
-  it('로그 호출과 로드를 민감한 본문 없이 observation으로 변환한다', () => {
+  it('converts log calls and loads into observations with no sensitive body', () => {
     const observations = adapterResultToObservations(result, []);
 
     expect(observations).toHaveLength(2);
@@ -48,7 +48,7 @@ describe('adapterResultToObservations', () => {
     expect(JSON.stringify(observations)).not.toContain('sensitive response');
   });
 
-  it('어댑터 ID가 없으면 nativeIds를 인덱스별로 사용한다', () => {
+  it('uses nativeIds by index when the adapter has no IDs', () => {
     const withoutId: AdapterResult = {
       ...result,
       toolCalls: [{ ...result.toolCalls[0], externalCallId: null }],
@@ -62,7 +62,7 @@ describe('adapterResultToObservations', () => {
     expect(observation.correlationConfidence).toBe('high');
   });
 
-  it('native ID가 어느 경로에도 없으면 null과 low confidence를 유지한다', () => {
+  it('keeps null and low confidence when the native ID is on no path at all', () => {
     const withoutId: AdapterResult = {
       ...result,
       toolCalls: [{ ...result.toolCalls[0], externalCallId: undefined }],
@@ -75,7 +75,7 @@ describe('adapterResultToObservations', () => {
     expect(observation.correlationConfidence).toBe('low');
   });
 
-  it('공백 native ID를 null로 정규화하고 fallback identity를 사용한다', () => {
+  it('normalizes a blank native ID to null and uses the fallback identity', () => {
     const blankIds: AdapterResult = {
       ...result,
       session: { ...result.session, externalSessionId: '  ' },
@@ -91,7 +91,7 @@ describe('adapterResultToObservations', () => {
     expect(observation.correlationConfidence).toBe('low');
   });
 
-  it('Claude fixture log와 Hook observation이 native identity로 상관된다', () => {
+  it('correlates a Claude fixture log with a hook observation through the native identity', () => {
     const transcriptPath = '/fake/.claude/projects/project/session.jsonl';
     const parsed = new ClaudeAdapter().parseFile(
       transcriptPath, fixture('claude', 'session-toolsearch.jsonl'),
@@ -111,7 +111,7 @@ describe('adapterResultToObservations', () => {
     expect(logObservation.correlationConfidence).toBe(hook.observation.correlationConfidence);
   });
 
-  it('Gemini fixture log와 Hook observation이 native delivery를 보존하면서 fallback identity로 상관된다', () => {
+  it('correlates a Gemini fixture log through the fallback identity while preserving the native delivery', () => {
     const transcriptPath = '/fake/.gemini/tmp/project/chats/session.jsonl';
     const parsed = geminiAdapter.parseFile(
       transcriptPath, fixture('gemini', 'chat-upfront.jsonl'),
@@ -135,7 +135,7 @@ describe('adapterResultToObservations', () => {
     expect(logObservation.correlationConfidence).toBe(hook.observation.correlationConfidence);
   });
 
-  it('Codex 실제 rollout·Hook fixture가 turn/session/call native identity로 상관된다', () => {
+  it('correlates a real Codex rollout with hook fixtures through the turn/session/call native identity', () => {
     const transcriptPath = '/fake/.codex/sessions/2026/07/18/rollout-session.jsonl';
     const parsed = new CodexAdapter().parseFile(
       transcriptPath,
@@ -160,7 +160,7 @@ describe('adapterResultToObservations', () => {
     expect(logObservation.correlationKey).toBe(hook.observation.correlationKey);
   });
 
-  it('Gemini 동일 tool 반복 호출은 native delivery 카디널리티와 H4 fallback correlation을 함께 보존한다', () => {
+  it('preserves both the native delivery cardinality and the H4 fallback correlation for repeated Gemini calls to the same tool', () => {
     const parsed = geminiAdapter.parseFile('/fake/repeated.jsonl', [
       JSON.stringify({ sessionId: 'gemini-session', startTime: '2026-07-20T00:00:00.000Z' }),
       JSON.stringify({
@@ -180,8 +180,8 @@ describe('adapterResultToObservations', () => {
     expect(new Set(observations.map((item) => item.deliveryId)).size).toBe(2);
     expect(observations.every((item) => item.deliveryId.startsWith('native:'))).toBe(true);
     expect(observations.map((item) => item.correlationConfidence)).toEqual(['low', 'low']);
-    // H4 AfterTool은 privacy-safe call/occurrence ID를 보존하지 않아 H0 identity로는
-    // 동일 세션·툴·phase 반복 호출을 서로 다른 cross-source key로 표현할 수 없다.
+    // H4 AfterTool does not preserve a privacy-safe call/occurrence ID, so the H0 identity cannot
+    // express repeated calls in the same session, tool and phase as distinct cross-source keys.
     expect(new Set(observations.map((item) => item.correlationKey)).size).toBe(1);
     expect(JSON.stringify(observations)).not.toContain('toolCalls');
   });

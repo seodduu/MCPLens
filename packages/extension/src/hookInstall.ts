@@ -13,12 +13,12 @@ export interface InstallerDeps {
     copyDir: (from: string, to: string) => void;
     exists: (path: string) => boolean;
     readDir: (path: string) => string[];
-    /** 없거나 읽을 수 없으면 throw — 호출자가 fail-open으로 처리한다. */
+    /** Throws when missing or unreadable; the caller handles it fail-open. */
     readFile: (path: string) => string;
-    /** 상위 디렉터리가 없으면 만들고 쓴다. */
+    /** Creates the parent directory when absent, then writes. */
     writeFile: (path: string, content: string) => void;
   };
-  bundledDir: string; // dist/<...> 번들 경로
+  bundledDir: string; // bundle path dist/<...>
 }
 
 export interface ClientHookInstaller {
@@ -29,9 +29,9 @@ export interface ClientHookInstaller {
 }
 
 /**
- * `needs-approval`: 플러그인이 설치되고 `enabled = true`도 기록됐지만 codex의
- * `trusted_hash` 승인이 남은 상태. 훅은 아직 실행되지 않는다. 설치로는 해소할 수
- * 없고 사용자가 codex를 한 번 실행해 뜨는 동의를 승인해야 한다.
+ * `needs-approval`: the plugin is installed and `enabled = true` is recorded, but codex's
+ * `trusted_hash` approval is still pending, so the hooks do not run yet. Installation cannot clear
+ * it; the user has to run codex once and approve the consent prompt it raises.
  */
 export type InstallState = 'installed' | 'needs-approval' | 'not-installed' | 'client-missing';
 

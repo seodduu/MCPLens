@@ -9,12 +9,12 @@ export interface SetupKeys {
 }
 
 export interface SetupKeyInput {
-  /** 감지 결과. client-missing은 판정에서 제외한다 */
+  /** Detection results. client-missing is excluded from the verdict */
   installs: readonly { install: InstallState | string }[];
   definitionCount: number;
   consentAccepted: boolean;
   analyzedServerCount: number;
-  /** mcplens.dependencyAnalysis.rollout 설정값. 미설정이면 undefined */
+  /** Value of the mcplens.dependencyAnalysis.rollout setting. undefined when unset */
   rollout: string | undefined;
 }
 
@@ -28,16 +28,16 @@ export const SETUP_STEP_IDS: Record<keyof SetupKeys, string> = {
 };
 
 export function evaluateSetupKeys(input: SetupKeyInput): SetupKeys {
-  // 설치되지 않은 클라이언트는 사용자가 할 일이 없다 — 판정 모수에서 뺀다.
+  // A client that is not installed leaves the user nothing to do, so it is removed from the denominator.
   const present = input.installs.filter((row) => row.install !== 'client-missing');
   return {
     scanReady: input.definitionCount > 0,
-    // needs-approval을 참으로 세면 수집 0건인데 체크가 켜지는 거짓 성공이 난다.
+    // Counting needs-approval as true would produce a false success: a lit checkmark with zero collection.
     hooksReady: present.length > 0 && present.every((row) => row.install === 'installed'),
     analysisReady: input.consentAccepted && input.analyzedServerCount > 0,
-    // 값이 없으면 VS Code 설정 기본값(off)과 같다. off는 잠금 상태이므로 거짓이어야 한다.
-    // 구 값(shadow/codex-beta/stable)이 저장돼 있어도 migrateDependencyAnalysisRollout으로
-    // 옮겨서 판정한다 — 업그레이드 직후 사용자가 부여했던 권한이 순간적으로 사라지면 안 된다.
+    // No value equals the VS Code setting default (off). off means locked, so it must be false.
+    // Even when an old value (shadow/codex-beta/stable) is stored, the verdict uses
+    // migrateDependencyAnalysisRollout: a permission the user granted must not vanish right after an upgrade.
     globalActionsReady: (() => {
       const migrated = input.rollout === undefined
         ? DEFAULT_DEPENDENCY_ANALYSIS_ROLLOUT
@@ -48,8 +48,8 @@ export function evaluateSetupKeys(input: SetupKeyInput): SetupKeys {
 }
 
 /**
- * 참에서 거짓으로 바뀐 키의 스텝 id.
- * 거짓인 동안 매번 해제하면 사용자가 손으로 체크한 것까지 지운다.
+ * Step ids of keys that flipped from true to false.
+ * Clearing them on every false would also erase what the user checked by hand.
  */
 export function stepsToUncheck(prev: SetupKeys | undefined, next: SetupKeys): string[] {
   if (prev === undefined) return [];
@@ -58,7 +58,7 @@ export function stepsToUncheck(prev: SetupKeys | undefined, next: SetupKeys): st
     .map((key) => SETUP_STEP_IDS[key]);
 }
 
-/** 거짓에서 참으로 바뀐 키의 스텝 id. onContext는 세션당 1회라 해제 뒤 재점등을 못 한다. */
+/** Step ids of keys that flipped from false to true. onContext fires once per session, so it cannot relight after a clear. */
 export function stepsToComplete(prev: SetupKeys | undefined, next: SetupKeys): string[] {
   if (prev === undefined) return [];
   return (Object.keys(SETUP_STEP_IDS) as (keyof SetupKeys)[])

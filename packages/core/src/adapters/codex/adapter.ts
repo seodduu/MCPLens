@@ -13,7 +13,7 @@ export class CodexAdapter implements LogAdapter {
 
   matches(filePath: string): boolean {
     const p = filePath.split(path.sep).join('/');
-    // 실제 레이아웃은 sessions/YYYY/MM/DD/rollout-*.jsonl (중첩 날짜 디렉토리)
+    // The real layout is sessions/YYYY/MM/DD/rollout-*.jsonl (nested date directories)
     return /\/\.codex\/sessions\/.+\/rollout-[^/]+\.jsonl$/.test(p);
   }
 
@@ -40,7 +40,7 @@ export class CodexAdapter implements LogAdapter {
       let rec: any;
       try { rec = JSON.parse(line); } catch { parseErrors++; continue; }
       startedAt ??= rec.timestamp ?? null;
-      // 최상위 type은 "event_msg"/"response_item" 등 래퍼이고, 이벤트 종류는 payload.type에 있다.
+      // The top-level type is a wrapper such as "event_msg"/"response_item"; the event kind lives in payload.type.
       const p = rec.payload ?? {};
       const t = p.type ?? rec.type;
 
@@ -58,9 +58,9 @@ export class CodexAdapter implements LogAdapter {
           toolName: String(inv.tool ?? 'unknown'),
           calledAt: rec.timestamp ?? null,
           durationMs: durationToMs(p.duration ?? rec.duration),
-          // Rust 스타일 Result: 성공 {Ok:...} / 실패 {Err:"..."} → Err 존재 시 에러.
+          // Rust-style Result: success {Ok:...} / failure {Err:"..."}, so an Err key means an error.
           isError: isRustErr(result),
-          // Codex도 툴 응답 토큰을 실측하지 않는다 → 본문 tiktoken 추정 (Claude 어댑터와 동일)
+          // Codex does not measure tool response tokens either, so the body is estimated with tiktoken (same as the Claude adapter)
           responseTokens: responseText ? countTokens(responseText) : null,
           responseText,
           externalCallId: nativeId(p.call_id ?? rec.call_id),
@@ -72,7 +72,7 @@ export class CodexAdapter implements LogAdapter {
         if (inputText.includes('ALL_TOOLS')) {
           sawCodeModeSearch = true;
           const callId = p.call_id ?? rec.call_id;
-          // 출력(로드된 정의 원문)은 별도 custom_tool_call_output 레코드에 있다 → call_id로 상관.
+          // The output (raw text of the loaded definition) lives in a separate custom_tool_call_output record, correlated by call_id.
           const idx = toolLoads.push({
             sessionId,
             serverName: null,
@@ -97,8 +97,8 @@ export class CodexAdapter implements LogAdapter {
         const output = p.output ?? rec.output;
         const classification = classifySearchOutput(output, expectedExactToolName);
         if (classification.kind === 'success') {
-          // 다중이면 슬롯 하나로 부족하다. 첫 툴은 원래 슬롯에 넣고 나머지는 뒤에 push한다.
-          // tool_loads에는 순서 의미가 없으므로(시각 컬럼 없음) 재배치가 안전하다.
+          // With several tools one slot is not enough. The first tool takes the original slot and the rest are pushed after it.
+          // tool_loads carries no ordering meaning (no timestamp column), so rearranging is safe.
           const [first, ...rest] = classification.tools;
           toolLoads[idx].toolName = first!.toolName;
           toolLoads[idx].loadedTokens = countTokens(first!.definitionText);
@@ -119,7 +119,7 @@ export class CodexAdapter implements LogAdapter {
           });
         }
       } else if (t === 'token_count') {
-        // 턴별(last_token_usage)만 채택. total_token_usage는 누적이라 이중계상됨.
+        // Adopt only the per-turn value (last_token_usage). total_token_usage is cumulative and would double count.
         const turn = p.info?.last_token_usage ?? p.last_token_usage ?? rec.info?.last_token_usage;
         if (turn) {
           usage.push({
@@ -152,12 +152,12 @@ export class CodexAdapter implements LogAdapter {
 }
 
 type SearchOutputClassification =
-  // tools는 길이 1 이상을 보장한다. 0개면 generic이다.
+  // tools is guaranteed to hold at least one entry. Zero entries means generic.
   | { kind: 'success'; tools: Array<{ toolName: string; definitionText: string }> }
   | { kind: 'no-match' }
   | { kind: 'generic' };
 
-/** Output은 block별 구조만 분류한다. 원문 연결이나 sentinel 부분 문자열 탐색은 하지 않는다. */
+/** Output is classified purely by per-block structure. It never concatenates raw text or hunts for sentinel substrings. */
 function classifySearchOutput(
   output: unknown, expectedExactToolName: string | null,
 ): SearchOutputClassification {
@@ -179,12 +179,12 @@ function classifySearchOutput(
           if (parsed.length === 0) evidence.push('empty-array');
           else { evidence.push('definition'); definition = parsed; }
         } else {
-          // object wrapper와 nested metadata name은 definition 증거가 아니다.
+          // An object wrapper or a nested metadata name is not evidence of a definition.
           ambiguousJson = true;
         }
       } catch { malformed = true; }
     } else {
-      // JSON definition의 description은 error/cancelled라는 일반 단어를 가질 수 있다.
+      // The description of a JSON definition may contain the ordinary words error or cancelled.
       if (hasCancellationOrError(text)) cancellationOrError = true;
       else if (isNeutralExecutionMetadata(text)) {
         if (evidence.length > 0) ambiguousJson = true;
@@ -201,28 +201,28 @@ function classifySearchOutput(
   if (evidence[0] === 'definition') {
     const elements = definition ?? [];
     if (expectedExactToolName !== null) {
-      // 정확 검색: 지목 대상이 하나다. 느슨하게 하면 결함 E 보정이 막은 오탐이 돌아온다.
+      // Exact search: there is exactly one target. Loosening it brings back the false positives that fix E removed.
       if (elements.length !== 1) return { kind: 'generic' };
       const name = validDefinitionName(elements[0], expectedExactToolName);
       return name === null
         ? { kind: 'generic' }
         : { kind: 'success', tools: [{ toolName: name, definitionText: JSON.stringify(elements[0]) }] };
     }
-    // 부분일치 검색: canonical MCP 정의만 골라 전부 로드로 인정한다. 출력에 정의가 N개
-    // 실려 있으면 그 N개가 실제로 로드된 툴이고, 각 정의 원문의 토큰이 실지불 비용이다.
+    // Substring search: accept only canonical MCP definitions and count all of them as loads. If the
+    // output carries N definitions, those N tools really were loaded and the tokens of each raw definition are the real cost.
     const tools: Array<{ toolName: string; definitionText: string }> = [];
     const seen = new Set<string>();
     for (const element of elements) {
       const name = validDefinitionName(element, null);
-      // 같은 툴이 두 번 실린 출력은 한 번만 센다.
+      // An output carrying the same tool twice counts once.
       if (name === null || seen.has(name)) continue;
       seen.add(name);
       tools.push({ toolName: name, definitionText: JSON.stringify(element) });
     }
     return tools.length === 0 ? { kind: 'generic' } : { kind: 'success', tools };
   }
-  // sentinel(TOOL_NOT_FOUND) evidence는 "무엇을 찾다가 없었는지"를 알 때만 의미가 있다.
-  // 입력 패턴을 몰라 expectedExactToolName이 없으면 no-match로 기록할 대상이 없다.
+  // Sentinel (TOOL_NOT_FOUND) evidence only means something when we know what was being looked up.
+  // Without expectedExactToolName the input pattern is unknown, so there is nothing to record as a no-match.
   return expectedExactToolName !== null ? { kind: 'no-match' } : { kind: 'generic' };
 }
 
@@ -247,14 +247,14 @@ function outputParts(output: unknown): { texts: string[]; hasUnsupportedPart: bo
 }
 
 /**
- * 반환된 정의가 유효한 단일 MCP 툴 정의인지 확인하고, 유효하면 그 이름을 돌려준다.
+ * Checks that the returned definition is a single valid MCP tool definition and returns its name.
  *
- * expectedExactToolName이 있으면(입력이 단일 리터럴 exact 검색이었으면) 그 이름과
- * 정확히 같아야 한다 — 기존 동작 그대로. 없으면(입력 인식이 실패했거나 애초에 넓은
- * 검색이었으면) definition.name 자체가 canonical `mcp__server__tool` 형태인지만
- * 검증한다. 서버/툴을 여기서 분리하지 않는 이유: `mcp__atlas__deep__lookup`처럼
- * 두 가지로 나뉠 수 있는 이름은 실제 설정된 서버 목록과 대조해야만 안전하게 풀 수
- * 있고, 그 대조는 store.attributeCodexLoadName이 이미 한다.
+ * When expectedExactToolName is present (the input was a single literal exact search) the name must
+ * match it exactly, as before. When it is absent (input recognition failed, or the search was broad
+ * to begin with) only definition.name itself is validated as the canonical `mcp__server__tool`
+ * shape. Server and tool are not split here because a name like `mcp__atlas__deep__lookup` can be
+ * split two ways and is only safe to resolve against the list of actually configured servers,
+ * a comparison store.attributeCodexLoadName already performs.
  */
 function validDefinitionName(value: unknown, expectedExactToolName: string | null): string | null {
   if (value === null || typeof value !== 'object') return null;
@@ -288,8 +288,8 @@ function isNeutralExecutionMetadata(text: string): boolean {
 
 function isNeutralExecutionMetadataLine(line: string): boolean {
   return line === 'Script completed' || line === 'Output:' || line === 'Process exited with code 0'
-    // 실기기 Codex는 콜론 없이 "Wall time 0.0 seconds"로 출력한다. 콜론을 강제하면
-    // 이 줄이 중립 메타데이터로 인정되지 않아 exact lookup 성공이 통째로 generic으로 떨어진다.
+    // Real Codex prints "Wall time 0.0 seconds" without a colon. Requiring one would stop this line
+    // from counting as neutral metadata, dropping a successful exact lookup all the way to generic.
     || /^Wall time:? \d+(?:\.\d+)? (?:ms|milliseconds|s|seconds)$/.test(line);
 }
 
@@ -305,7 +305,7 @@ function nativeId(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value : null;
 }
 
-/** payload.duration = {secs, nanos} (Rust Duration) → 밀리초. 숫자면 그대로 사용. */
+/** payload.duration = {secs, nanos} (Rust Duration) -> milliseconds. A number is used as is. */
 function durationToMs(v: unknown): number | null {
   if (v == null) return null;
   if (typeof v === 'number') return Number.isFinite(v) ? v : null;
@@ -319,12 +319,12 @@ function durationToMs(v: unknown): number | null {
   return null;
 }
 
-/** Rust Result: 실패 {Err:...}, 성공 {Ok:...}. Err 키가 있으면 에러. */
+/** Rust Result: failure {Err:...}, success {Ok:...}. An Err key means an error. */
 function isRustErr(v: unknown): boolean {
   return typeof v === 'object' && v !== null && 'Err' in (v as object);
 }
 
-/** custom_tool_call_output.output: string 또는 [{type:"input_text", text}] 배열. */
+/** custom_tool_call_output.output: a string, or an array of [{type:"input_text", text}]. */
 function extractOutputText(output: unknown): string {
   if (typeof output === 'string') return output;
   if (Array.isArray(output)) {
@@ -342,7 +342,7 @@ function extractOutputText(output: unknown): string {
   return JSON.stringify(output);
 }
 
-/** 실제 ALL_TOOLS.filter/find arrow search의 literal equality 하나만 허용한다. */
+/** Allows exactly one literal equality in a real ALL_TOOLS.filter/find arrow search. */
 function extractExactCanonicalSearch(inputText: string): string | null {
   const { code, literals } = maskJavaScript(inputText);
   const matches = [...code.matchAll(/\bALL_TOOLS\s*\.\s*(?:filter|find)\s*\(\s*\(?\s*([A-Za-z_$][\w$]*)\s*\)?\s*=>\s*\1\s*\.\s*name\s*={2,3}\s*(__LIT\d+__)\s*\)/g)];
@@ -384,7 +384,7 @@ function maskJavaScript(input: string): { code: string; literals: string[] } {
       continue;
     }
     if (current === '/') {
-      // regex/division을 안전하게 구분하지 않는다. 문자열 밖 slash는 extractor 전체를 거부한다.
+      // It does not safely distinguish regex from division. A slash outside a string rejects the whole extractor.
       return { code: '', literals: [] };
     }
     if (current === '"' || current === "'") {

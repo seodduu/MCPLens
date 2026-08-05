@@ -5,8 +5,8 @@ import { dirname, join } from 'node:path';
 import type { RunResult } from './hookInstall.js';
 
 /**
- * 플랫폼·환경을 주입 가능하게 둔다. 기본값은 실행 중인 프로세스지만,
- * Windows 경로 규칙은 개발자의 macOS/Linux 기기에서 테스트로 재현해야 한다.
+ * Platform and environment are injectable. They default to the running process, but the Windows
+ * path rules must be reproducible in tests on a developer's macOS/Linux machine.
  */
 export interface ProbeEnv {
   platform?: NodeJS.Platform;
@@ -17,17 +17,17 @@ export interface ProbeEnv {
 const WIN_DEFAULT_PATHEXT = '.COM;.EXE;.BAT;.CMD';
 
 /**
- * 자식 프로세스 상한. CLI가 대화형 프롬프트를 띄우면 stdin을 기다리며 영원히
- * 살아 있고 close가 오지 않아 UI가 무한 대기한다(gemini-cli 0.51.0 실측).
- * stdio.stdin을 'ignore'로 닫는 것만으로는 부족했다 — 프롬프트가 그대로 멈춘다.
- * 설치 명령이 네트워크(git clone 등)를 타는 경우가 있어 넉넉히 잡는다.
+ * Child process ceiling. If the CLI raises an interactive prompt it lives forever waiting on stdin,
+ * close never arrives, and the UI waits indefinitely (measured with gemini-cli 0.51.0).
+ * Closing stdio.stdin with 'ignore' was not enough: the prompt still stalls.
+ * The limit is generous because install commands sometimes hit the network (git clone and friends).
  */
 const DEFAULT_RUN_TIMEOUT_MS = 120_000;
 
 /**
- * 조회할 파일명 목록. win32에서는 PATHEXT 확장자를 **먼저** 본다 —
- * npm 전역 설치는 `codex.cmd`와 확장자 없는 sh 스크립트 `codex`를 한 디렉터리에
- * 같이 깔고, 후자는 Windows에서 실행할 수 없다. 확장자 없는 이름은 최후 폴백.
+ * File names to look up. On win32 the PATHEXT extensions are checked **first**:
+ * an npm global install drops both `codex.cmd` and an extensionless sh script `codex` into the same
+ * directory, and the latter cannot run on Windows. The extensionless name is the last fallback.
  */
 function execNames(name: string, platform: NodeJS.Platform, env: NodeJS.ProcessEnv): string[] {
   if (platform !== 'win32') return [name];
@@ -36,12 +36,12 @@ function execNames(name: string, platform: NodeJS.Platform, env: NodeJS.ProcessE
   return [...exts.map((e) => name + e.toLowerCase()), name];
 }
 
-/** 각 클라이언트 CLI가 실제로 설치되는 디렉터리 후보 (PATH에 없을 수 있는 것들). */
+/** Candidate directories where each client CLI actually installs (some may not be on PATH). */
 function binDirs(platform: NodeJS.Platform, env: NodeJS.ProcessEnv, home: string): string[] {
   if (platform === 'win32') {
     return [
-      join(home, '.local', 'bin'),                                  // Claude Code 네이티브 설치
-      ...(env.APPDATA ? [join(env.APPDATA, 'npm')] : []),           // npm 전역 prefix
+      join(home, '.local', 'bin'),                                  // Claude Code native install
+      ...(env.APPDATA ? [join(env.APPDATA, 'npm')] : []),           // npm global prefix
       ...(env.LOCALAPPDATA ? [
         join(env.LOCALAPPDATA, 'Volta', 'bin'),
         join(env.LOCALAPPDATA, 'Programs', 'npm'),
@@ -52,11 +52,11 @@ function binDirs(platform: NodeJS.Platform, env: NodeJS.ProcessEnv, home: string
 }
 
 /**
- * nvm 버전 디렉터리 후보. 레이아웃이 플랫폼마다 다르다:
- *   POSIX      : <root>/versions/node/<version>/bin/<name>   (`current` 심볼릭 링크 없음)
- *   nvm-windows: <root>/<version>/<name>                     (bin 디렉터리 없음)
- * 읽을 수 없는/없는 루트는 throw가 아니라 빈 배열 — 이 모듈 전체가 fail-open이다.
- * 테스트가 개발자의 실제 ~/.nvm 대신 임시 디렉터리를 가리킬 수 있게 export한다.
+ * Candidate nvm version directories. The layout differs per platform:
+ *   POSIX      : <root>/versions/node/<version>/bin/<name>   (no `current` symlink)
+ *   nvm-windows: <root>/<version>/<name>                     (no bin directory)
+ * An unreadable or missing root yields an empty array rather than a throw: this whole module is fail-open.
+ * Exported so tests can point at a temp directory instead of the developer's real ~/.nvm.
  */
 export function nvmCandidates(
   name: string,
@@ -78,9 +78,9 @@ function nvmRootFor(platform: NodeJS.Platform, env: NodeJS.ProcessEnv, home: str
 }
 
 /**
- * 서브프로세스를 띄우지 않고 클라이언트 바이너리를 찾는다: 알려진 설치 위치를
- * 먼저 보고, 그다음 PATH를 stat으로만 훑는다. 확장 기동의 감지 경로에서 돌기
- * 때문에 자식 프로세스로 호스트를 블로킹하면 안 된다.
+ * Finds the client binary without spawning a subprocess: it checks the known install locations
+ * first, then walks PATH with stat alone. It runs on the extension startup detection path, so it
+ * must never block the host with a child process.
  */
 export function findBinary(name: string, probe: ProbeEnv = {}): string | null {
   const platform = probe.platform ?? process.platform;
@@ -89,8 +89,8 @@ export function findBinary(name: string, probe: ProbeEnv = {}): string | null {
   const names = execNames(name, platform, env);
   const pathDelimiter = platform === 'win32' ? ';' : ':';
 
-  // 탐색 순서는 기존(POSIX) 동작을 그대로 유지한다: 알려진 설치 위치 → nvm → PATH.
-  // nvm을 PATH보다 뒤로 미루면 nvm 사용자가 집던 바이너리가 바뀔 수 있다.
+  // The search order preserves the existing (POSIX) behaviour: known install locations, nvm, PATH.
+  // Pushing nvm after PATH could change which binary an nvm user picks up.
   const nvmRoot = nvmRootFor(platform, env, home);
   const candidates = [
     ...binDirs(platform, env, home).flatMap((dir) => names.map((n) => join(dir, n))),
@@ -104,17 +104,17 @@ export function findBinary(name: string, probe: ProbeEnv = {}): string | null {
   return null;
 }
 
-/** Claude 전용 편의 래퍼 — 기존 호출자를 위해 유지. */
+/** Claude-specific convenience wrapper, kept for existing callers. */
 export function findClaudeBinary(): string | null {
   return findBinary('claude');
 }
 
 /**
- * spawn 인자 계산. Windows의 `.cmd`/`.bat`은 실행 파일이 아니라 cmd.exe 스크립트라
- * Node 18.20.2+ 에서 직접 spawn하면 EINVAL로 실패한다(CVE-2024-27980 대응).
- * shell 경유가 유일한 방법이고, shell:true는 인자를 그대로 이어붙이므로
- * 공백이 든 경로(`C:\Users\First Last\...`)는 여기서 인용해야 한다.
- * `.exe`와 POSIX 바이너리는 인용 없이 직접 spawn — 그쪽이 항상 더 안전하다.
+ * Computes the spawn arguments. On Windows a `.cmd`/`.bat` is a cmd.exe script rather than an
+ * executable, so spawning it directly fails with EINVAL on Node 18.20.2+ (the CVE-2024-27980 fix).
+ * Going through the shell is the only option, and shell:true concatenates arguments verbatim, so a
+ * path containing spaces (`C:\Users\First Last\...`) must be quoted here.
+ * `.exe` files and POSIX binaries are spawned directly without quoting, which is always safer.
  */
 export function spawnSpec(
   bin: string,
@@ -130,16 +130,16 @@ export function spawnSpec(
   };
 }
 
-/** cmd.exe 인용: 공백/특수문자가 있으면 큰따옴표로 감싸고 내부 따옴표를 이스케이프. */
+/** cmd.exe quoting: wrap in double quotes when spaces or special characters appear, escaping inner quotes. */
 function quoteWin(s: string): string {
   if (s !== '' && !/[\s"^&|<>()]/.test(s)) return s;
   return `"${s.replace(/"/g, '\\"')}"`;
 }
 
 /**
- * 비동기 spawn(절대 spawnSync 아님): 기동 감지 경로가 이걸 await하므로 확장
- * 호스트를 블로킹하지 않고 이벤트 루프에 양보해야 한다. 호출자를 fail-open으로
- * 유지하려고 reject하지 않고 항상 resolve한다.
+ * Asynchronous spawn (never spawnSync): the startup detection path awaits this, so it must yield to
+ * the event loop instead of blocking the extension host. It always resolves and never rejects, which
+ * keeps callers fail-open.
  */
 export function runClaude(
   bin: string,
@@ -169,11 +169,11 @@ export function runClaude(
       child.kill('SIGKILL');
       finish({
         stdout,
-        stderr: `${stderr}\n[mcp-lens] 시간 초과 (${timeoutMs}ms) — CLI가 대화형 프롬프트를 기다리는 중일 수 있습니다.`,
+        stderr: `${stderr}\n[mcp-lens] timed out (${timeoutMs}ms); the CLI may be waiting on an interactive prompt.`,
         code: 1,
       });
     }, timeoutMs);
-    // 확장 호스트가 이 타이머 때문에 종료를 못 하는 일은 없어야 한다.
+    // The extension host must never be kept from exiting by this timer.
     timer.unref?.();
 
     child.stdout?.on('data', (chunk) => { stdout += chunk; });
@@ -183,7 +183,7 @@ export function runClaude(
   });
 }
 
-// spawn(bin, args)는 이미 클라이언트 무관 — 범용 호출자를 위한 별칭.
+// spawn(bin, args) is already client-agnostic; this is an alias for general callers.
 export const runBin = runClaude;
 
 export const nodeFs = {

@@ -8,18 +8,18 @@ describe('resolveAuthTarget', () => {
     { name: 'github', command: 'gh-mcp', args: [] },
   ];
 
-  it('http 서버는 spec을 반환한다', () => {
+  it('returns the spec for an http server', () => {
     const result = resolveAuthTarget(specs, 'vercel');
     expect(result).toEqual({ ok: true, spec: specs[0] });
   });
 
-  it('이름을 찾을 수 없으면 안내 메시지와 함께 실패한다', () => {
+  it('fails with guidance when the name is not found', () => {
     const result = resolveAuthTarget(specs, 'nope');
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.message).toContain('nope');
   });
 
-  it('stdio 서버는 인증이 필요 없다는 안내와 함께 실패한다', () => {
+  it('fails with guidance that stdio servers need no authentication', () => {
     const result = resolveAuthTarget(specs, 'github');
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.message).toContain('github');

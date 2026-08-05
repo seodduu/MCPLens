@@ -2,28 +2,28 @@ import { describe, it, expect } from 'vitest';
 import { resolveOpenCommand } from '../src/auth-open.js';
 
 describe('resolveOpenCommand', () => {
-  it('macOS는 open 커맨드를 사용한다', () => {
+  it('uses the open command on macOS', () => {
     expect(resolveOpenCommand('darwin', 'https://example.com/authorize')).toEqual({
       command: 'open',
       args: ['https://example.com/authorize'],
     });
   });
 
-  it('Linux는 xdg-open 커맨드를 사용한다', () => {
+  it('uses the xdg-open command on Linux', () => {
     expect(resolveOpenCommand('linux', 'https://example.com/authorize')).toEqual({
       command: 'xdg-open',
       args: ['https://example.com/authorize'],
     });
   });
 
-  it('Windows는 cmd /c start 커맨드를 사용한다', () => {
+  it('uses the cmd /c start command on Windows', () => {
     expect(resolveOpenCommand('win32', 'https://example.com/authorize')).toEqual({
       command: 'cmd',
       args: ['/c', 'start', '""', 'https://example.com/authorize'],
     });
   });
 
-  it('알 수 없는 플랫폼은 xdg-open으로 폴백한다', () => {
+  it('falls back to xdg-open on unknown platforms', () => {
     expect(resolveOpenCommand('freebsd' as NodeJS.Platform, 'https://example.com')).toEqual({
       command: 'xdg-open',
       args: ['https://example.com'],

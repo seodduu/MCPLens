@@ -135,9 +135,9 @@ export function enqueueEnvelope(
 }
 
 function deliveryExists(paths: InboxPaths, deliveryId: string): boolean {
-  // 구버전(콜론 파일명)이 남긴 항목도 같은 배달로 본다. 아니면 업그레이드 직후
-  // 같은 봉투가 두 이름으로 큐에 쌓인다. DB가 observation_id로 걸러 주긴 하지만,
-  // 중복 처리 자체를 만들 이유가 없다.
+  // Entries left by an older version (colon file names) count as the same delivery. Otherwise the
+  // same envelope queues under two names right after an upgrade. The DB does filter by
+  // observation_id, but there is no reason to create the duplicate work at all.
   const stems = [fileStem(deliveryId), deliveryId];
   return stems.some((stem) => existsSync(join(paths.pending, `${stem}.json`))
     || existsSync(join(paths.pending, `${stem}.processing`))
@@ -162,7 +162,7 @@ function releaseDeliveryLock(lockPath: string, token: string): void {
   const reaping = reapingPath(lockPath, token);
   try {
     renameSync(lockPath, reaping);
-    // rename만 하고 지우지 않으면 배달마다 디렉터리가 하나씩 쌓인다.
+    // Renaming without deleting would pile up one directory per delivery.
     rmSync(reaping, { recursive: true, force: true });
   } catch (error) {
     if (!isBusy(error) && !isCode(error, 'ENOENT')) throw error;
@@ -173,15 +173,15 @@ export function claimPending(opts: InboxOptions = {}): ClaimBatch {
   const paths = inboxPaths(opts);
   const now = (opts.now ?? (() => new Date()))();
   recoverStaleProcessing(paths, opts);
-  // 구버전이 남긴 lock 잔해는 드레인 때 한 번에 회수한다. 배달 경로에 부담을 주지 않는다.
+  // Lock debris left by an older version is reclaimed in one pass during the drain, keeping the delivery path light.
   sweepReapingDirs(paths.locks);
 
   const claims: ClaimedEnvelope[] = [];
   let parseErrors = 0;
   for (const filename of readdirSync(paths.pending).filter((name) => name.endsWith('.json')).sort()) {
     const deliveryId = deliveryIdFromStem(filename.slice(0, -'.json'.length));
-    // 구버전이 남긴 콜론 파일명이라도 여기서 정규 이름으로 이관한다 — 그러지 않으면
-    // markProcessed가 만드는 정규 `.processing` 경로와 어긋나 완료 처리에 실패한다.
+    // A colon file name left by an older version is migrated to the canonical name here; otherwise
+    // it diverges from the canonical `.processing` path markProcessed builds and completion fails.
     const stem = fileStem(deliveryId);
     const pendingPath = join(paths.pending, filename);
     const processingPath = join(paths.pending, `${stem}.processing`);
@@ -261,25 +261,25 @@ function checkedDeliveryId(deliveryId: string): string {
 }
 
 /**
- * deliveryId를 파일명으로 안전하게 인코딩한다.
+ * Encodes a deliveryId safely into a file name.
  *
- * deliveryId는 `native:<hash>` / `fallback:<hash>` 형태를 가질 수 있는데(identity.ts),
- * Windows에서 `:` 는 파일명 예약 문자다. NTFS는 이를 대체 데이터 스트림 문법으로
- * 해석하므로 `pending\native:x.json` 은 `native` 라는 빈 파일의 숨은 스트림이 되고,
- * 디렉터리 목록에는 `.json` 으로 끝나지 않는 `native` 만 남아 claimPending이
- * 영원히 건너뛴다 — 툴 호출 훅 봉투가 통째로 유실된다(실측: Windows).
+ * A deliveryId can look like `native:<hash>` / `fallback:<hash>` (identity.ts), and `:` is a
+ * reserved file-name character on Windows. NTFS reads it as alternate-data-stream syntax, so
+ * `pending\native:x.json` becomes a hidden stream of an empty file called `native`, the directory
+ * listing shows only `native` (which does not end in `.json`), and claimPending skips it forever,
+ * losing the tool-call hook envelope entirely (measured on Windows).
  *
- * `~` 는 checkedDeliveryId가 허용하는 문자 집합에 없으므로 치환이 모호해지지 않고,
- * 모든 대상 파일 시스템에서 합법이다. deliveryId 형식 자체는 건드리지 않는다 —
- * 이미 설치된 플러그인 런타임(번들 사본)이 만들어내는 값과 어긋나면 안 된다.
+ * `~` is not in the character set checkedDeliveryId allows, so the substitution stays unambiguous,
+ * and it is legal on every target file system. The deliveryId format itself is left alone: it must
+ * not diverge from the values produced by already-installed plugin runtimes (bundled copies).
  */
 function fileStem(deliveryId: string): string {
   return deliveryId.replaceAll(':', '~');
 }
 
 /**
- * 파일명에서 deliveryId를 복원한다. 구버전이 남긴 콜론 파일명(macOS·Linux)에는
- * `~` 가 없으므로 그대로 통과한다 — 업그레이드 후에도 계속 읽힌다.
+ * Recovers the deliveryId from a file name. Colon file names left by an older version
+ * (macOS/Linux) contain no `~`, so they pass through unchanged and stay readable after an upgrade.
  */
 function deliveryIdFromStem(stem: string): string {
   return stem.replaceAll('~', ':');
@@ -309,7 +309,7 @@ function serializeEnvelope(env: HookEnvelope): string {
 function recoverStaleProcessing(paths: InboxPaths, opts: InboxOptions): void {
   const now = (opts.now ?? (() => new Date()))();
   for (const filename of readdirSync(paths.pending).filter((name) => name.endsWith('.processing'))) {
-    // 구버전이 남긴 콜론 이름도 정규 이름 기준으로 복구한다.
+    // Colon names left by an older version are recovered against the canonical name too.
     const stem = fileStem(deliveryIdFromStem(filename.slice(0, -'.processing'.length)));
     const processingPath = join(paths.pending, filename);
     const lockPath = join(paths.locks, `${stem}.lock`);

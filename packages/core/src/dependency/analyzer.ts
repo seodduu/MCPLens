@@ -140,8 +140,8 @@ export async function analyzeUncachedServers(
       runnerResult = { ok: false, errorCode: 'runner-error' };
     }
 
-    // 사용자가 이 generation을 취소했으면 실패 cache도 남기지 않는다.
-    // coordinator도 이어서 store.save()를 건너뛴다.
+    // If the user cancelled this generation, not even a failure cache is left behind.
+    // The coordinator likewise skips store.save() afterwards.
     if (input.signal?.aborted) break;
 
     if (!runnerResult.ok) {

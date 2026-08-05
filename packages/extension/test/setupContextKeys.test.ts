@@ -15,76 +15,76 @@ const base = {
 };
 
 describe('evaluateSetupKeys', () => {
-  it('정의가 0개면 scanReady는 거짓', () => {
+  it('makes scanReady false with 0 definitions', () => {
     expect(evaluateSetupKeys({ ...base }).scanReady).toBe(false);
   });
 
-  it('정의가 1개 이상이면 scanReady는 참', () => {
+  it('makes scanReady true with at least one definition', () => {
     expect(evaluateSetupKeys({ ...base, definitionCount: 3 }).scanReady).toBe(true);
   });
 
-  it('클라이언트가 하나도 감지되지 않으면 hooksReady는 거짓', () => {
+  it('makes hooksReady false when no client is detected', () => {
     expect(evaluateSetupKeys({ ...base, installs: [] }).hooksReady).toBe(false);
   });
 
-  it('감지된 클라이언트가 모두 installed면 hooksReady는 참', () => {
+  it('makes hooksReady true when every detected client is installed', () => {
     const installs = [{ install: 'installed' }, { install: 'installed' }];
     expect(evaluateSetupKeys({ ...base, installs }).hooksReady).toBe(true);
   });
 
-  it('하나라도 needs-approval이면 hooksReady는 거짓', () => {
+  it('makes hooksReady false when any client is needs-approval', () => {
     const installs = [{ install: 'installed' }, { install: 'needs-approval' }];
     expect(evaluateSetupKeys({ ...base, installs }).hooksReady).toBe(false);
   });
 
-  it('client-missing인 클라이언트는 판정에서 제외한다', () => {
+  it('excludes client-missing clients from the verdict', () => {
     const installs = [{ install: 'installed' }, { install: 'client-missing' }];
     expect(evaluateSetupKeys({ ...base, installs }).hooksReady).toBe(true);
   });
 
-  it('client-missing뿐이면 hooksReady는 거짓', () => {
+  it('makes hooksReady false when everything is client-missing', () => {
     const installs = [{ install: 'client-missing' }];
     expect(evaluateSetupKeys({ ...base, installs }).hooksReady).toBe(false);
   });
 
-  it('동의가 없으면 분석 결과가 있어도 analysisReady는 거짓', () => {
+  it('makes analysisReady false without consent, even with analysis results', () => {
     expect(evaluateSetupKeys({ ...base, analyzedServerCount: 2 }).analysisReady).toBe(false);
   });
 
-  it('동의가 있고 분석 결과가 1개 이상이면 analysisReady는 참', () => {
+  it('makes analysisReady true with consent and at least one analysis result', () => {
     expect(evaluateSetupKeys({
       ...base, consentAccepted: true, analyzedServerCount: 1 }).analysisReady).toBe(true);
   });
 
-  it('동의만 있고 분석 결과가 없으면 analysisReady는 거짓', () => {
+  it('makes analysisReady false with consent but no analysis results', () => {
     expect(evaluateSetupKeys({ ...base, consentAccepted: true }).analysisReady).toBe(false);
   });
 
-  it('rollout이 off면 globalActionsReady는 거짓', () => {
+  it('makes globalActionsReady false when rollout is off', () => {
     expect(evaluateSetupKeys({ ...base, rollout: 'off' }).globalActionsReady).toBe(false);
   });
 
-  it('rollout이 설정되지 않았으면 globalActionsReady는 거짓', () => {
+  it('makes globalActionsReady false when rollout is unset', () => {
     expect(evaluateSetupKeys({ ...base, rollout: undefined }).globalActionsReady).toBe(false);
   });
 
-  it('rollout이 claude면 globalActionsReady는 참', () => {
+  it('makes globalActionsReady true when rollout is claude', () => {
     expect(evaluateSetupKeys({ ...base, rollout: 'claude' }).globalActionsReady).toBe(true);
   });
 
-  it('rollout이 all이면 globalActionsReady는 참', () => {
+  it('makes globalActionsReady true when rollout is all', () => {
     expect(evaluateSetupKeys({ ...base, rollout: 'all' }).globalActionsReady).toBe(true);
   });
 
-  it('구 값 shadow가 저장돼 있으면 globalActionsReady는 거짓', () => {
+  it('makes globalActionsReady false when the old value shadow is stored', () => {
     expect(evaluateSetupKeys({ ...base, rollout: 'shadow' }).globalActionsReady).toBe(false);
   });
 
-  it('구 값 codex-beta가 저장돼 있으면 마이그레이션된 all 기준으로 globalActionsReady는 참', () => {
+  it('makes globalActionsReady true for the stored old value codex-beta, via the migrated all', () => {
     expect(evaluateSetupKeys({ ...base, rollout: 'codex-beta' }).globalActionsReady).toBe(true);
   });
 
-  it('구 값 stable이 저장돼 있으면 마이그레이션된 all 기준으로 globalActionsReady는 참', () => {
+  it('makes globalActionsReady true for the stored old value stable, via the migrated all', () => {
     expect(evaluateSetupKeys({ ...base, rollout: 'stable' }).globalActionsReady).toBe(true);
   });
 });
@@ -93,33 +93,33 @@ describe('stepsToUncheck', () => {
   const on = { scanReady: true, hooksReady: true, analysisReady: true, globalActionsReady: true };
   const off = { scanReady: false, hooksReady: false, analysisReady: false, globalActionsReady: false };
 
-  it('참에서 거짓으로 바뀐 키의 스텝 id를 돌려준다', () => {
+  it('returns the step ids of keys that flipped from true to false', () => {
     expect(stepsToUncheck(on, { ...on, hooksReady: false })).toEqual([SETUP_STEP_IDS.hooksReady]);
   });
 
-  it('거짓에서 거짓이면 아무것도 돌려주지 않는다', () => {
+  it('returns nothing for false to false', () => {
     expect(stepsToUncheck(off, off)).toEqual([]);
   });
 
-  it('거짓에서 참이면 아무것도 돌려주지 않는다', () => {
+  it('returns nothing for false to true', () => {
     expect(stepsToUncheck(off, on)).toEqual([]);
   });
 
-  it('이전 상태가 없으면(최초 판정) 아무것도 돌려주지 않는다', () => {
+  it('returns nothing when there is no previous state (the first verdict)', () => {
     expect(stepsToUncheck(undefined, off)).toEqual([]);
   });
 
-  it('스텝 id는 확장 식별자와 워크스루 id로 정규화된다', () => {
+  it('normalizes step ids with the extension identifier and walkthrough id', () => {
     expect(SETUP_STEP_IDS.hooksReady).toBe('seodduu.mcp-context-lens#mcpLens.setup#hooks');
     expect(SETUP_STEP_IDS.scanReady).toBe('seodduu.mcp-context-lens#mcpLens.setup#scan');
     expect(SETUP_STEP_IDS.analysisReady).toBe('seodduu.mcp-context-lens#mcpLens.setup#analyze');
   });
 
-  it('actions 스텝 id는 seodduu.mcp-context-lens#mcpLens.setup#actions 이다', () => {
+  it('uses seodduu.mcp-context-lens#mcpLens.setup#actions as the actions step id', () => {
     expect(SETUP_STEP_IDS.globalActionsReady).toBe('seodduu.mcp-context-lens#mcpLens.setup#actions');
   });
 
-  it('globalActionsReady가 참에서 거짓이 되면 actions 스텝 id를 해제 대상으로 돌려준다', () => {
+  it('returns the actions step id for clearing when globalActionsReady flips true to false', () => {
     expect(stepsToUncheck(on, { ...on, globalActionsReady: false }))
       .toEqual([SETUP_STEP_IDS.globalActionsReady]);
   });
@@ -129,30 +129,30 @@ describe('stepsToComplete', () => {
   const on = { scanReady: true, hooksReady: true, analysisReady: true, globalActionsReady: true };
   const off = { scanReady: false, hooksReady: false, analysisReady: false, globalActionsReady: false };
 
-  it('거짓에서 참으로 바뀌면 해당 스텝 id를 돌려준다', () => {
+  it('returns the step id when it flips from false to true', () => {
     expect(stepsToComplete(off, { ...off, hooksReady: true })).toEqual([SETUP_STEP_IDS.hooksReady]);
   });
 
-  it('참에서 참이면 아무것도 돌려주지 않는다', () => {
+  it('returns nothing for true to true', () => {
     expect(stepsToComplete(on, on)).toEqual([]);
   });
 
-  it('참에서 거짓이면 아무것도 돌려주지 않는다', () => {
+  it('returns nothing for true to false', () => {
     expect(stepsToComplete(on, { ...on, hooksReady: false })).toEqual([]);
   });
 
-  it('이전 상태가 없으면 아무것도 돌려주지 않는다', () => {
+  it('returns nothing when there is no previous state', () => {
     expect(stepsToComplete(undefined, on)).toEqual([]);
   });
 
-  it('여러 키가 동시에 켜지면 모두 돌려준다', () => {
+  it('returns every key that lights up at once', () => {
     const result = stepsToComplete(off, { ...off, hooksReady: true, scanReady: true });
     expect(result.sort()).toEqual(
       [SETUP_STEP_IDS.hooksReady, SETUP_STEP_IDS.scanReady].sort(),
     );
   });
 
-  it('stepsToComplete와 stepsToUncheck는 같은 전이에서 동시에 비지 않는다', () => {
+  it('never fills both stepsToComplete and stepsToUncheck on the same transition', () => {
     const prev = { ...off, hooksReady: true };
     const next = { ...off, scanReady: true };
     expect(stepsToUncheck(prev, next)).toEqual([SETUP_STEP_IDS.hooksReady]);

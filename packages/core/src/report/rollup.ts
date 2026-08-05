@@ -1,22 +1,22 @@
 // packages/core/src/report/rollup.ts
-// EngineInput → ReportModel 집계 (Task 35). 신규 판정 로직 없음 — action/confidence는
-// engine.ts가 이미 산출한 값을 그대로 읽어 버킷팅·그룹핑·정렬만 한다.
-// 설계: docs/designs/2026-07-20-리포트-가독성-설계.md §4-2/§4-3/§4-4/§5.
+// EngineInput -> ReportModel aggregation (Task 35). No new verdict logic: action/confidence are
+// read as engine.ts already produced them, and only bucketing, grouping and sorting happen here.
+// Design: docs/designs/2026-07-20-리포트-가독성-설계.md §4-2/§4-3/§4-4/§5.
 import type { ClientId, MatrixRow, SessionMeta } from '../types.js';
 import { buildMatrix, splitByClient, visibleMatrixRows, type EngineInput } from '../engine/engine.js';
 import type {
   ClientReport, ReportBucket, ReportGroup, ReportModel, ReportOptions, ReportTool, ReportTotals,
 } from './model.js';
 
-/** 클라이언트 1개분 집계 결과 — 렌더용 ClientReport와 모델 전역 합산용 totals를 함께 낸다. */
+/** Aggregation result for one client: the ClientReport to render plus the totals to sum globally. */
 export interface ClientRollup {
   report: ClientReport;
   totals: ReportTotals;
 }
 
 /**
- * 공개 표면. `EngineInput`을 클라이언트별로 쪼개 `buildMatrix`로 매트릭스를 만들고
- * 순수 함수 `rollupClient`/`assembleModel`에 위임하는 얇은 어댑터.
+ * Public surface. A thin adapter that splits `EngineInput` per client, builds the matrix with
+ * `buildMatrix`, and delegates to the pure `rollupClient`/`assembleModel`.
  */
 export function buildReport(input: EngineInput, opts: ReportOptions): ReportModel {
   const splits = splitByClient(input);
@@ -40,7 +40,7 @@ const ZERO_TOTALS: ReportTotals = {
   healthyResponseTokens: 0,
 };
 
-/** 여러 클라이언트 롤업을 정렬·합산해 최종 ReportModel을 조립한다. 순수 함수 — export되어 테스트가 직접 호출한다. */
+/** Sorts and sums the per-client rollups into the final ReportModel. Pure and exported so tests can call it directly. */
 export function assembleModel(rollups: ClientRollup[], opts: ReportOptions): ReportModel {
   const clients = rollups.map((r) => r.report).sort(compareClients);
   const totals = rollups.reduce((acc, r) => addTotals(acc, r.totals), { ...ZERO_TOTALS });
@@ -67,15 +67,15 @@ function addTotals(a: ReportTotals, b: ReportTotals): ReportTotals {
   };
 }
 
-/** collapsed===false 먼저, 그다음 sessionCount 내림차순 (설계 §4-4). */
+/** collapsed===false first, then descending by sessionCount (design §4-4). */
 function compareClients(a: ClientReport, b: ClientReport): number {
   if (a.collapsed !== b.collapsed) return a.collapsed ? 1 : -1;
   return b.sessionCount - a.sessionCount;
 }
 
 /**
- * 클라이언트 1개분 MatrixRow[] → ClientReport + totals. 순수 함수 — export되어 테스트가
- * 손으로 만든 MatrixRow[]/SessionMeta[]를 직접 넘겨 호출한다 (buildMatrix 비의존).
+ * One client's MatrixRow[] -> ClientReport + totals. Pure and exported so tests can pass
+ * hand-written MatrixRow[]/SessionMeta[] directly (no dependency on buildMatrix).
  */
 export function rollupClient(client: ClientId, sessions: SessionMeta[], rows: MatrixRow[]): ClientRollup {
   const visible = visibleMatrixRows(rows, sessions);
@@ -130,7 +130,7 @@ export function rollupClient(client: ClientId, sessions: SessionMeta[], rows: Ma
   return { report, totals };
 }
 
-/** 버킷 배정 (설계 §4-3). action='unknown'은 호출부에서 이미 걸러진다. */
+/** Bucket assignment (design §4-3). action='unknown' is already filtered out by the caller. */
 function assignBucket(row: MatrixRow): ReportBucket | null {
   const { action, confidence } = row.recommendation;
   if (action === 'remove' || action === 'filter-server') {
@@ -149,7 +149,7 @@ function sumGroupTokens(groups: ReportGroup[]): number {
   return groups.reduce((s, g) => s + g.perSessionTokens, 0);
 }
 
-/** (serverName, action, confidence)로 묶고 perSessionTokens 내림차순 정렬. */
+/** Groups by (serverName, action, confidence) and sorts descending by perSessionTokens. */
 function groupRows(rows: MatrixRow[]): ReportGroup[] {
   const map = new Map<string, MatrixRow[]>();
   for (const row of rows) {
@@ -192,7 +192,7 @@ function toReportTool(row: MatrixRow): ReportTool {
   };
 }
 
-/** 최빈값. 동률이면 먼저 등장한 값을 우선한다. */
+/** Most common value. Ties go to whichever appeared first. */
 function modeOf(values: Array<string | null>): string | null {
   const order: Array<string | null> = [];
   const counts = new Map<string | null, number>();

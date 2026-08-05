@@ -71,14 +71,14 @@ function removeRecommendation(): Recommendation {
   return {
     action: 'remove',
     confidence: 'high',
-    reason: '정의 900토큰, 호출 0회. 제거 시 매 세션 약 900토큰 절약',
+    reason: 'definition 900 tokens, 0 calls. about 900 tokens saved per session when removed',
     reasonParts: {
-      basis: '정의 900토큰, 호출 0회',
+      basis: 'definition 900 tokens, 0 calls',
       serverBasis: null,
-      effect: '제거 시 매 세션 약 900토큰 절약',
+      effect: 'about 900 tokens saved per session when removed',
       caveat: null,
     },
-    evidenceLabel: '실측',
+    evidenceLabel: 'measured',
     evidence: {
       observedSessions: 4, datedObservedSessions: 4, observedDays: 3,
       lastCalledAt: null, costPerSession: 900, totalObservedCost: 3600,
@@ -126,7 +126,7 @@ describe('collection health (E2E)', () => {
     const store = await LensStore.open(':memory:');
     // An earlier corroborated call establishes that tool-phase hooks do cover this
     // client; without that evidence a miss is log-only operation, not collector
-    // failure, and degrading would trap hookless users (see 결함 F).
+    // failure, and degrading would trap hookless users (see defect F).
     // Then three completed transcript calls at T0 with no correlating hook; NOW is
     // 60s later so every miss has matured past the grace window.
     store.ingest(logResult('codex', 's1', [
@@ -198,7 +198,7 @@ describe('recommendation gate reacts to collection health (E2E)', () => {
     const store = await healthOf((s) => {
       // The earlier corroborated call establishes tool-phase hook coverage, which
       // is what makes the later misses read as collector failure rather than
-      // ordinary hookless (log-only) operation (see 결함 F).
+      // ordinary hookless (log-only) operation (see defect F).
       s.ingest(logResult('codex', 's1', [
         { externalCallId: 'c0', toolName: 'covered', calledAt: at(-20_000) },
         { externalCallId: 'm1', toolName: 'a', calledAt: at(0) },
@@ -213,7 +213,7 @@ describe('recommendation gate reacts to collection health (E2E)', () => {
     const gated = gateRecommendation(removeRecommendation(), health);
     expect(gated.action).toBe('remove'); // action is preserved
     expect(gated.confidence).toBe('low');
-    expect(gated.reasonParts.caveat).toContain('수집 건강도 낮음');
+    expect(gated.reasonParts.caveat).toContain('collection health is low');
     store.close();
   });
 
@@ -225,9 +225,9 @@ describe('recommendation gate reacts to collection health (E2E)', () => {
     expect(health.health).toBe('hook-only');
 
     const gated = gateRecommendation(removeRecommendation(), health);
-    expect(gated.evidenceLabel).toBe('측정 불가');
+    expect(gated.evidenceLabel).toBe('not measurable');
     expect(gated.evidence.costPerSession).toBeNull();
-    expect(gated.reasonParts.effect).toContain('토큰 측정 불가');
+    expect(gated.reasonParts.effect).toContain('token count unavailable');
     store.close();
   });
 });

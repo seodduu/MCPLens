@@ -12,8 +12,8 @@ interface ToolSpec {
 }
 
 /**
- * 로컬 루프백에 Streamable HTTP MCP 서버를 띄운다 (127.0.0.1:0 임시 포트).
- * stateless 모드(`sessionIdGenerator: undefined`)로, 요청마다 새 server+transport를 생성한다.
+ * Starts a Streamable HTTP MCP server on local loopback (127.0.0.1:0, an ephemeral port).
+ * Stateless mode (`sessionIdGenerator: undefined`) creates a fresh server and transport per request.
  */
 async function startLocalHttpMcp(
   tools: ToolSpec[],
@@ -53,7 +53,7 @@ async function startLocalHttpMcp(
 }
 
 describe('scanServer — http transport', () => {
-  it('http 서버를 tools/list로 스캔해 정의 토큰을 계산한다', async () => {
+  it('scans an http server with tools/list and computes the definition tokens', async () => {
     const { url, close } = await startLocalHttpMcp([
       { name: 'echo', description: 'Echo back text for http scan test' },
     ]);
@@ -78,7 +78,7 @@ describe('scanServer — http transport', () => {
     }
   });
 
-  it('spec.headers가 실제 HTTP 요청 헤더로 전달된다 (PAT 패스스루)', async () => {
+  it('passes spec.headers through as real HTTP request headers (PAT pass-through)', async () => {
     const { url, close, seenHeaders } = await startLocalHttpMcp([
       { name: 'echo', description: 'Echo for header passthrough test' },
     ]);
@@ -95,13 +95,13 @@ describe('scanServer — http transport', () => {
     }
   });
 
-  it('unknown 전송은 throw', async () => {
+  it('throws for an unknown transport', async () => {
     await expect(scanServer({ name: 'x' })).rejects.toThrow(/unknown transport/);
   });
 });
 
-describe('isAuthRequired 분류 확대', () => {
-  it('GitHub식 400 + Authorization header 메시지도 인증 요구로 분류', async () => {
+describe('broader isAuthRequired classification', () => {
+  it('classifies a GitHub-style 400 with an Authorization header message as an authentication demand', async () => {
     const { isAuthRequired } = await import('../../src/scanner/scanner.js');
     expect(isAuthRequired(new Error(
       'Streamable HTTP error: Error POSTing to endpoint: bad request: missing required Authorization header'))).toBe(true);

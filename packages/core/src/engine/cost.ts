@@ -1,18 +1,19 @@
 // packages/core/src/engine/cost.ts
-// 누적 비용 산출 — 판정(engine.ts)과 책임이 다르므로 분리한다.
-// 설계: docs/superpowers/specs/2026-07-21-매트릭스-누적비용-표시-design.md
-// 순수 함수 — 부수효과·파일 IO 없음.
+// Accumulated cost calculation, split from the verdict logic (engine.ts) because the
+// responsibilities differ.
+// Design: docs/superpowers/specs/2026-07-21-매트릭스-누적비용-표시-design.md
+// Pure functions: no side effects, no file IO.
 import type { MatrixRow, ToolCallEvent } from '../types.js';
 
-/** 엔진(engine.ts:26)과 동일한 툴 키 형식. 두 곳의 키가 어긋나면 조인이 조용히 실패한다. */
+/** Same tool key format as the engine (engine.ts:26). If the two diverge, the join fails silently. */
 export function toolCostKey(serverName: string, toolName: string): string {
   return `${serverName} ${toolName}`;
 }
 
 /**
- * "서버 툴" → 그 툴이 호출된 고유 세션 수.
- * 지연 로딩에서 툴이 호출되려면 정의가 먼저 로드됐어야 하므로,
- * 이 값은 로드 세션 수의 하한이다 (설계문서 v2 3장의 하한 추정 원리).
+ * "server tool" -> number of distinct sessions that called the tool.
+ * Under deferred loading a tool can only be called after its definition was loaded, so this is a
+ * lower bound on the number of load sessions (the lower-bound estimation principle, design v2 ch. 3).
  */
 export function callSessionCounts(calls: ToolCallEvent[]): Map<string, number> {
   const sessions = new Map<string, Set<string>>();
@@ -28,16 +29,16 @@ export function callSessionCounts(calls: ToolCallEvent[]): Map<string, number> {
 }
 
 export interface CumulativeCost {
-  /** 누적 토큰. 정의 미측정이면 응답분만 담기므로 항상 실제 비용의 하한이다. */
+  /** Accumulated tokens. With unmeasured definitions it holds only the response part, so it is always a lower bound on the real cost. */
   tokens: number;
-  /** false면 정의 토큰 미확보(스캐너 미커버)로 정의분이 빠져 있다. */
+  /** false means definition tokens are unavailable (not covered by the scanner), so the definition part is missing. */
   definitionMeasured: boolean;
 }
 
 /**
- * 누적 비용 = (정의 토큰 × 유효 로드 세션 수) + 응답 토큰.
- * 유효 로드 세션 수 = max(로드 세션 수, 호출된 고유 세션 수) — 훅만 수집된 세션은
- * 로드 이벤트가 없으므로 호출 사실로 역산한다.
+ * Accumulated cost = (definition tokens x effective load sessions) + response tokens.
+ * Effective load sessions = max(load sessions, distinct calling sessions): sessions collected
+ * through hooks only carry no load events, so the call itself is used to infer them.
  */
 export function cumulativeCost(row: MatrixRow, callSessionCount: number): CumulativeCost {
   const loadSessions = Math.max(row.loadedSessionCount, callSessionCount);
@@ -45,7 +46,7 @@ export function cumulativeCost(row: MatrixRow, callSessionCount: number): Cumula
   const definitionPart = defTokens != null ? defTokens * loadSessions : 0;
   return {
     tokens: definitionPart + row.responseTokens,
-    // 로드된 적이 없으면 정의분은 실제로 0 — 미측정이 아니라 측정된 0이다.
+    // Never loaded means the definition part really is 0: a measured zero, not an unmeasured one.
     definitionMeasured: defTokens != null || loadSessions === 0,
   };
 }

@@ -1,17 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
-  <!-- 호출 이벤트가 깔때기를 지나 DB에 쌓인다: 훅 수집 -->
+  <!-- Call events fall through a funnel into the DB: hook collection -->
   <g fill="none" stroke="#8b8b8b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-    <!-- 떨어지는 호출 점들 -->
+    <!-- falling call dots -->
     <circle cx="340" cy="88" r="6" fill="#8b8b8b" stroke="none" />
     <circle cx="400" cy="70" r="6" fill="#8b8b8b" stroke="none" />
     <circle cx="460" cy="92" r="6" fill="#8b8b8b" stroke="none" />
     <circle cx="372" cy="112" r="6" fill="#8b8b8b" stroke="none" />
     <circle cx="432" cy="116" r="6" fill="#8b8b8b" stroke="none" />
-    <!-- 깔때기 -->
+    <!-- funnel -->
     <path d="M300 140 H500 L428 218 V262 H372 V218 Z" />
-    <!-- 낙하선 -->
+    <!-- fall line -->
     <line x1="400" y1="268" x2="400" y2="292" stroke-dasharray="2 8" stroke-width="4" />
-    <!-- DB 실린더 -->
+    <!-- DB cylinder -->
     <ellipse cx="400" cy="308" rx="72" ry="16" />
     <path d="M328 308 V346 A72 16 0 0 0 472 346 V308" />
   </g>

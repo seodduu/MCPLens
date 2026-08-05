@@ -2,18 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { estimateInferenceCost } from '../../src/inference/costEstimate.js';
 
 describe('estimateInferenceCost', () => {
-  it('정의 토큰에 20k..35k 입력 여유를 더한다', () => {
+  it('adds a 20k..35k input allowance on top of the definition tokens', () => {
     const estimate = estimateInferenceCost('codex', 12_345, 3);
 
     expect(estimate.inputTokens).toEqual({ min: 32_345, max: 47_345 });
   });
 
-  it('출력 범위를 toolCount*60/120으로 계산하고 1k..5k, 2k..10k로 clamp한다', () => {
+  it('computes the output range as toolCount*60/120 and clamps it to 1k..5k and 2k..10k', () => {
     expect(estimateInferenceCost('codex', 0, 3).outputTokens).toEqual({ min: 1_000, max: 2_000 });
     expect(estimateInferenceCost('codex', 0, 200).outputTokens).toEqual({ min: 5_000, max: 10_000 });
   });
 
-  it('2026-08-03 API-equivalent rate와 CLI 과금 주의 문구를 반환한다', () => {
+  it('returns the 2026-08-03 API-equivalent rate and the CLI billing caveat', () => {
     const codex = estimateInferenceCost('codex', 1_000_000, 100);
     const claude = estimateInferenceCost('claude', 1_000_000, 100);
 

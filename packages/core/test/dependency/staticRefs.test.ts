@@ -4,7 +4,7 @@ import { findStaticDependencyRefs } from '../../src/dependency/staticRefs.js';
 import type { ToolDefinitionBody } from '../../src/types.js';
 
 describe('findStaticDependencyRefs', () => {
-  it('description과 schema 문자열 값에서 같은 서버의 정확한 tool name만 찾는다', () => {
+  it('finds only exact tool names of the same server in description and schema string values', () => {
     const refs = findStaticDependencyRefs(definitions as ToolDefinitionBody[]);
 
     expect(refs).toEqual([
@@ -23,7 +23,7 @@ describe('findStaticDependencyRefs', () => {
     ]);
   });
 
-  it('자기 자신, substring, schema property key만의 일치는 제외한다', () => {
+  it('excludes self-matches, substrings and matches in schema property keys alone', () => {
     const refs = findStaticDependencyRefs([
       {
         serverName: 's',

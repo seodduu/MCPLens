@@ -9,9 +9,9 @@ import type {
 } from '../../types.js';
 
 /**
- * Gemini의 평탄화된 MCP 툴 이름(`mcp_<server>_<tool>`)을 서버/툴로 분해한다.
- * `mcp_` 접두어가 없으면 내장 툴 → null.
- * 잔여 문자열에 `_`가 없으면 server=tool=rest.
+ * Splits Gemini's flattened MCP tool name (`mcp_<server>_<tool>`) into server and tool.
+ * Without the `mcp_` prefix it is a builtin tool, so null.
+ * If the remainder has no `_`, server=tool=rest.
  */
 export function splitFlattenedName(
   name: string,
@@ -32,7 +32,7 @@ function nativeId(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value : null;
 }
 
-/** functionResponse.response.output → responseText (문자열이면 그대로, 아니면 JSON.stringify) */
+/** functionResponse.response.output -> responseText (a string is used as is, otherwise JSON.stringify) */
 function outputToText(response: unknown): string | null {
   if (response == null || typeof response !== 'object') return null;
   const output = (response as Record<string, unknown>).output;
@@ -77,10 +77,10 @@ export const geminiAdapter: LogAdapter = {
     const usage: TokenUsageEvent[] = [];
     const seenGeminiIds = new Set<string>();
 
-    // toolCall id → 조립 중인 이벤트 (responseText는 functionResponse에서 나중에 채움)
+    // toolCall id -> the event being assembled (responseText is filled later from functionResponse)
     const toolCallById = new Map<string, ToolCallEvent>();
     const toolCallOrder: string[] = [];
-    // functionResponse id → 응답 본문 (레코드 순서상 앞뒤 어디에 있어도 매칭)
+    // functionResponse id -> the response body (matched wherever it sits in record order)
     const responseTextById = new Map<string, string>();
 
     for (const rawLine of content.split('\n')) {
@@ -91,15 +91,15 @@ export const geminiAdapter: LogAdapter = {
       try {
         rec = JSON.parse(line) as Record<string, unknown>;
       } catch {
-        // 파싱 실패는 throw 대신 계수
+        // Count parse failures instead of throwing
         parseErrors++;
         continue;
       }
 
-      // {$set: {...}} 패치 레코드는 방어적으로 스킵
+      // Defensively skip {$set: {...}} patch records
       if ('$set' in rec) continue;
 
-      // 세션 메타 레코드의 startTime을 startedAt 후보로 사용
+      // Use startTime from the session metadata record as the startedAt candidate
       if (startedAt == null && typeof rec.startTime === 'string' && 'sessionId' in rec) {
         startedAt = rec.startTime;
       }
@@ -113,7 +113,7 @@ export const geminiAdapter: LogAdapter = {
           | { input?: number; output?: number; cached?: number; tool?: number }
           | undefined;
 
-        // 스트리밍 중복 레코드: 같은 id의 gemini 레코드가 2번 나타난다 → usage는 1회만
+        // Streaming duplicates: the same gemini record id appears twice, so usage counts once
         if (recId != null && !seenGeminiIds.has(recId)) {
           seenGeminiIds.add(recId);
           usage.push({
@@ -129,22 +129,22 @@ export const geminiAdapter: LogAdapter = {
         const toolCalls = Array.isArray(rec.toolCalls)
           ? (rec.toolCalls as GeminiToolCall[])
           : [];
-        // tokens.tool은 턴 전체의 툴 토큰이다. 엔진이 호출 단위로 합산하므로 그대로
-        // 각 호출에 넣으면 호출 수만큼 곱해진다. 이 레코드에서 실제로 채택할 MCP 호출을
-        // 먼저 확정한 뒤 그 수로 나눠 담는다.
+        // tokens.tool is the tool token count for the whole turn. The engine sums per call, so
+        // putting it on every call would multiply it by the call count. Decide first which MCP
+        // calls this record actually adopts, then divide across that many.
         const accepted: { split: { server: string; tool: string }; tc: GeminiToolCall; id: string | null }[] = [];
         for (const tc of toolCalls) {
           if (typeof tc.name !== 'string') continue;
           const split = splitFlattenedName(tc.name);
-          if (split == null) continue; // 내장 툴 → 무시
+          if (split == null) continue; // builtin tool, ignore
           const tcId = nativeId(tc.id);
-          // toolCall id 기준 dedup (중복 레코드 방지)
+          // Dedup by toolCall id (guards against duplicate records)
           if (tcId != null && toolCallById.has(tcId)) continue;
           accepted.push({ split, tc, id: tcId });
         }
 
-        // 정수 왜곡을 피하려고 몫을 고루 주고 나머지는 앞쪽 호출에 1씩 더한다.
-        // 그 결과 레코드 합계는 정확히 tokens.tool과 같다.
+        // To avoid integer skew, hand out the quotient evenly and add 1 of the remainder to the
+        // earlier calls. The record total then equals tokens.tool exactly.
         const turnToolTokens = tokens?.tool ?? null;
         const share = turnToolTokens == null || accepted.length === 0
           ? null
@@ -182,7 +182,7 @@ export const geminiAdapter: LogAdapter = {
       }
     }
 
-    // functionResponse.id ↔ toolCall.id 매칭으로 responseText 채움
+    // Fill responseText by matching functionResponse.id to toolCall.id
     for (const [key, event] of toolCallById) {
       const text = responseTextById.get(key);
       if (text != null) event.responseText = text;
@@ -190,7 +190,7 @@ export const geminiAdapter: LogAdapter = {
 
     const toolCalls = toolCallOrder.map((k) => toolCallById.get(k)!);
 
-    // Gemini는 지연 로드 신호가 없다 → MCP toolCall이 1개라도 있으면 UPFRONT
+    // Gemini has no deferred-load signal, so a single MCP toolCall means UPFRONT
     const mode = toolCalls.length > 0 ? 'UPFRONT' : 'DEFERRED_OPAQUE';
 
     return {
@@ -210,7 +210,7 @@ export const geminiAdapter: LogAdapter = {
   },
 };
 
-// 공유 계약(LogAdapter 구현체는 class) 복원용 래퍼 — 표면들은 new GeminiAdapter()를 사용한다.
+// Wrapper restoring the shared contract (LogAdapter implementations are classes); surfaces use new GeminiAdapter().
 export class GeminiAdapter implements LogAdapter {
   readonly client = 'gemini-cli' as const;
   sessionRoots(): string[] { return geminiAdapter.sessionRoots(); }

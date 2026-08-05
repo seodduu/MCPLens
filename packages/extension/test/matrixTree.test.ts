@@ -19,34 +19,34 @@ describe('buildTree', () => {
     sessions: [session('c1', 'claude-code'), session('x1', 'codex')],
   };
 
-  it('클라이언트 ▸ 서버 ▸ 툴 3계층 구조를 만든다', () => {
+  it('builds the three-level client / server / tool structure', () => {
     const roots = buildTree(input);
-    // 픽스처에 정의 스냅샷이 없어 마지막 행은 스캔 안내 힌트다.
+    // The fixture has no definition snapshot, so the last row is the scan hint.
     expect(roots.filter((r) => r.kind !== 'hint').map((r) => r.label))
       .toEqual(['claude-code', 'codex']);
     const claude = roots[0];
     expect(claude.kind).toBe('client');
-    expect(claude.children).toHaveLength(1);           // github 서버 1개
+    expect(claude.children).toHaveLength(1);           // one github server
     expect(claude.children[0].label).toBe('github');
     expect(claude.children[0].children.map((t) => t.label).sort())
       .toEqual(['get_file', 'search']);
   });
 
-  it('툴 노드 description에 호출수·응답토큰이 들어간다', () => {
+  it('puts the call count and response tokens in the tool node description', () => {
     const tool = buildTree(input)[1].children[0].children[0]; // codex/node_repl/js
     expect(tool.description).toContain('1 call');
     expect(tool.description).toContain('50 tokens');
   });
 
-  // 권고는 아이콘으로만 전한다 — 낱말이 툴마다 반복되면 숫자가 밀린다.
-  it('권고를 글로 쓰지 않아 꼬리 구분자도 남지 않는다', () => {
+  // Recommendations are carried by icons alone: a word repeated per tool pushes the numbers aside.
+  it('writes no recommendation text, so no trailing separator is left', () => {
     const tool = buildTree(input)[1].children[0].children[0]; // codex/node_repl/js
     expect(tool.action).toBe('keep');
     expect(tool.description).not.toContain('keep');
-    expect(tool.description).not.toMatch(/·\s*$/);  // 라벨을 뺀 자리에 꼬리 구분자가 남지 않는다
+    expect(tool.description).not.toMatch(/·\s*$/);  // no trailing separator where the label was removed
   });
 
-  it('클라이언트 노드 description에 세션 수가 들어간다', () => {
+  it('puts the session count in the client node description', () => {
     expect(buildTree(input)[0].description).toContain('1');
   });
 
@@ -63,8 +63,8 @@ describe('buildTree', () => {
     expect(getFile.analysisAction).toBeUndefined();
   });
 
-  // 요약은 status를 길게 되풀이하는 일이 잦고 한 줄에서 제일 긴 조각이라 숫자를 밀어낸다.
-  it('요약 문장은 줄에 싣지 않는다 — status만 남기고 요약은 상세 화면에 있다', () => {
+  // A summary often restates status at greater length and is the longest piece on the line, pushing numbers aside.
+  it('keeps the summary off the row: only status stays, the summary lives in the details view', () => {
     const rows = [{ serverName: 'github', toolName: 'search', status: 'Independent' as const,
       summary: 'Tool search operates independently without being used by other tools.',
       canDisableGlobally: true }];
@@ -72,7 +72,7 @@ describe('buildTree', () => {
       .find((tool) => tool.toolName === 'search')!;
     expect(search.description).toContain('Independent');
     expect(search.description).not.toContain('operates independently');
-    expect(search.analysisSummary).toBe(rows[0].summary);  // 상세 화면용으로는 남는다
+    expect(search.analysisSummary).toBe(rows[0].summary);  // it is still kept for the details view
   });
 
   it('hides action rows during off rollout', () => {
@@ -142,7 +142,7 @@ describe('buildTree', () => {
     ]));
   });
 
-  // 두 액션 모두 행에 마우스를 올리면 바로 보인다 (우클릭 메뉴에 숨기지 않는다).
+  // Both actions are visible on row hover (they are not hidden in the right-click menu).
   it('exposes both matrix actions inline on hover', () => {
     const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
     const matrixItems = manifest.contributes.menus['view/item/context']
@@ -154,18 +154,18 @@ describe('buildTree', () => {
     }
   });
 
-  // 실측 회귀: 서버가 설정돼 있으면 "0 calls · 0 tokens" 행이 생겨 트리가 비지 않으므로
-  // package.json의 viewsWelcome은 영영 뜨지 않는다. 첫 설치 화면이 0만 늘어선 채
-  // 다음 할 일을 말해 주지 않던 것을 이 힌트 행이 메운다.
-  it('스캔 전(정의 스냅샷 없음)에는 스캔 안내 힌트를 붙인다', () => {
+  // Measured regression: a configured server creates a "0 calls · 0 tokens" row, so the tree is never
+  // empty and the viewsWelcome in package.json never appears. This hint row fills the gap where the
+  // first-install screen was a row of zeros that never said what to do next.
+  it('appends the scan hint before a scan (no definition snapshot)', () => {
     const roots = buildTree(input);
     const hint = roots.find((r) => r.kind === 'hint');
     expect(hint).toBeDefined();
     expect(hint!.label).toContain('Run a scan');
-    expect(roots[roots.length - 1]).toBe(hint);   // 기존 "첫 행은 클라이언트" 계약 보존
+    expect(roots[roots.length - 1]).toBe(hint);   // preserves the existing "first row is a client" contract
   });
 
-  it('스캔한 뒤에는 힌트를 붙이지 않는다', () => {
+  it('appends no hint after a scan', () => {
     const scanned: EngineInput = {
       definitions: [{ serverName: 'notion', toolName: 'notion-update-page',
         definitionTokens: 3287, scannedAt: '2026-07-19T00:00:00Z',
@@ -178,7 +178,7 @@ describe('buildTree', () => {
     expect(buildTree(scanned).some((r) => r.kind === 'hint')).toBe(false);
   });
 
-  it('로드만 되고 호출 0인 툴도 정의 토큰을 누적 비용으로 표시한다', () => {
+  it('shows definition tokens as accumulated cost even for a tool only loaded, never called', () => {
     const loadedOnly: EngineInput = {
       definitions: [{ serverName: 'notion', toolName: 'notion-update-page',
         definitionTokens: 3287, scannedAt: '2026-07-19T00:00:00Z',
@@ -193,7 +193,7 @@ describe('buildTree', () => {
     expect(tool.description).not.toContain('0 tokens');
   });
 
-  it('로드만 되고 호출 0인 툴은 searchedNotCalled로 표시한다', () => {
+  it('marks a tool only loaded, never called as searchedNotCalled', () => {
     const loadedOnly: EngineInput = {
       definitions: [{ serverName: 'notion', toolName: 'notion-update-page',
         definitionTokens: 3287, scannedAt: '2026-07-19T00:00:00Z',
@@ -207,12 +207,12 @@ describe('buildTree', () => {
     expect(tool.searchedNotCalled).toBe(true);
   });
 
-  it('호출된 툴은 searchedNotCalled가 아니다', () => {
-    const tool = buildTree(input)[1].children[0].children[0]; // codex/node_repl/js (호출됨)
+  it('does not mark a called tool as searchedNotCalled', () => {
+    const tool = buildTree(input)[1].children[0].children[0]; // codex/node_repl/js (called)
     expect(tool.searchedNotCalled).toBeFalsy();
   });
 
-  it('로드 세션 수만큼 정의 비용을 곱한다', () => {
+  it('multiplies the definition cost by the number of load sessions', () => {
     const threeSessions: EngineInput = {
       definitions: [{ serverName: 'notion', toolName: 'notion-update-page',
         definitionTokens: 1000, scannedAt: '2026-07-19T00:00:00Z',
@@ -227,7 +227,7 @@ describe('buildTree', () => {
     expect(tool.description).toContain('3,000 tokens');
   });
 
-  it('로드 기록이 없어도 호출된 세션 수로 정의 비용을 역산한다', () => {
+  it('infers the definition cost from the calling session count when there are no load records', () => {
     const hookOnly: EngineInput = {
       definitions: [{ serverName: 'notion', toolName: 'notion-search',
         definitionTokens: 1721, scannedAt: '2026-07-19T00:00:00Z',
@@ -237,18 +237,18 @@ describe('buildTree', () => {
       sessions: [session('c1', 'claude-code'), session('c2', 'claude-code')],
     };
     const tool = buildTree(hookOnly)[0].children[0].children[0];
-    // 정의 1721 × 2세션 = 3442, 응답 50 × 2회 = 100 → 합계 3542
+    // definition 1721 x 2 sessions = 3442, responses 50 x 2 calls = 100, total 3542
     expect(tool.description).toContain('3,542 tokens');
   });
 
-  // 미측정 = 정의 토큰이 빠진 값 = 하한. 긴 괄호 문구 대신 ≥ 한 글자로 같은 사실을 말한다.
-  it('정의 토큰 미측정이면 응답분을 하한값(≥)으로 표시한다', () => {
+  // Unmeasured = the value without definition tokens = a lower bound. One >= says the same thing as a long parenthetical.
+  it('shows the response part as a lower bound (>=) when definition tokens are unmeasured', () => {
     const tool = buildTree(input)[1].children[0].children[0]; // codex/node_repl/js
     expect(tool.description).toContain('≥50 tokens');
     expect(tool.description).not.toContain('not measured');
   });
 
-  it('권고는 글로 쓰지 않는다 — 판정은 action 필드로만 나가고 아이콘이 전한다', () => {
+  it('writes no recommendation text: the verdict leaves only through the action field and the icon carries it', () => {
     const lowConfidence: EngineInput = {
       definitions: [{ serverName: 'notion', toolName: 'notion-update-page',
         definitionTokens: 3287, scannedAt: '2026-07-19T00:00:00Z',
@@ -264,7 +264,7 @@ describe('buildTree', () => {
     expect(tool.description).not.toContain('candidate');
   });
 
-  it('로드만 되고 호출 0인 툴이 있을 때 클라이언트 노드가 0이 아니라 자식 합을 표시한다', () => {
+  it('shows the child sum, not 0, on the client node when a tool is only loaded and never called', () => {
     const loadedOnly: EngineInput = {
       definitions: [{ serverName: 'notion', toolName: 'notion-update-page',
         definitionTokens: 3287, scannedAt: '2026-07-19T00:00:00Z',
@@ -276,14 +276,14 @@ describe('buildTree', () => {
     };
     const [clientNode] = buildTree(loadedOnly);
     const toolNode = clientNode.children[0].children[0];
-    // 클라이언트 노드는 접혀 있어도 자식(툴)과 모순되지 않아야 한다 —
-    // 응답 토큰 합(0)이 아니라 서버·툴 노드와 동일한 누적 비용 fold를 써야 한다.
+    // A collapsed client node must not contradict its children (tools): it must use the same
+    // accumulated-cost fold as the server and tool nodes, not the response token sum (0).
     expect(clientNode.description).toContain('3,287 tokens');
     expect(clientNode.description).not.toContain('0 tokens');
     expect(clientNode.description).toContain(toolNode.description.match(/[\d,.]+k? tokens/)![0]);
   });
 
-  it('서버 노드 누적 비용은 자식 툴들의 합과 같다', () => {
+  it('makes the server node accumulated cost equal the sum of its child tools', () => {
     const twoTools: EngineInput = {
       definitions: [
         { serverName: 'notion', toolName: 'notion-update-page', definitionTokens: 3287,
@@ -303,14 +303,14 @@ describe('buildTree', () => {
   });
 });
 
-describe('비용 내림차순 정렬', () => {
+describe('descending cost ordering', () => {
   const def = (server: string, tool: string, tokens: number) => ({
     serverName: server, toolName: tool, definitionTokens: tokens,
     scannedAt: '2026-07-19T00:00:00Z', firstScannedAt: '2026-07-19T00:00:00Z' });
   const load = (server: string, tool: string) => ({
     sessionId: 'c1', serverName: server, toolName: tool, loadedTokens: null });
 
-  // 등장 순서(small → big)와 반대로 정렬돼야 한다.
+  // It must sort opposite to the order of appearance (small then big).
   const input: EngineInput = {
     definitions: [def('small', 'a', 100), def('big', 'x', 9000), def('big', 'y', 500)],
     calls: [],
@@ -318,22 +318,22 @@ describe('비용 내림차순 정렬', () => {
     sessions: [session('c1', 'claude-code')],
   };
 
-  it('서버를 비용 큰 순으로 놓는다', () => {
+  it('places servers in descending cost order', () => {
     const [client] = buildTree(input);
     expect(client.children.map((s) => s.label)).toEqual(['big', 'small']);
   });
 
-  it('서버 안의 툴도 비용 큰 순으로 놓는다', () => {
+  it('places tools inside a server in descending cost order too', () => {
     const big = buildTree(input)[0].children.find((s) => s.label === 'big')!;
     expect(big.children.map((t) => t.label)).toEqual(['x', 'y']);
   });
 
-  it('사용 이력 없는 managed 서버는 0 tokens이므로 뒤로 간다', () => {
+  it('places a managed server with no usage history last, since it is 0 tokens', () => {
     const [client] = buildTree(input, new Set(), [{ name: 'idle', enabled: true, origins: ['user'] }]);
     expect(client.children.map((s) => s.label)).toEqual(['big', 'small', 'idle']);
   });
 
-  it('비용이 같으면 이름 오름차순 — 갱신마다 자리가 흔들리지 않는다', () => {
+  it('breaks ties by name ascending, so positions do not jitter between refreshes', () => {
     const tie: EngineInput = {
       definitions: [def('zeta', 'a', 500), def('alpha', 'a', 500)],
       calls: [], loads: [load('zeta', 'a'), load('alpha', 'a')],
@@ -343,7 +343,7 @@ describe('비용 내림차순 정렬', () => {
   });
 });
 
-describe('토큰 표기 축약', () => {
+describe('token abbreviation', () => {
   const oneTool = (tokens: number): EngineInput => ({
     definitions: [{ serverName: 'notion', toolName: 'big', definitionTokens: tokens,
       scannedAt: '2026-07-19T00:00:00Z', firstScannedAt: '2026-07-19T00:00:00Z' }],
@@ -352,46 +352,46 @@ describe('토큰 표기 축약', () => {
     sessions: [session('c1', 'claude-code')],
   });
 
-  it('1만 이상은 k로 줄인다 — 트리는 비례폭이라 긴 자릿수가 비교에 도움이 안 된다', () => {
+  it('shortens 10,000 and up with k: the tree is proportional, so long digit runs do not help comparison', () => {
     const tool = buildTree(oneTool(126_604))[0].children[0].children[0];
     expect(tool.description).toContain('126.6k tokens');
     expect(tool.description).not.toContain('126,604');
   });
 
-  it('1만 미만은 전체 자릿수를 유지한다', () => {
+  it('keeps full digits under 10,000', () => {
     const tool = buildTree(oneTool(9_999))[0].children[0].children[0];
     expect(tool.description).toContain('9,999 tokens');
   });
 });
 
-describe('집계 표시', () => {
+describe('aggregate display', () => {
   const input: EngineInput = {
     definitions: [],
     calls: [call('c1', 'github', 'search'), call('c1', 'github', 'get_file')],
     loads: [],
     sessions: [session('c1', 'claude-code')],
   };
-  it('클라이언트 노드에 총 호출수·응답토큰 합이 들어간다', () => {
+  it('puts the total call count and response token sum on the client node', () => {
     const client = buildTree(input)[0];
     expect(client.description).toContain('total 2 calls');
     expect(client.description).toContain('100 tokens'); // 50 + 50
   });
-  it('서버 노드에 호출수·응답토큰 합이 들어간다', () => {
+  it('puts the call count and response token sum on the server node', () => {
     const server = buildTree(input)[0].children[0];
-    // 미측정 표기는 툴 노드에만 — 상위 노드에서 반복되면 잡음이 된다
+    // The unmeasured marker belongs on tool nodes only: repeated on parents it becomes noise
     expect(server.description).toBe('2 calls · 100 tokens');
   });
 
-  it('미측정 표기는 서버·클라이언트 노드에 나타나지 않는다', () => {
+  it('never shows the unmeasured marker on server or client nodes', () => {
     const roots = buildTree(input);
     expect(roots[0].description).not.toContain('≥');
     expect(roots[0].children[0].description).not.toContain('≥');
-    // 툴 노드에는 그대로 남는다
+    // It stays on the tool node
     expect(roots[0].children[0].children[0].description).toContain('≥');
   });
 });
 
-describe('실패 표기 (실패만 괄호로)', () => {
+describe('failure display (only failures in parentheses)', () => {
   const input: EngineInput = {
     definitions: [],
     calls: [call('c1', 'github', 'flaky', true), call('c1', 'github', 'flaky', true),
@@ -399,21 +399,21 @@ describe('실패 표기 (실패만 괄호로)', () => {
     loads: [],
     sessions: [session('c1', 'claude-code')],
   };
-  it('실패 있는 툴/서버/클라이언트는 (실패 N) 표기', () => {
+  it('shows (N failed) on tools, servers and clients that have failures', () => {
     const client = buildTree(input)[0];
     expect(client.description).toContain('total 3 calls (2 failed)');
     expect(client.children[0].description).toContain('3 calls (2 failed)');
     const flaky = client.children[0].children.find((t) => t.label === 'flaky')!;
     expect(flaky.description).toContain('2 calls (2 failed)');
   });
-  it('실패 0인 툴은 괄호 없이 깔끔하게', () => {
+  it('leaves tools with 0 failures clean, without parentheses', () => {
     const ok = buildTree(input)[0].children[0].children.find((t) => t.label === 'ok')!;
     expect(ok.description).toContain('1 call ·');
     expect(ok.description).not.toContain('failed');
   });
 });
 
-describe('deny 토글 표시', () => {
+describe('deny toggle display', () => {
   const input: EngineInput = {
     definitions: [],
     calls: [call('c1', 'github', 'search'), call('c1', 'github', 'get_file'),
@@ -423,36 +423,36 @@ describe('deny 토글 표시', () => {
   };
   const denied = new Set(['mcp__github__search']);
 
-  it('claude-code 툴 노드에 client/serverName/toolName이 채워진다', () => {
+  it('fills client/serverName/toolName on claude-code tool nodes', () => {
     const tool = buildTree(input, denied)[0].children[0].children
       .find((t) => t.label === 'search')!;
     expect(tool.client).toBe('claude-code');
     expect(tool.serverName).toBe('github');
     expect(tool.toolName).toBe('search');
   });
-  it('deny된 claude-code 툴은 enabled=false + description에 차단됨', () => {
+  it('marks a denied claude-code tool enabled=false and blocked in the description', () => {
     const tool = buildTree(input, denied)[0].children[0].children
       .find((t) => t.label === 'search')!;
     expect(tool.enabled).toBe(false);
     expect(tool.description).toContain('Disabled');
   });
-  it('deny 안 된 claude-code 툴은 enabled=true', () => {
+  it('marks a claude-code tool that is not denied enabled=true', () => {
     const tool = buildTree(input, denied)[0].children[0].children
       .find((t) => t.label === 'get_file')!;
     expect(tool.enabled).toBe(true);
     expect(tool.description).not.toContain('Disabled');
   });
-  it('codex 툴은 같은 서버·툴이라도 enabled=undefined (범위 제외)', () => {
+  it('leaves codex tools enabled=undefined even for the same server and tool (out of scope)', () => {
     const codexTool = buildTree(input, denied)[1].children[0].children[0];
     expect(codexTool.enabled).toBeUndefined();
   });
-  it('deniedRules 생략 시 기존 동작 그대로 (전부 enabled=true)', () => {
+  it('keeps the existing behaviour when deniedRules is omitted (everything enabled=true)', () => {
     const tool = buildTree(input)[0].children[0].children[0];
     expect(tool.enabled).toBe(true);
   });
 });
 
-describe('서버 단위 토글 표시', () => {
+describe('per-server toggle display', () => {
   const input: EngineInput = {
     definitions: [],
     calls: [call('c1', 'github', 'search'), call('x1', 'github', 'search')],
@@ -462,10 +462,10 @@ describe('서버 단위 토글 표시', () => {
   const m = (name: string, enabled: boolean): ManagedServer =>
     ({ name, enabled, origins: ['user'] });
 
-  // 실측 회귀: 훅 설치 전 첫 사용자는 스캔 직후 사용 기록이 0이다. 이때 예전 코드는
-  // "0 calls · 0 tokens"를 하드코딩해 방금 잰 정의 토큰을 통째로 버렸고, 툴도 한 개도
-  // 싣지 않았다. 스캔했는데 화면이 0을 말하면 이 도구를 쓸 이유가 사라진다.
-  it('사용 기록이 없어도 스캔한 정의 토큰과 툴 목록을 싣는다', () => {
+  // Measured regression: a first-time user before hook installation has zero usage records right
+  // after a scan. The old code hardcoded "0 calls · 0 tokens", threw away the definition tokens just
+  // measured and carried no tools. A tool that scans and then shows 0 has no reason to be used.
+  it('carries the scanned definition tokens and tool list even with no usage records', () => {
     const scannedOnly: EngineInput = {
       definitions: [
         { serverName: 'lenstest', toolName: 'get_weather', definitionTokens: 74,
@@ -480,45 +480,45 @@ describe('서버 단위 토글 표시', () => {
     const server = client.children[0];
     expect(server.description).toContain('definition 158 tokens');
     expect(server.description).not.toContain('0 tokens');
-    // 큰 정의부터 위로 온다
+    // Bigger definitions come first
     expect(server.children.map((t) => t.label)).toEqual(['get_forecast', 'get_weather']);
     expect(server.children[0].description).toContain('definition 84 tokens');
   });
 
-  it('정의도 사용 기록도 없으면 0 tokens 그대로 말한다', () => {
+  it('says 0 tokens plainly when there is neither a definition nor usage records', () => {
     const nothing: EngineInput = { definitions: [], calls: [], loads: [], sessions: [] };
     const server = buildTree(nothing, new Set(), [m('lenstest', true)])[0].children[0];
     expect(server.description).toContain('0 calls · 0 tokens');
     expect(server.children).toHaveLength(0);
   });
 
-  it('managed 서버의 enabled가 서버 노드에 반영된다', () => {
+  it('reflects the managed enabled flag on the server node', () => {
     const server = buildTree(input, new Set(), [m('github', true)])[0].children[0];
     expect(server.enabled).toBe(true);
     expect(server.serverName).toBe('github');
   });
-  it('disabled 서버는 description에 차단됨 + 하위 툴 메뉴 숨김(enabled 미부여)', () => {
+  it('marks a disabled server blocked in the description and hides child tool menus (enabled unset)', () => {
     const server = buildTree(input, new Set(), [m('github', false)])[0].children[0];
     expect(server.enabled).toBe(false);
     expect(server.description).toContain('Disabled');
     expect(server.children[0].enabled).toBeUndefined();
   });
-  it('managed에 없는 서버(claude.ai 커넥터 등)는 enabled=undefined (메뉴 미노출)', () => {
+  it('leaves a server absent from managed (a claude.ai connector, say) enabled=undefined (no menu)', () => {
     const server = buildTree(input, new Set(), [])[0].children[0];
     expect(server.enabled).toBeUndefined();
   });
-  it('codex 클라이언트에는 managed가 적용되지 않는다', () => {
+  it('does not apply managed to the codex client', () => {
     const server = buildTree(input, new Set(), [m('github', false)])[1].children[0];
     expect(server.enabled).toBeUndefined();
   });
-  it('사용 이력 없는 managed 서버는 0회 노드로 추가된다', () => {
+  it('adds a managed server with no usage history as a zero-call node', () => {
     const claude = buildTree(input, new Set(), [m('github', true), m('lenstest', false)])[0];
     const zero = claude.children.find((s) => s.label === 'lenstest')!;
     expect(zero.description).toBe('0 calls · 0 tokens · Disabled');
     expect(zero.enabled).toBe(false);
     expect(zero.children).toEqual([]);
   });
-  it('claude-code 세션이 없어도 0회 서버로 클라이언트 노드를 만든다', () => {
+  it('creates the client node with zero-call servers even with no claude-code session', () => {
     const noClaude: EngineInput = { definitions: [], calls: [], loads: [], sessions: [] };
     const roots = buildTree(noClaude, new Set(), [m('lenstest', true)]);
     const claude = roots.find((r) => r.id === 'claude-code')!;
@@ -527,7 +527,7 @@ describe('서버 단위 토글 표시', () => {
   });
 });
 
-describe('낭비 개수 표시', () => {
+describe('waste count display', () => {
   const DAY = 86_400_000;
   const at = (d: number) => new Date(Date.parse('2026-06-01T00:00:00Z') + d * DAY).toISOString();
   const upfront = (n: number) => Array.from({ length: n }, (_, i) => ({
@@ -537,19 +537,19 @@ describe('낭비 개수 표시', () => {
     serverName: 'notion', toolName: tool, definitionTokens: tokens,
     scannedAt: at(0), firstScannedAt: at(0) });
 
-  it('서버 노드 description에 낭비 툴 개수가 붙는다', () => {
+  it('appends the wasteful tool count to the server node description', () => {
     const [client] = buildTree({
       definitions: [def('a', 800), def('b', 800)], calls: [], loads: [], sessions: upfront(12) });
     expect(client.children[0].description).toContain('2 wasteful tools');
   });
 
-  it('클라이언트 노드 description에 낭비 툴 합이 붙는다', () => {
+  it('appends the wasteful tool total to the client node description', () => {
     const [client] = buildTree({
       definitions: [def('a', 800), def('b', 800)], calls: [], loads: [], sessions: upfront(12) });
     expect(client.description).toContain('2 wasteful tools');
   });
 
-  it('낭비 0인 서버·클라이언트에는 낭비 문구가 없다', () => {
+  it('shows no waste wording on servers and clients with 0 waste', () => {
     const noWaste: EngineInput = {
       definitions: [], calls: [call('c1', 'github', 'search')], loads: [],
       sessions: [session('c1', 'claude-code')] };
@@ -559,7 +559,7 @@ describe('낭비 개수 표시', () => {
   });
 });
 
-describe('업프론트 클라이언트 세션당 정의 부담 표시', () => {
+describe('per-session definition charge on upfront clients', () => {
   const DAY = 86_400_000;
   const at = (d: number) => new Date(Date.parse('2026-06-01T00:00:00Z') + d * DAY).toISOString();
   const upfront = (n: number) => Array.from({ length: n }, (_, i) => ({
@@ -573,44 +573,44 @@ describe('업프론트 클라이언트 세션당 정의 부담 표시', () => {
     sessionId, serverName: 'tiny', toolName: tool, calledAt: at(0),
     durationMs: null, isError: false, responseTokens: 50, responseText: null });
 
-  it('업프론트 미호출 툴은 0이 아니라 세션당 정의 부담으로 표시한다', () => {
-    // 로드 이벤트가 없어 loadSessions=0 → 누적은 0 tokens이 되지만, 매 세션 로드되는 부담이 있다.
+  it('shows an uncalled upfront tool as a per-session definition charge, not 0', () => {
+    // With no load events loadSessions=0, so the accumulation would be 0 tokens, yet it is loaded every session.
     const [client] = buildTree({
       definitions: [def('a', 800)], calls: [], loads: [], sessions: upfront(5) });
     const tool = client.children[0].children[0];
     expect(tool.description).toContain('800 tokens/session');
   });
 
-  // "3 calls · calls 0 tokens"은 호출을 두 번 말하면서 0이라는 빈 값을 싣는 꼴이다.
-  it('응답 토큰이 0이면 호출 비용 조각을 통째로 뺀다', () => {
+  // "3 calls · calls 0 tokens" states the calls twice while carrying an empty 0.
+  it('drops the call cost piece entirely when response tokens are 0', () => {
     const [client] = buildTree({
       definitions: [def('a', 800)], calls: [], loads: [], sessions: upfront(5) });
     const tool = client.children[0].children[0];
     expect(tool.description).not.toContain('calls 0 tokens');
-    // 한쪽만 남으면 라벨도 필요 없다 — /session이 정의임을 이미 밝힌다
+    // With one side left the label is unnecessary too: /session already marks the definition
     expect(tool.description).not.toContain('definition ');
   });
 
-  it('호출 비용은 세션당이 아니라 누적 — 세션 수를 곱하지 않는다', () => {
-    // a를 2세션에서 3회 호출(응답 50×3=150 누적). 정의는 세션당 800.
+  it('keeps call cost accumulated rather than per session: it is not multiplied by sessions', () => {
+    // a is called 3 times across 2 sessions (responses 50x3=150 accumulated). The definition is 800 per session.
     const [client] = buildTree({
       definitions: [def('a', 800)],
       calls: [upcall('s0', 'a'), upcall('s0', 'a'), upcall('s1', 'a')],
       loads: [], sessions: upfront(5) });
     const tool = client.children[0].children[0];
-    expect(tool.description).toContain('calls 150 tokens');     // 50×3 누적
-    expect(tool.description).toContain('definition 800 tokens/session'); // 세션 수 미승산
-    expect(tool.description).not.toContain('4,000');       // 800×5 아님
+    expect(tool.description).toContain('calls 150 tokens');     // 50x3 accumulated
+    expect(tool.description).toContain('definition 800 tokens/session'); // not multiplied by sessions
+    expect(tool.description).not.toContain('4,000');       // not 800x5
   });
 
-  it('서버·클라이언트 롤업도 호출·정의 분리로 표기한다', () => {
+  it('separates calls from definitions on the server and client rollups too', () => {
     const [client] = buildTree({
       definitions: [def('a', 800), def('b', 200)], calls: [], loads: [], sessions: upfront(5) });
     expect(client.children[0].description).toContain('1,000 tokens/session'); // 800+200
     expect(client.description).toContain('1,000 tokens/session');
   });
 
-  it('정의 1토큰짜리 더미 툴도 0이 아니라 1 token/세션으로 보인다', () => {
+  it('shows even a 1-token dummy definition as 1 token/session rather than 0', () => {
     const [client] = buildTree({
       definitions: [def('a', 1), def('b', 1), def('c', 1)], calls: [], loads: [],
       sessions: upfront(5) });
@@ -618,8 +618,8 @@ describe('업프론트 클라이언트 세션당 정의 부담 표시', () => {
       expect(t.description).toContain('1 token/session');
   });
 
-  it('정의 미측정 툴은 0 tokens/세션이 아니라 "정의 미측정"만 표기한다', () => {
-    // 스캐너가 못 잡은 툴이 업프론트에서 호출됨 → 정의 토큰 null.
+  it('shows only "definition unmeasured" rather than 0 tokens/session for an unmeasured tool', () => {
+    // A tool the scanner missed is called under upfront, so its definition tokens are null.
     const [client] = buildTree({
       definitions: [], calls: [upcall('s0', 'a')], loads: [], sessions: upfront(5) });
     const tool = client.children[0].children[0];
@@ -629,7 +629,7 @@ describe('업프론트 클라이언트 세션당 정의 부담 표시', () => {
     expect(tool.description).not.toContain('definition 0 tokens');
   });
 
-  it('지연 로딩 클라이언트는 여전히 누적(/세션·호출 라벨 없음)으로 표시한다 — 회귀', () => {
+  it('still shows deferred-loading clients as a single accumulated value (no /session or call labels): regression', () => {
     const loadedOnly: EngineInput = {
       definitions: [{ serverName: 'notion', toolName: 'notion-update-page',
         definitionTokens: 3287, scannedAt: '2026-07-19T00:00:00Z',
@@ -642,15 +642,15 @@ describe('업프론트 클라이언트 세션당 정의 부담 표시', () => {
     const tool = buildTree(loadedOnly)[0].children[0].children[0];
     expect(tool.description).toContain('3,287 tokens');
     expect(tool.description).not.toContain('/session');
-    expect(tool.description).not.toContain('calls 0 tokens'); // 지연 로딩은 누적 단일값
+    expect(tool.description).not.toContain('calls 0 tokens'); // deferred loading stays a single accumulated value
   });
 });
 
-describe('지원하지 않는 서버 숨김 (excludeServers)', () => {
+describe('hiding unsupported servers (excludeServers)', () => {
   const m = (name: string, enabled: boolean): ManagedServer =>
     ({ name, enabled, origins: ['user'] });
 
-  it('excludeServers에 든 서버는 사용 이력이 있어도 트리에서 빠진다', () => {
+  it('drops a server in excludeServers from the tree even with usage history', () => {
     const input: EngineInput = {
       definitions: [],
       calls: [call('c1', 'github', 'search'), call('c1', 'figma', 'get_file')],
@@ -661,14 +661,14 @@ describe('지원하지 않는 서버 숨김 (excludeServers)', () => {
     expect(claude.children.map((s) => s.label)).toEqual(['github']);
   });
 
-  it('excludeServers에 든 서버는 0회 managed 노드로도 나타나지 않는다', () => {
+  it('never shows a server in excludeServers as a zero-call managed node either', () => {
     const input: EngineInput = { definitions: [], calls: [], loads: [], sessions: [] };
     const roots = buildTree(input, new Set(), [m('figma', true), m('github', true)], new Set(['figma']));
     const claude = roots.find((r) => r.id === 'claude-code')!;
     expect(claude.children.map((s) => s.label)).toEqual(['github']);
   });
 
-  it('excludeServers 생략 시 기존 동작 그대로', () => {
+  it('keeps the existing behaviour when excludeServers is omitted', () => {
     const input: EngineInput = {
       definitions: [], calls: [call('c1', 'figma', 'x')], loads: [],
       sessions: [session('c1', 'claude-code')] };
@@ -677,7 +677,7 @@ describe('지원하지 않는 서버 숨김 (excludeServers)', () => {
   });
 });
 
-describe('확신 등급 렌더링', () => {
+describe('confidence rendering', () => {
   const DAY = 86_400_000;
   const at = (d: number) => new Date(Date.parse('2026-06-01T00:00:00Z') + d * DAY).toISOString();
   const sess = (n: number) => Array.from({ length: n }, (_, i) => ({
@@ -693,21 +693,21 @@ describe('확신 등급 렌더링', () => {
     return client.children[0].children[0];
   };
 
-  it('확신 높은 remove는 확신 등급을 high로 내놓는다', () => {
+  it('reports high confidence for a high-confidence remove', () => {
     const node = toolNode(12);
     expect(node.confidence).toBe('high');
     expect(node.action).toBe('remove');
   });
 
-  // 확신이 낮으면 lensTreeProvider가 권고 아이콘 자체를 억제한다 — 강등을 글로 쓰지 않는다.
-  it('확신 낮은 remove는 확신 등급을 low로 내놓는다', () => {
+  // With low confidence lensTreeProvider suppresses the recommendation icon itself: the demotion is never written out.
+  it('reports low confidence for a low-confidence remove', () => {
     const node = toolNode(2);
     expect(node.confidence).toBe('low');
     expect(node.description).not.toContain('candidate');
   });
 
-  // splitByClient가 lastCallByTool을 버리면 이 툴은 "한 번도 안 쓴 툴"로 둔갑해 high가 난다.
-  it('창 밖 과거 호출 이력이 있으면 medium (high 아님) — lastCallByTool이 엔진까지 도달한다', () => {
+  // If splitByClient dropped lastCallByTool, this tool would look never used and come back high.
+  it('stays medium (not high) with past calls outside the window: lastCallByTool reaches the engine', () => {
     const [client] = buildTree({
       definitions: [unusedDef], calls: [], loads: [], sessions: sess(12),
       lastCallByTool: new Map([['github unused', '2026-03-14T09:00:00Z']]),

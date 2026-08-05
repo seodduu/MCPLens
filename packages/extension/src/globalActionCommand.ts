@@ -17,7 +17,7 @@ export interface DisableGloballyInput {
   apply: () => Promise<ActionMutation>;
   refresh?: () => void;
   createAction?: () => GlobalAction;
-  /** 확장 rollout gate는 의도적으로 필수이며, 값이 없으면 차단한다. */
+  /** The extension rollout gate is deliberately required; a missing value blocks. */
   rolloutAllowed?: boolean;
   analysisRulesVersion?: number;
 }
@@ -47,7 +47,7 @@ function identityIsSafe(store: LensStore, serverName: string, client?: GlobalAct
     && new Set(targetRows.map((row) => row.endpointHash)).size === 1;
 }
 
-/** mutation 직전에 저장소에서 모든 eligibility 입력을 다시 조립한다. */
+/** Reassembles every eligibility input from the store right before the mutation. */
 export function currentActionEligibility(
   store: LensStore,
   target: GlobalActionTarget,

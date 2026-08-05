@@ -20,7 +20,7 @@ export interface ActionRequest {
   settingsPath: string;
   identityConflict?: boolean;
   now?: Date;
-  /** action 원장은 Claude의 활성 복구 근거를 판별하는 데만 사용한다. */
+  /** The action ledger is used only to determine Claude's active restore basis. */
   actions?: readonly GlobalAction[];
 }
 
@@ -201,7 +201,7 @@ async function withPathLease<T>(settingsPath: string, task: () => Promise<T>): P
 }
 
 async function removeTemporary(filePath: string, fs: ActionFileSystem): Promise<void> {
-  try { await fs.remove?.(filePath); } catch { /* 정리 실패가 보호된 결과를 가리지 않는다. */ }
+  try { await fs.remove?.(filePath); } catch { /* A cleanup failure must not mask the protected result. */ }
 }
 
 function restoreConflict(action: GlobalAction): ActionMutation {

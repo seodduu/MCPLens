@@ -1,86 +1,89 @@
-# MCP Lens Claude Code 플러그인
+# MCP Lens plugin for Claude Code
 
-Claude Code의 공식 lifecycle hook으로 MCP 호출 메타데이터를 로컬 수집하고,
-`/lens-audit` 슬래시 커맨드로 MCP 툴 컨텍스트 낭비 감사를 실행하는 플러그인입니다.
+A plugin that collects MCP call metadata locally through the official Claude Code lifecycle hooks
+and runs an MCP tool context waste audit with the `/lens-audit` slash command.
 
-## 로컬 hook 수집
+## Local hook collection
 
-플러그인에 포함된 `scripts/hook-runner.mjs`와 `runtime/`만 사용합니다. Hook은
-stdin payload를 읽고 MCP 호출의 클라이언트·세션·서버·툴·시각 같은 최소 메타데이터만
-`~/.mcplens/inbox`에 원자적으로 기록합니다. `tool_input`, `tool_response`, 프롬프트와
-응답 본문은 저장하지 않으며 네트워크나 MCP Lens DB를 열지 않습니다. 정상 stdout은
-항상 `{}`뿐이고 차단 결정을 반환하지 않습니다.
+It uses only the bundled `scripts/hook-runner.mjs` and `runtime/`. The hook reads the stdin payload
+and records atomically into `~/.mcplens/inbox` the minimum metadata of an MCP call: client, session,
+server, tool and timestamp. It never stores `tool_input`, `tool_response`, prompts or response
+bodies, and it opens neither the network nor the MCP Lens DB. Normal stdout is always just `{}`,
+and it never returns a blocking decision.
 
-설치 또는 업데이트 뒤에는 Claude Code 플러그인을 reload하고 새 세션을 시작해야 hook
-정의가 적용됩니다. 수집을 끄려면 플러그인을 disable하거나 uninstall한 뒤 새 세션을
-시작하십시오. MCP Lens는 Claude의 원본 transcript/log를 수정하거나 이동하지 않습니다.
+After installing or updating, reload the Claude Code plugin and start a new session for the hook
+definitions to take effect. To stop collection, disable or uninstall the plugin and start a new
+session. MCP Lens never modifies or moves Claude's original transcripts or logs.
 
-## 동작
+## Behaviour
 
-`/lens-audit`은 아래 명령을 실행해 리포트를 컨텍스트에 올린다:
+`/lens-audit` runs the following command to bring the report into context:
 
 ```bash
 npx --no-install mcp-lens report --days 30 --format ai
 ```
 
-출력 계약: 첫 줄이 `# MCP Lens Audit`인 AI 소비용 마크다운 리포트 (Task 10 CLI가 제공).
+Output contract: a markdown report for AI consumption whose first line is `# MCP Lens Audit`
+(provided by the Task 10 CLI).
 
-### CLI 의존성과 `--no-install`
+### The CLI dependency and `--no-install`
 
-이 플러그인은 CLI를 번들하지 않는다. 훅 수집 런타임만 자급자족이고, `/lens-audit`은
-별도로 설치된 `mcp-lens` 실행 파일을 필요로 한다.
+This plugin does not bundle the CLI. Only the hook collection runtime is self-contained;
+`/lens-audit` needs a separately installed `mcp-lens` executable.
 
-`--no-install`은 보안상 필수다. 이 저장소의 CLI는 미발행 패키지 `@mcp-lens/cli`이고
-bin 이름만 `mcp-lens`인데, npm 레지스트리에는 이 프로젝트와 무관한 동명 패키지가 실존한다.
-`--no-install` 없이 `npx mcp-lens`를 돌리면 로컬에 bin이 없는 환경에서 그 서드파티 코드가
-자동으로 내려받아져 실행된다. `--no-install`은 로컬 확인만 하고 레지스트리 조회를 하지 않는다.
+`--no-install` is required for security. The CLI in this repository is the unpublished package
+`@mcp-lens/cli` whose bin is merely named `mcp-lens`, while an unrelated package of the same name
+really exists in the npm registry. Running `npx mcp-lens` without `--no-install` would download and
+execute that third-party code on any machine without a local bin. `--no-install` only checks
+locally and never queries the registry.
 
-CLI가 없으면 커맨드는 동작하지 않는다. 설치 방법은 다음과 같다.
+Without the CLI the command does not work. Install it like this:
 
 ```bash
-# 저장소를 클론한 경우 (저장소 루트에서)
+# if you cloned the repository (from the repository root)
 npm install && npm run build
 
-# 저장소 밖에서도 쓰려면 전역 bin 연결
+# to use it outside the repository, link the bin globally
 npm link -w @mcp-lens/cli
 ```
 
-CLI를 따로 두고 싶지 않다면 VS Code 확장(MCP Context Lens)이 같은 데이터를 사이드바에서
-보여주므로 그쪽을 쓰면 된다.
-리포트를 바탕으로 Claude가 다음을 수행한다:
+If you would rather not keep a separate CLI, the VS Code extension (MCP Context Lens) shows the same
+data in the sidebar.
 
-1. 제거 권장(remove) 툴 표 요약 + 예상 절약 토큰
-2. filter-server 권고 시 클라이언트 설정에서의 구체적 필터링 방법 제안
-3. 근거 라벨(실측/하한 추정/전량 가정) 표기로 숫자 신뢰 수준 명시
-4. 사용자 동의 시 설정 수정 지원 (수정 전 반드시 백업)
+From the report, Claude then:
 
-## 설치 (로컬)
+1. Summarizes the tools recommended for removal (remove) in a table with the expected token savings
+2. Proposes the concrete way to filter tools in the client config for any filter-server recommendation
+3. Includes the evidence label (measured / lower-bound estimate / assumed full load) so the trust level of each number is explicit
+4. Helps edit the config once the user agrees (always backing it up first)
+
+## Installation (local)
 
 ```bash
 claude plugin add /path/to/MCPLens-V2/packages/lens-audit-plugin
 ```
 
-또는 마켓플레이스 등록 없이 `--plugin-dir`로 로드해 테스트할 수 있다.
+You can also load it with `--plugin-dir` for testing, without registering a marketplace.
 
-## 구조
+## Layout
 
 ```
 packages/lens-audit-plugin/
-├── .claude-plugin/plugin.json   # 플러그인 매니페스트
-├── commands/lens-audit.md       # /lens-audit 커맨드 정의
-├── hooks/hooks.json             # lifecycle hook 등록
-├── scripts/hook-runner.mjs      # 번들 진입점
-├── runtime/                     # dependency-free 로컬 capture runtime
+├── .claude-plugin/plugin.json   # plugin manifest
+├── commands/lens-audit.md       # /lens-audit command definition
+├── hooks/hooks.json             # lifecycle hook registration
+├── scripts/hook-runner.mjs      # bundle entry point
+├── runtime/                     # dependency-free local capture runtime
 └── README.md
 ```
 
-## 권한
+## Permissions
 
-커맨드 프론트매터는 `allowed-tools: Bash(npx --no-install mcp-lens:*)`이다. 즉
-`npx --no-install mcp-lens` 하위 명령만 사전 허용하며, 레지스트리 자동 설치를 동반하는
-형태(`npx mcp-lens ...`)는 이 패턴에 걸리지 않는다.
+The command front matter is `allowed-tools: Bash(npx --no-install mcp-lens:*)`. Only
+`npx --no-install mcp-lens` subcommands are pre-approved, and forms that come with automatic
+registry installation (`npx mcp-lens ...`) do not match the pattern.
 
-## 검증 상태
+## Verification status
 
-실행 검증(`/lens-audit` → CLI 호출 → 요약 확인)은 CLI(Task 10) 머지 이후에만 가능하므로
-Wave 4 실기기 스모크에서 수행한다.
+End-to-end verification (`/lens-audit` calling the CLI and checking the summary) is only possible
+after the CLI (Task 10) is merged, so it happens in the Wave 4 real-device smoke run.

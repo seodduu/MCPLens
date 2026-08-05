@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS token_usage (
   cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
   cache_creation_tokens INTEGER NOT NULL DEFAULT 0
 );
--- 증분 파싱 커서: 파일별로 어디까지 읽었나 (바이트 오프셋)
+-- Incremental parse cursor: how far each file has been read (byte offset)
 CREATE TABLE IF NOT EXISTS file_cursors (
   file_path TEXT PRIMARY KEY,
   byte_offset INTEGER NOT NULL,

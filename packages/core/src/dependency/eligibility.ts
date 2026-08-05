@@ -1,9 +1,9 @@
 import type { ClientId, DependencyStatus, IdentityConflictState } from '../types.js';
 
 /**
- * 적격성은 "적용이 안전한가"만 본다.
- * 사용량 판단(권고·확신·호출 수·수집 건강도·최근 복원)은 게이트에서 뺐다.
- * Independent 판정과 확장이 띄우는 확인 대화상자가 그 판단을 대신한다.
+ * Eligibility asks only "is applying this safe".
+ * Usage judgements (recommendation, confidence, call count, collection health, recent restores) were
+ * removed from the gate. The independence verdict and the extension's confirmation dialog cover those.
  */
 export interface EligibilityInput {
   analysisStatus: DependencyStatus;

@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import type { SetupGroup, SetupIcon, SetupRow } from './setupTree.js';
 
-/** 트리 렌더링 순서 고정 — buildSetupRows 출력과 무관하게 항상 이 순서로 그룹을 보여준다. */
+/** Fixed tree rendering order: groups always appear in this order regardless of buildSetupRows output. */
 const GROUPS: SetupGroup[] =
   ['Collection', 'MCP authentication', 'Dependency analysis', 'Global actions'];
 
@@ -38,10 +38,10 @@ export class SetupStatusProvider implements vscode.TreeDataProvider<SetupNode> {
     item.iconPath = new vscode.ThemeIcon(
       ICON[row.icon], row.colorId ? new vscode.ThemeColor(row.colorId) : undefined);
     if (row.command) {
-      // reanalyzeServer는 { serverName } 모양의 LensNode를 기대한다(analysisTree.ts 관례).
-      // authenticateServer도 같은 모양을 받아 서버 이름을 얻는다. scanNow/openRolloutSetting은
-      // 인자를 안 받으므로 여분의 인자를 넘겨도 무해하다.
-      // 수집 행처럼 다른 모양을 원하는 행은 commandArgs로 직접 지정한다.
+      // reanalyzeServer expects a LensNode shaped like { serverName } (the analysisTree.ts convention).
+      // authenticateServer takes the same shape to get the server name. scanNow/openRolloutSetting take
+      // no arguments, so an extra argument is harmless.
+      // Rows that want a different shape, such as collection rows, set commandArgs explicitly.
       item.command = { command: row.command, title: row.label,
         arguments: row.commandArgs ?? [{ serverName: row.label }] };
     }

@@ -1,11 +1,11 @@
-/** 토큰 수를 상태바용 k-스케일 문자열로. 1000 미만은 원시값, 이상은 x.xk (floor). */
+/** Token count as a k-scaled status bar string. Under 1000 stays raw; above it becomes x.xk (floored). */
 function formatK(tokens: number): string {
   return tokens >= 1000
     ? `${(Math.floor(tokens / 100) / 10).toFixed(1)}k`
     : `${tokens}`;
 }
 
-/** "1 tool"/"3 tools" — wasteful 툴 개수의 단복수 표기. */
+/** "1 tool"/"3 tools": singular/plural for the wasteful tool count. */
 function toolWord(wasteToolCount: number): string {
   return wasteToolCount === 1 ? 'tool' : 'tools';
 }

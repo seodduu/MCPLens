@@ -2,17 +2,17 @@ import { describe, it, expect } from 'vitest';
 import { actionEligibility, type EligibilityInput } from '../../src/dependency/eligibility.js';
 
 describe('actionEligibility', () => {
-  it('Independent이고 적용이 안전한 대상은 eligible이다', () => {
+  it('marks an Independent target that is safe to apply as eligible', () => {
     expect(actionEligibility(base())).toEqual({ eligible: true, reasons: [] });
   });
 
-  // 사용량 판단(권고·확신·호출 수·수집 건강도)은 더 이상 차단하지 않는다.
-  // Independent 판정과 사람의 확인 대화상자가 그 자리를 대신한다.
-  it('Independent이면 권고·호출 이력·수집 건강도와 무관하게 eligible이다', () => {
+  // Usage judgements (recommendation, confidence, call count, collection health) no longer block.
+  // The independence verdict and the human confirmation dialog take their place.
+  it('marks anything Independent eligible regardless of recommendation, call history or collection health', () => {
     expect(actionEligibility(base()).eligible).toBe(true);
   });
 
-  it('적용 자체가 불가능하거나 대상이 틀어진 경우에만 false다', () => {
+  it('is false only when applying is impossible or the target is wrong', () => {
     expect(actionEligibility(base({ analysisStatus: 'Review required' }))).toEqual({ eligible: false, reasons: ['analysis-not-independent'] });
     expect(actionEligibility(base({ analysisStatus: 'Dependent' }))).toEqual({ eligible: false, reasons: ['analysis-not-independent'] });
     expect(actionEligibility(base({ identityConflictState: 'conflict' }))).toEqual({ eligible: false, reasons: ['identity-not-clear'] });

@@ -22,7 +22,7 @@ export function detectClients(
         try {
           latest = Math.max(latest, statSync(f).mtimeMs);
         } catch {
-          // 파일이 사라졌거나 읽을 수 없는 경우 — 스킵
+          // The file vanished or cannot be read: skip
         }
       }
     return {
@@ -40,7 +40,7 @@ function walkJsonl(dir: string, depth = 0): string[] {
   try {
     entries = readdirSync(dir, { withFileTypes: true });
   } catch {
-    // 읽을 수 없는 디렉터리 — 스킵하고 나머지 탐지는 계속
+    // Unreadable directory: skip it and continue detecting the rest
     return out;
   }
   for (const e of entries) {

@@ -5,12 +5,11 @@ import type { LensStore, McpServerSpec, scanServer } from '@mcp-lens/core';
 type ScanResult = Awaited<ReturnType<typeof scanServer>>;
 
 /**
- * 리뷰 지적 사항: runAuth의 재스캔이 실패하면 recordServerScanStatus로 기록한 값이
- * store.save() 없이 close()되어 디스크에 남지 않는 버그가 있었다. 이 테스트는
- * 성공/실패 두 경로 모두에서 save가 정확히 1번 호출되고, close보다 먼저 호출됨을 고정한다.
- * 이 테스트가 고정하지 않는 것: dbPath() 실경로 사용, main() 커맨드 라우팅,
- * console 출력 포맷 — 이들은 runAuth 자체를 end-to-end로 구동해야 검증되며
- * 이 태스크 범위에서는 다루지 않는다.
+ * From code review: when runAuth's rescan failed, whatever recordServerScanStatus wrote was
+ * close()d without store.save() and never reached disk. This test pins that save is called
+ * exactly once, before close, on both the success and failure paths.
+ * What it does not pin: using the real dbPath(), main() command routing, console output format.
+ * Those need runAuth driven end-to-end and are out of scope here.
  */
 function fakeStore() {
   const calls: string[] = [];
@@ -26,7 +25,7 @@ function fakeStore() {
 const spec: McpServerSpec = { name: 'srv', type: 'http', url: 'https://example.com' } as McpServerSpec;
 
 describe('runAuthRescan', () => {
-  it('스캔이 성공하면 save가 close 이전에 1번 호출된다', async () => {
+  it('calls save once before close when the scan succeeds', async () => {
     const { store, calls, mocks } = fakeStore();
     const scan = vi.fn(async (): Promise<ScanResult> => ({
       definitions: [], bodies: [],
@@ -40,7 +39,7 @@ describe('runAuthRescan', () => {
     expect(mocks.recordServerScanStatus).toHaveBeenCalledWith('srv', 'ok', '2026-08-05T00:00:00.000Z');
   });
 
-  it('스캔이 실패해도 save가 close 이전에 1번 호출된다 (회귀: 실패 시 save 누락 버그)', async () => {
+  it('calls save once before close even when the scan fails (regression: missing save on failure)', async () => {
     const { store, calls, mocks } = fakeStore();
     const scan = vi.fn(async (): Promise<ScanResult> => {
       throw new Error('auth-required: 401');

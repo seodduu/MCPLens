@@ -9,7 +9,7 @@ export type GlobalActionClient = 'claude-code' | 'codex';
 export type GlobalActionStatus = 'active' | 'restore-pending' | 'restored' | 'conflict' | 'failed';
 export type RegretEvidenceKind = 'direct' | 'indirect';
 
-/** 설계문서 4-3의 회계 모드 4종 */
+/** The four accounting modes from design 4-3. */
 export type AccountingMode =
   | 'UPFRONT'
   | 'DEFERRED_MEASURABLE'
@@ -17,7 +17,7 @@ export type AccountingMode =
   | 'DEFERRED_OPAQUE';
 
 export interface SessionMeta {
-  /** 파일 절대경로의 sha256 앞 16자리 — 재파싱해도 동일해야 함 */
+  /** First 16 chars of the sha256 of the absolute file path; must be stable across re-parses. */
   sessionId: string;
   client: ClientId;
   filePath: string | null;
@@ -28,23 +28,23 @@ export interface SessionMeta {
 
 export interface ToolCallEvent {
   sessionId: string;
-  serverName: string; // MCP 서버 이름 (예: 'github')
-  toolName: string;   // 서버 접두어 제거된 툴 이름
+  serverName: string; // MCP server name (e.g. 'github')
+  toolName: string;   // tool name with the server prefix stripped
   calledAt: string | null;
   durationMs: number | null;
   isError: boolean;
-  /** 클라이언트가 기록한 실측 응답 토큰. 없으면 responseText를 tiktoken */
+  /** Response tokens the client measured. When absent, responseText is tokenized with tiktoken. */
   responseTokens: number | null;
   responseText: string | null;
   externalCallId?: string | null;
 }
 
-/** 지연 로딩 세션에서 "이 정의가 컨텍스트에 로드됐다"는 증거 */
+/** Evidence that "this definition was loaded into context" in a deferred-loading session. */
 export interface ToolLoadEvent {
   sessionId: string;
-  serverName: string | null; // Claude는 이름만 기록 → 스캐너와 조인 전엔 null 가능
+  serverName: string | null; // Claude records only the name, so this can be null before the scanner join
   toolName: string;
-  /** Codex처럼 로드 원문이 기록되면 직접 토크나이즈한 값, 아니면 null(조인으로 산출) */
+  /** Tokenized directly when the raw load text is recorded (as Codex does), otherwise null (derived by join). */
   loadedTokens: number | null;
 }
 
@@ -57,7 +57,7 @@ export interface TokenUsageEvent {
   cacheCreationTokens: number;
 }
 
-/** 어댑터 1회 파싱의 산출물 — 워처·백필이 이것을 저장소에 적재 */
+/** Output of one adapter parse; the watcher and backfill ingest this into the store. */
 export interface AdapterResult {
   session: SessionMeta;
   toolCalls: ToolCallEvent[];
@@ -160,48 +160,48 @@ export interface InferenceConsent {
 
 export interface LogAdapter {
   readonly client: ClientId;
-  /** 감시 대상 루트 디렉토리들 (절대경로, 존재하지 않을 수 있음) */
+  /** Root directories to watch (absolute paths, may not exist). */
   sessionRoots(): string[];
-  /** 이 파일이 내 세션 파일인가 */
+  /** Whether this file is one of my session files. */
   matches(filePath: string): boolean;
-  /** content 전체를 파싱. 증분 파싱은 워처가 content를 잘라서 넘기는 방식으로 처리 */
+  /** Parses the whole content. Incremental parsing is handled by the watcher slicing content before it calls this. */
   parseFile(filePath: string, content: string): AdapterResult;
 }
 
-/** 정의 스캐너 산출물 (비용 축) */
+/** Definition scanner output (the cost axis). */
 export interface ToolDefinition {
   serverName: string;
   toolName: string;
   definitionTokens: number;
   scannedAt: string;
-  /** 이 정의를 처음 관찰한 시각 (ISO). 관찰 창의 시작점 후보 — upsert로 덮이지 않는다 */
+  /** When this definition was first observed (ISO). A candidate window start; never overwritten by upsert. */
   firstScannedAt: string;
 }
 
-/** 신뢰도 축 (설계문서 7장 기능 1 개정) — 수집 비용 0: 기존 is_error/response_tokens 재활용 */
+/** Reliability axis (design ch. 7, feature 1 revision). Zero collection cost: reuses the existing is_error/response_tokens. */
 export interface ReliabilityStats {
   errorCount: number;
-  /** callCount 0이면 null (미호출 툴은 신뢰도 판정 불가) */
+  /** null when callCount is 0 (an uncalled tool cannot be graded for reliability). */
   errorRate: number | null;
-  /** 실패 호출의 응답 토큰 합 — "실패 체인 낭비" 크기 */
+  /** Sum of response tokens for failed calls: the size of the "failure chain waste". */
   failedResponseTokens: number;
 }
 
-/** 로드 패턴 (v1 계승) — DEFERRED 세션의 tool_loads 기반 */
+/** Load pattern (inherited from v1), based on tool_loads in DEFERRED sessions. */
 export type LoadPattern =
-  | 'always-load-candidate'   // 세션 대부분에서 로드됨 → alwaysLoad 후보
-  | 'search-pollution'        // 로드되지만 호출 0회 → 검색 공간 오염 후보
-  | null;                     // 로드 기록 없음 or 판정 불가
+  | 'always-load-candidate'   // loaded in most sessions, so a candidate for alwaysLoad
+  | 'search-pollution'        // loaded but never called, so a search-space pollution candidate
+  | null;                     // no load records, or undecidable
 
-/** 분석 엔진 산출물 — 매트릭스 1행 = 툴 1개 */
+/** Analysis engine output: one matrix row per tool. */
 export interface MatrixRow {
   serverName: string;
   toolName: string;
-  definitionTokens: number | null; // 스캐너 미커버 시 null
+  definitionTokens: number | null; // null when the scanner does not cover it
   callCount: number;
   responseTokens: number;
-  loadedSessionCount: number; // DEFERRED에서 정의가 로드된 세션 수
-  sessionCount: number;       // 이 서버가 연결돼 있던 세션 수(근사: 전체 세션 수)
+  loadedSessionCount: number; // sessions where the definition was loaded, under DEFERRED
+  sessionCount: number;       // sessions where this server was connected (approximated by the total session count)
   recommendation: Recommendation;
   reliability: ReliabilityStats;
   loadPattern: LoadPattern;
@@ -209,50 +209,52 @@ export interface MatrixRow {
 
 export type RecommendationConfidence = 'high' | 'medium' | 'low';
 
-/** 권고의 관찰 근거 — 모든 action에 균일하게 채운다 (keep에서도 lastCalledAt은 유용) */
+/** Observation evidence for a recommendation, filled uniformly for every action (lastCalledAt is useful even for keep). */
 export interface RecommendationEvidence {
-  /** 이 툴을 관찰한 것으로 인정되는 세션 수 (startedAt 미상 세션 포함 — 과소평가 방지) */
+  /** Sessions credited as having observed this tool (including sessions with an unknown startedAt, to avoid undercounting). */
   observedSessions: number;
   /**
-   * observedSessions 중 startedAt이 유효해 실제로 창 안임이 확인된 세션 수.
-   * startedAt이 null인 세션은 시간 창 제약을 받지 않고 전 기간이 딸려 오므로,
-   * high 확신은 이 값만 근거로 삼는다 (observedSessions는 그대로 두고 등급만 정직하게).
+   * How many of observedSessions have a valid startedAt confirmed to fall inside the window.
+   * Sessions with a null startedAt come along for the whole history, unconstrained by the time
+   * window, so high confidence rests on this value alone (observedSessions is left as is and
+   * only the grade stays honest).
    */
   datedObservedSessions: number;
-  /** 관찰 창 길이 (일). 산정 불가 시 null */
+  /** Observation window length in days. null when it cannot be computed. */
   observedDays: number | null;
-  /** 마지막 호출 시각 (ISO). 호출 이력 전무면 null */
+  /** Last call timestamp (ISO). null when there is no call history at all. */
   lastCalledAt: string | null;
-  /** 세션당 부담 토큰 (= definitionTokens, 미확보 시 null) */
+  /** Tokens charged per session (= definitionTokens, null when unavailable). */
   costPerSession: number | null;
-  /** 관찰 기간 누적 부담 (= costPerSession × observedSessions) */
+  /** Accumulated cost over the observation period (= costPerSession x observedSessions). */
   totalObservedCost: number | null;
 }
 
 /**
- * reason 산문의 구성 요소. 리포트 렌더러가 계층별로 재배치·중복 제거할 수 있게 분해해 둔다.
- * 서버 공통 근거를 툴마다 복제하지 않으려면(리포트 가독성 설계 §1 P2) 산문 하나로는 부족하다.
- * reason은 이 조각들의 결합이며 항상 동치다.
+ * The components of the reason prose, decomposed so the report renderer can rearrange them by
+ * layer and drop duplicates. Avoiding a copy of the shared server basis on every tool (report
+ * readability design §1 P2) is impossible with a single prose string.
+ * reason is the join of these pieces and is always equivalent to them.
  */
 export interface RecommendationReason {
-  /** 이 툴만의 근거. 예: "정의 900토큰, 호출 0회" */
+  /** Basis specific to this tool. e.g. "definition 900 tokens, 0 calls" */
   basis: string;
-  /** 서버 단위 공통 근거. filter-server에서만 채워진다. 예: "서버 notion의 20툴 중 2개만 사용. 툴 필터링 권장." */
+  /** Shared server-level basis, filled only for filter-server. e.g. "Only 2 of 20 tools used on server notion. Tool filtering recommended." */
   serverBasis: string | null;
-  /** 조치 효과. 예: "제거 시 매 세션 약 900토큰 절약" | "절약은 작지만 검색 공간 정리 효과" */
+  /** Effect of the action. e.g. "about 900 tokens saved per session when removed" | "small savings, but cleans up the search space" */
   effect: string | null;
-  /** 확신 꼬리말의 알맹이 (구분자 없음). 예: "관찰 부족(3세션/0일), 10세션 누적 시 확정" */
+  /** Body of the confidence caveat (no separator). e.g. "not enough observation (3 sessions/0d), confirmed at 10 sessions" */
   caveat: string | null;
 }
 
 export interface Recommendation {
   action: 'remove' | 'filter-server' | 'keep' | 'unknown' | 'inspect';
-  /** action과 직교하는 축 — action="무엇을 하라", confidence="얼마나 믿을 수 있나" */
+  /** An axis orthogonal to action: action is "what to do", confidence is "how much to trust it". */
   confidence: RecommendationConfidence;
-  /** 모드 인지 표기: 업프론트면 "매 세션 N토큰 절약", 지연이면 "검색 공간 정리" */
+  /** Mode-aware label: "N tokens saved per session" under upfront, "cleans up the search space" under deferred. */
   reason: string;
-  /** reason의 구조화 분해 — 리포트 렌더러 전용. reason과 항상 동치 */
+  /** Structured decomposition of reason, for the report renderer only. Always equivalent to reason. */
   reasonParts: RecommendationReason;
-  evidenceLabel: '실측' | '하한 추정' | '전량 가정' | '측정 불가';
+  evidenceLabel: 'measured' | 'lower-bound estimate' | 'assumed full load' | 'not measurable';
   evidence: RecommendationEvidence;
 }

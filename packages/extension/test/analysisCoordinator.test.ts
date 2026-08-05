@@ -41,8 +41,8 @@ describe('AnalysisCoordinator', () => {
     expect(requestConsent).toHaveBeenCalledWith({ provider: 'claude', model: 'haiku' });
   });
 
-  // 스캔 직후 자동으로 도는 경로. 사람이 답할 자리가 없으므로 동의창을 띄우지 않는다.
-  // 이미 받아 둔 동의가 있으면 묻지 않고 그대로 돈다.
+  // The path that runs automatically right after a scan. There is nowhere for a human to answer, so no consent dialog.
+  // With consent already on file it runs without asking.
   it('runs without asking again when consent is already on file', async () => {
     const requestConsent = vi.fn();
     const run = vi.fn(async () => ({ ok: true as const, value: { results: [] } }));
@@ -62,13 +62,13 @@ describe('AnalysisCoordinator', () => {
     expect(run).toHaveBeenCalled();
   });
 
-  // 첫 실행은 사용자 몫이다. 여기서 확장이 대신 고르면 워크스루의 제공자 선택이
-  // 무의미해지고, 승낙한 적 없는 계정에서 토큰이 나간다.
+  // The first run belongs to the user. Choosing for them here would make the walkthrough's provider
+  // selection meaningless and spend tokens from an account that never approved it.
   it('stays put on the automatic path when the user has never consented', async () => {
     const requestConsent = vi.fn();
     const run = vi.fn();
     const coordinator = new AnalysisCoordinator({
-      store: () => store(),                      // 저장된 동의 없음
+      store: () => store(),                      // no stored consent
       serverNames: () => ['docs'],
       resolve: () => ({ kind: 'resolved', provider: 'claude', model: 'haiku' }),
       run, requestConsent,
@@ -76,10 +76,10 @@ describe('AnalysisCoordinator', () => {
 
     await coordinator.analyze([], { auto: true });
     expect(run).not.toHaveBeenCalled();
-    expect(requestConsent).not.toHaveBeenCalled();   // 자동 경로는 묻지도 않는다
+    expect(requestConsent).not.toHaveBeenCalled();   // the automatic path does not even ask
   });
 
-  // 철회가 다음 스캔에 조용히 뒤집히면 그건 철회가 아니다.
+  // A withdrawal silently reversed by the next scan is not a withdrawal.
   it('respects an explicit withdrawal on the automatic path', async () => {
     const run = vi.fn();
     const coordinator = new AnalysisCoordinator({
@@ -93,9 +93,9 @@ describe('AnalysisCoordinator', () => {
     expect(run).not.toHaveBeenCalled();
   });
 
-  // 실측 회귀: 자동 경로가 임의의 우선순위로 제공자를 고르면, 온보딩에서 Codex를 고른
-  // 사용자의 선택이 무시된다. 게다가 그 선택은 동의 기록과 어긋나므로 분석이 영영
-  // 조용히 건너뛰어진다. 자동 경로는 사용자가 동의한 제공자를 그대로 써야 한다.
+  // Measured regression: when the automatic path picks a provider by some arbitrary priority, the
+  // choice of a user who picked Codex during onboarding is ignored. That choice also clashes with the
+  // consent record, so the analysis is silently skipped forever. The automatic path must use the provider the user consented to.
   it('uses the provider the user consented to when both are available', async () => {
     const run = vi.fn(async () => ({ ok: true as const, value: { results: [] } }));
     const testStore = {

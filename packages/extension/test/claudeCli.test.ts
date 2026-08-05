@@ -24,7 +24,7 @@ describe('runClaude', () => {
 });
 
 describe('findBinary', () => {
-  it('존재하지 않는 바이너리는 null', () => {
+  it('returns null for a binary that does not exist', () => {
     expect(findBinary('definitely-not-a-real-bin-xyz')).toBeNull();
   });
 
@@ -64,11 +64,11 @@ describe('nvmCandidates', () => {
     dir = undefined;
   });
 
-  it('nvm 루트가 없으면(리더블하지 않으면) 빈 배열 — throw하지 않는다', () => {
+  it('returns an empty array (never throws) when the nvm root is missing or unreadable', () => {
     expect(nvmCandidates('codex', '/no/such/nvm-root')).toEqual([]);
   });
 
-  it('~/.nvm/versions/node/<버전>/bin/<name> 형태의 후보를 만든다 (current 심볼릭 링크 아님)', () => {
+  it('builds candidates shaped ~/.nvm/versions/node/<version>/bin/<name> (not the current symlink)', () => {
     dir = mkdtempSync(join(tmpdir(), 'mcplens-nvm-'));
     mkdirSync(join(dir, 'versions', 'node', 'v24.14.1', 'bin'), { recursive: true });
     mkdirSync(join(dir, 'versions', 'node', 'v20.11.0', 'bin'), { recursive: true });
@@ -78,7 +78,7 @@ describe('nvmCandidates', () => {
     expect(candidates).toContain(join(dir, 'versions', 'node', 'v20.11.0', 'bin', 'codex'));
   });
 
-  it('findBinary가 HOME을 임시 디렉터리로 바꿔도 nvm 후보 경로에서 실제로 바이너리를 찾는다', () => {
+  it('really finds the binary on an nvm candidate path even when findBinary points HOME at a temp directory', () => {
     // findBinary itself hardcodes join(homedir(), '.nvm'), so exercise the
     // real integration path via a redirected $HOME rather than the real one.
     const originalHome = process.env.HOME;

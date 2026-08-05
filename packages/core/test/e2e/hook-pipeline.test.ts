@@ -253,13 +253,13 @@ describe('hook-first ingestion pipeline (E2E)', () => {
     store.close();
   });
 
-  it('startDraining이 실 chokidar로 pending 파일을 감지해 DB에 반영한다', async () => {
+  it('detects a pending file with the real chokidar in startDraining and reflects it in the DB', async () => {
     const root = temporaryRoot();
     const store = await LensStore.open(':memory:');
     const coordinator = new IngestionCoordinator({ store, inbox: { root } });
     try {
-      // startDraining()은 chokidar 초기 스캔(ready) 완료 후에야 resolve되므로,
-      // 반환 시점에 워처는 이미 감시 상태다. 별도 정착 대기 불필요.
+      // startDraining() resolves only after chokidar's initial scan (ready), so the watcher is
+      // already watching when it returns. No separate settling wait is needed.
       await coordinator.startDraining();
 
       const env: HookEnvelope = {
@@ -269,9 +269,9 @@ describe('hook-first ingestion pipeline (E2E)', () => {
         transcriptPath: null, serverName: 'github', toolName: 'get_issue',
         observedAt: NOW, durationMs: 7, isError: false, inputFingerprint: null,
       };
-      enqueueEnvelope(env, { root }); // pending에 실제 파일 write → chokidar 'add'
+      enqueueEnvelope(env, { root }); // writes a real file into pending, triggering a chokidar 'add'
 
-      // 실 워처 발화까지 폴링(최대 10초; awaitWriteFinish stabilityThreshold 500ms + fsevents 지연 여유).
+      // Poll until the real watcher fires (up to 10s: awaitWriteFinish stabilityThreshold 500ms plus fsevents slack).
       const deadline = Date.now() + 10_000;
       let rows = 0;
       while (Date.now() < deadline) {
@@ -284,7 +284,7 @@ describe('hook-first ingestion pipeline (E2E)', () => {
       await coordinator.stopDraining();
       store.close();
     }
-  }, 15_000); // 폴링 데드라인(10s) < vitest 테스트 타임아웃(15s) 보장.
+  }, 15_000); // guarantees the polling deadline (10s) < the vitest test timeout (15s).
 });
 
 // --- Rollout feature flags (test-scoped model) --------------------------------

@@ -11,7 +11,7 @@ async function seed() {
     transcriptPath: null, serverName: 'github', durationMs: null, isError: null,
     responseTokens: null, loadedTokens: null, inputFingerprint: null,
   };
-  // claude-code: hook + log 일치 → healthy
+  // claude-code: hook and log match, so healthy
   store.upsertObservation({
     ...base, deliveryId: 'c-h', correlationKey: 'k1',
     source: 'hook', client: 'claude-code', phase: 'tool-after',
@@ -24,7 +24,7 @@ async function seed() {
     externalSessionId: 's-c', toolName: 'x', observedAt: '2026-07-22T00:00:00.000Z',
     receivedAt: '2026-07-22T00:00:00.000Z',
   } satisfies ToolObservation);
-  // codex: log만 → log-only
+  // codex: log only, so log-only
   store.upsertObservation({
     ...base, deliveryId: 'x-l', correlationKey: 'k2',
     source: 'log', client: 'codex', phase: 'tool-after',
@@ -35,11 +35,11 @@ async function seed() {
 }
 
 describe('collectionHealthByClient', () => {
-  it('클라이언트별로 건강도를 분리 파생한다', async () => {
+  it('derives health separately per client', async () => {
     const store = await seed();
     const byClient = store.collectionHealthByClient('2026-07-22T01:00:00.000Z');
     expect(byClient.get('claude-code')?.health).toBe('healthy');
     expect(byClient.get('codex')?.health).toBe('log-only');
-    expect(byClient.has('gemini-cli')).toBe(false); // 관측 없음
+    expect(byClient.has('gemini-cli')).toBe(false); // no observations
   });
 });

@@ -267,7 +267,7 @@ describe('deriveCollectionHealth', () => {
 
     expect(snapshot.health).toBe('log-only');
     expect(snapshot.toolHookCoverageObserved).toBe(false);
-    // 진단 값으로서의 miss 계수는 그대로 보존한다
+    // The miss count is preserved as a diagnostic value
     expect(snapshot.consecutiveMisses).toBe(3);
   });
 
@@ -283,8 +283,8 @@ describe('deriveCollectionHealth', () => {
       ],
     });
 
-    // 라이프사이클 hook은 툴 상관 커버리지의 근거가 아니다 —
-    // healthy로 표기하면 hook+로그 양쪽 정상이라는 거짓 정보가 된다.
+    // Lifecycle hooks are not evidence of tool correlation coverage:
+    // reporting healthy would be the false claim that both hooks and logs are fine.
     expect(snapshot.health).toBe('log-only');
     expect(snapshot.toolHookCoverageObserved).toBe(false);
     expect(snapshot.hookObserved).toBe(true);
@@ -302,7 +302,7 @@ describe('deriveCollectionHealth', () => {
       ],
     });
 
-    // 진짜 회귀(돌던 수집기가 멈춤)는 여전히 잡아야 한다
+    // A real regression (a running collector stopping) must still be caught
     expect(snapshot.health).toBe('degraded');
     expect(snapshot.toolHookCoverageObserved).toBe(true);
   });
@@ -338,11 +338,11 @@ describe('deriveCollectionHealth', () => {
     const snapshot = deriveCollectionHealth({
       now: new Date(NOW).toISOString(),
       observations: [
-        // 훅을 켜기 전에 쌓인 과거 이력 — 짝이 없는 것이 당연하다
+        // Past history from before hooks were enabled: having no counterpart is expected
         event('log', 'tool-after', 'legacy-1', -90_000),
         event('log', 'tool-after', 'legacy-2', -80_000),
         event('log', 'tool-after', 'legacy-3', -70_000),
-        // 그 뒤에 훅이 처음 붙었다
+        // The hook attached for the first time afterwards
         event('hook', 'tool-before', 'after-install', -20_000),
         event('log', 'tool-after', 'after-install', -19_999),
       ],
@@ -350,8 +350,8 @@ describe('deriveCollectionHealth', () => {
 
     expect(snapshot.health).not.toBe('degraded');
     expect(snapshot.toolHookCoverageObserved).toBe(true);
-    // 진단 값으로서의 miss 계수는 보존한다
-    expect(snapshot.consecutiveMisses).toBe(0);   // 마지막이 매치라 연속 miss는 끊긴다
+    // The miss count is preserved as a diagnostic value
+    expect(snapshot.consecutiveMisses).toBe(0);   // the last one is a match, so the miss streak is broken
   });
 
   it('degrades only on misses at or after the coverage instant', () => {
@@ -379,7 +379,7 @@ describe('deriveCollectionHealth', () => {
   });
 
   it('counts a miss at the exact coverage instant toward degrading', () => {
-    // 동시각 배치는 한 논리 단위다 — 커버리지와 같은 순간의 miss는 승격 대상이다.
+    // A batch at the same instant is one logical unit: a miss at the same moment as coverage counts toward promotion.
     const snapshot = deriveCollectionHealth({
       now: new Date(NOW).toISOString(),
       observations: [

@@ -10,7 +10,7 @@ const definition = (serverName: string, toolName: string): ToolDefinition => ({
   serverName, toolName, definitionTokens: 100, scannedAt: NOW, firstScannedAt: NOW,
 });
 
-/** codex 세션 하나에 주어진 load만 담은 수집 결과. */
+/** A collection result holding only the given load, in one codex session. */
 function codexSession(
   loads: readonly { serverName: string | null; toolName: string; loadedTokens: number | null }[],
 ): AdapterResult {
@@ -39,7 +39,7 @@ function claudeSession(): AdapterResult {
   };
 }
 
-/** codex에 node_repl 서버가 설정돼 있다고 등록한다. 정의 스캔과는 별개다. */
+/** Registers node_repl as a server configured for codex. This is separate from a definition scan. */
 function registerCodexServers(store: LensStore, servers: readonly string[]): void {
   store.upsertClientServers(
     new Map(servers.map((name) => [name, new Set<ClientId>(['codex'])])),
@@ -49,8 +49,8 @@ function registerCodexServers(store: LensStore, servers: readonly string[]): voi
 
 const loadsOf = (store: LensStore): ToolLoadEvent[] => store.loadsSince(SINCE);
 
-describe('codex load 귀속', () => {
-  it('스캔이 먼저면 수집 시점에 귀속된다', async () => {
+describe('codex load attribution', () => {
+  it('attributes at collection time when the scan came first', async () => {
     const store = await LensStore.open(':memory:');
     store.upsertDefinitions([definition('node_repl', 'js_reset')]);
     registerCodexServers(store, ['node_repl']);
@@ -65,7 +65,7 @@ describe('codex load 귀속', () => {
     }]);
   });
 
-  it('관측이 먼저면 일단 null로 남는다', async () => {
+  it('leaves it null for now when the observation came first', async () => {
     const store = await LensStore.open(':memory:');
     registerCodexServers(store, ['node_repl']);
 
@@ -79,14 +79,14 @@ describe('codex load 귀속', () => {
     }]);
   });
 
-  it('나중에 스캔이 들어오면 소급 회복된다', async () => {
+  it('recovers retroactively when the scan arrives later', async () => {
     const store = await LensStore.open(':memory:');
     registerCodexServers(store, ['node_repl']);
     store.ingest(codexSession([
       { serverName: null, toolName: 'mcp__node_repl__js_reset', loadedTokens: 37 },
     ]));
 
-    // 로그를 다시 읽지 않고 정의 스캔만 들어온다.
+    // Only the definition scan arrives; the log is never re-read.
     store.upsertDefinitions([definition('node_repl', 'js_reset')]);
 
     expect(loadsOf(store)).toEqual([{
@@ -95,7 +95,7 @@ describe('codex load 귀속', () => {
     }]);
   });
 
-  it('회복 패스는 두 번 돌려도 결과가 같다', async () => {
+  it('gives the same result when the recovery pass runs twice', async () => {
     const store = await LensStore.open(':memory:');
     registerCodexServers(store, ['node_repl']);
     store.ingest(codexSession([
@@ -111,16 +111,16 @@ describe('codex load 귀속', () => {
     expect(twice).toHaveLength(1);
   });
 
-  it('client_servers 갱신만으로도 소급 회복된다', async () => {
+  it('recovers retroactively from a client_servers update alone', async () => {
     const store = await LensStore.open(':memory:');
     store.upsertDefinitions([definition('node_repl', 'js_reset')]);
-    // client_servers가 아직 없어 귀속에 실패한 상태로 수집된다.
+    // Collected in a state where attribution failed because client_servers did not exist yet.
     store.ingest(codexSession([
       { serverName: null, toolName: 'mcp__node_repl__js_reset', loadedTokens: 37 },
     ]));
     expect(loadsOf(store)[0]).toMatchObject({ serverName: null });
 
-    // 스캔이 정착해 upsertDefinitions가 다시 돌지 않는 경로를 재현한다.
+    // Reproduces the path where scanning has settled and upsertDefinitions no longer runs.
     registerCodexServers(store, ['node_repl']);
 
     expect(loadsOf(store)).toEqual([{
@@ -129,7 +129,7 @@ describe('codex load 귀속', () => {
     }]);
   });
 
-  it('client_servers 회복 패스도 멱등이다', async () => {
+  it('keeps the client_servers recovery pass idempotent too', async () => {
     const store = await LensStore.open(':memory:');
     store.upsertDefinitions([definition('node_repl', 'js_reset')]);
     store.ingest(codexSession([
@@ -145,7 +145,7 @@ describe('codex load 귀속', () => {
     expect(twice).toHaveLength(1);
   });
 
-  it('후보가 2개 이상이면 귀속하지 않는다', async () => {
+  it('does not attribute when there are two or more candidates', async () => {
     const store = await LensStore.open(':memory:');
     store.upsertDefinitions([
       definition('atlas', 'deep__lookup'),
@@ -162,7 +162,7 @@ describe('codex load 귀속', () => {
     });
   });
 
-  it('codex가 아닌 클라이언트의 load는 건드리지 않는다', async () => {
+  it('leaves loads of non-codex clients untouched', async () => {
     const store = await LensStore.open(':memory:');
     store.ingest(claudeSession());
     const before = loadsOf(store);
@@ -176,7 +176,7 @@ describe('codex load 귀속', () => {
     }]);
   });
 
-  it('(code-mode-search) 집계 행은 귀속 대상이 아니다', async () => {
+  it('excludes the (code-mode-search) aggregate row from attribution', async () => {
     const store = await LensStore.open(':memory:');
     registerCodexServers(store, ['node_repl']);
     store.ingest(codexSession([
@@ -191,7 +191,7 @@ describe('codex load 귀속', () => {
     }]);
   });
 
-  it('귀속된 load는 매트릭스 행으로 나타난다', async () => {
+  it('surfaces an attributed load as a matrix row', async () => {
     const store = await LensStore.open(':memory:');
     registerCodexServers(store, ['node_repl']);
     store.ingest(codexSession([

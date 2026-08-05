@@ -1,12 +1,12 @@
 import type { ServerScanStatus } from '@mcp-lens/core';
 
-/** Setup Status 뷰의 최상위 그룹 4개. 순서 고정 — 트리 렌더링도 이 순서를 따른다.
- * Collection은 옛 Collection Status 뷰를 흡수한 것이다. 행이 2~3개뿐인데 사이드바
- * 섹션을 통째로 차지해, 정작 봐야 할 매트릭스가 밀려 있었다. */
+/** The four top-level groups of the Setup Status view. The order is fixed and the tree renders in it.
+ * Collection absorbed the old Collection Status view: with only two or three rows it took a whole
+ * sidebar section, pushing away the matrix that actually matters. */
 export type SetupGroup =
   'Collection' | 'MCP authentication' | 'Dependency analysis' | 'Global actions';
 
-/** setupTreeProvider.ts가 ThemeIcon으로 매핑하는 아이콘 이름. */
+/** Icon names setupTreeProvider.ts maps to a ThemeIcon. */
 export type SetupIcon =
   | 'pass' | 'warning' | 'circle-outline' | 'error' | 'circle-slash' | 'account' | 'lock' | 'unlock'
   | 'clock';
@@ -16,42 +16,42 @@ export interface SetupRow {
   label: string;
   description: string;
   icon: SetupIcon;
-  /** 클릭 시 실행할 커맨드 id. 없으면(undefined) 이 행은 클릭해도 아무 일도 안 한다. */
+  /** Command id run on click. Without it (undefined) clicking the row does nothing. */
   command?: string;
-  /** 커맨드 인자. 생략하면 `[{ serverName: label }]`(서버 행 관례)로 넘어간다. */
+  /** Command arguments. Omitted, they default to `[{ serverName: label }]` (the server-row convention). */
   commandArgs?: unknown[];
-  /** 호버 설명. 수집 상태처럼 한 줄로 못 담는 행에만 채운다. */
+  /** Hover description. Filled only for rows that do not fit on one line, such as collection status. */
   tooltip?: string;
-  /** 아이콘 강조색(ThemeColor id). 없으면 기본색. */
+  /** Icon accent colour (ThemeColor id). Default colour when absent. */
   colorId?: string;
-  /** view/item/context 메뉴 라우팅용. */
+  /** For view/item/context menu routing. */
   contextValue?: string;
-  /** TreeItem id — 같은 label이 그룹 간에 겹칠 때 구분한다. 없으면 `group/label`. */
+  /** TreeItem id, distinguishing the same label across groups. Defaults to `group/label`. */
   id?: string;
 }
 
 export interface BuildSetupRowsInput {
-  /** collectAllSpecs()로 얻은 전체 MCP 서버 이름. */
+  /** Every MCP server name obtained from collectAllSpecs(). */
   serverNames: string[];
   scanStatuses: ReadonlyMap<string, ServerScanStatus>;
-  /** mcpLens.authIgnore 설정 — 로그인 알림을 영구 억제한 서버. */
+  /** The mcpLens.authIgnore setting: servers whose login notification is permanently suppressed. */
   authIgnore: string[];
-  /** mcpLens.unsupportedServers 설정 — Lens가 지원하지 않는 서버. */
+  /** The mcpLens.unsupportedServers setting: servers Lens does not support. */
   unsupported: string[];
-  /** 정의가 있고 findDependencyAnalysis가 결과를 준 서버. */
+  /** Servers that have definitions and for which findDependencyAnalysis returned a result. */
   analyzedServers: Set<string>;
-  /** 툴 정의가 하나 이상 있는 서버 — 분석 그룹의 모수. */
+  /** Servers with at least one tool definition: the denominator of the analysis group. */
   definitionServers: Set<string>;
   consent?: { provider: string; model: string };
   rollout: string;
 }
 
 /**
- * 상태 색은 세 갈래뿐이다. 회색 아이콘만 늘어놓으면 어느 줄이 내 일인지 훑어서 알 수 없다.
- * DONE(파랑): 더 할 일 없음. 수집 그룹의 Healthy와 같은 색을 써서 한 뷰 안에서 뜻이 갈리지 않게 한다.
- * TODO(노랑): 아직 안 한 일이라 사용자가 눌러야 한다.
- * BROKEN(빨강): 시도했는데 실패했다.
- * 의도적으로 범위 밖인 줄(ignored·not supported)은 색을 주지 않는다. 눈에 띄면 안 되는 줄이다.
+ * Status colour has only three branches. A wall of grey icons makes it impossible to scan for the row that needs you.
+ * DONE (blue): nothing left to do. It shares the colour of Healthy in the collection group so one view keeps one meaning.
+ * TODO (yellow): not done yet, so the user has to press it.
+ * BROKEN (red): attempted and failed.
+ * Rows deliberately out of scope (ignored, not supported) get no colour: they are rows that must not draw the eye.
  */
 const DONE = 'charts.blue';
 const TODO = 'charts.yellow';
@@ -62,8 +62,8 @@ function authRow(input: BuildSetupRowsInput, serverName: string): SetupRow {
     return { group: 'MCP authentication', label: serverName, description: 'not supported by Lens', icon: 'circle-slash' };
   }
   if (input.authIgnore.includes(serverName)) {
-    // 무시는 사용자가 스스로 끈 것이라 언제든 되돌릴 수 있다. 회색으로 묻어두면
-    // 그 서버의 비용이 계속 안 잡히는데도 눈에 안 띄므로 빨강으로 남긴다.
+    // Ignoring is something the user chose and can undo at any time. Buried in grey, that server's
+    // cost would keep going unmeasured unnoticed, so it stays red.
     return { group: 'MCP authentication', label: serverName, description: 'ignored', icon: 'circle-slash', colorId: BROKEN };
   }
   const status = input.scanStatuses.get(serverName);
@@ -108,13 +108,13 @@ function globalActionsRow(input: BuildSetupRowsInput): SetupRow {
     group: 'Global actions', label: 'Global actions',
     description: locked ? 'locked' : `enabled (${input.rollout})`,
     icon: locked ? 'lock' : 'unlock',
-    // 잠김은 고장이 아니라 기본값이다. 켜야 할 일이 남았다는 뜻이므로 TODO 색을 쓴다.
+    // Locked is not a fault, it is the default. It means something remains to be enabled, so it uses the TODO colour.
     colorId: locked ? TODO : DONE,
     command: 'mcp-lens.openRolloutSetting',
   };
 }
 
-/** vscode를 참조하지 않는 순수 함수 — 어느 서버가 어떤 상태인지만 판정한다. */
+/** Pure function with no vscode reference: it decides only which server is in which state. */
 export function buildSetupRows(input: BuildSetupRowsInput): SetupRow[] {
   return [
     ...input.serverNames.map((name) => authRow(input, name)),

@@ -81,7 +81,7 @@ describe('global action commands', () => {
     }
   });
 
-  // 사용량 판단은 더 이상 차단하지 않는다. Independent면 사람이 확인 대화상자에서 결정한다.
+  // Usage judgements no longer block. If it is Independent, a human decides in the confirmation dialog.
   it.each([
     ['calls', { callsSince: () => [{ serverName: 'docs', toolName: 'search' }] }],
     ['low confidence', { sessionsSince: () => [] }],

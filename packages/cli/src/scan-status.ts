@@ -5,13 +5,13 @@ export interface ScanStatusRecord {
 }
 
 /**
- * 스캔 예외를 server_scan_status 값으로 분류한다.
- * packages/extension/src/autoScan.ts의 분류 규칙과 동일하게 유지한다:
- * auth-required/token-expired 메시지는 auth-required(errorCode 없음),
- * 그 외는 failed(errorCode는 최대 120자로 자름).
- * err는 unknown으로 받는다 — scanServer는 SDK 예외를 그대로 재던지므로 Error가 아닌
- * 값(문자열 등)이 들어올 수 있고, Error로 단정해 err.message에 접근하면 catch 블록
- * 안에서 TypeError가 나 store.save()까지 못 가고 그 실행의 기록이 전부 유실된다.
+ * Classifies a scan exception into a server_scan_status value.
+ * Kept identical to the rule in packages/extension/src/autoScan.ts:
+ * auth-required/token-expired messages become auth-required (no errorCode),
+ * everything else becomes failed (errorCode truncated to 120 characters).
+ * err is typed unknown: scanServer rethrows SDK exceptions verbatim, so a non-Error value
+ * (a string, say) can arrive, and asserting Error to read err.message would throw a TypeError
+ * inside the catch block, never reaching store.save() and losing that run's records.
  */
 export function classifyScanFailure(err: unknown): ScanStatusRecord {
   const msg = err instanceof Error ? err.message : String(err);

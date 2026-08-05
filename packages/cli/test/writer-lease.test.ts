@@ -6,8 +6,9 @@ import { acquireLease, releaseLease, type Lease } from '@mcp-lens/core';
 import { acquireWriterLease, withWriterLease, LEASE_BUSY_MESSAGE, type WriterLeaseDeps } from '../src/writer-lease.js';
 
 /**
- * CLI가 확장과 같은 락을 두고 경쟁하는지, 그리고 어떤 경로로 끝나도 리스를 놓는지 고정한다.
- * 실제 파일시스템·공유 DB는 건드리지 않고 core의 acquire/renew/release를 주입한다.
+ * Pins that the CLI contends for the same lock as the extension and always releases the lease,
+ * whatever path it exits through. The real filesystem and shared DB stay untouched; core's
+ * acquire/renew/release are injected.
  */
 function fakeDeps(overrides: Partial<WriterLeaseDeps> = {}) {
   const timers: Array<() => void> = [];
@@ -27,7 +28,7 @@ function fakeDeps(overrides: Partial<WriterLeaseDeps> = {}) {
 }
 
 describe('acquireWriterLease', () => {
-  it('락 디렉터리를 먼저 만들고 확장과 같은 락 경로로 리스를 잡는다', () => {
+  it('creates the lock directory first and takes the lease on the extension lock path', () => {
     const { deps } = fakeDeps();
     const result = acquireWriterLease(deps);
 
@@ -36,18 +37,18 @@ describe('acquireWriterLease', () => {
     expect(deps.acquire).toHaveBeenCalledWith('/fake/.mcplens/db-writer.lock', 30_000);
   });
 
-  it('다른 홀더가 살아 있으면 조치 가능한 한국어 메시지로 실패한다', () => {
+  it('fails with an actionable message when another holder is alive', () => {
     const { deps } = fakeDeps({ acquire: vi.fn(() => null) });
     const result = acquireWriterLease(deps);
 
     expect(result).toEqual({ ok: false, message: LEASE_BUSY_MESSAGE });
-    expect(LEASE_BUSY_MESSAGE).toContain('확장');
+    expect(LEASE_BUSY_MESSAGE).toContain('extension');
   });
 
-  it('release는 내 토큰으로 해제하고 하트비트를 멈춘다', () => {
+  it('releases with my own token and stops the heartbeat', () => {
     const { deps } = fakeDeps();
     const result = acquireWriterLease(deps);
-    if (!result.ok) throw new Error('획득했어야 한다');
+    if (!result.ok) throw new Error('should have acquired the lease');
 
     expect(result.lease.isHolder()).toBe(true);
     result.lease.release();
@@ -57,10 +58,10 @@ describe('acquireWriterLease', () => {
     expect(result.lease.isHolder()).toBe(false);
   });
 
-  it('release를 두 번 불러도 한 번만 해제한다', () => {
+  it('releases only once even when release is called twice', () => {
     const { deps } = fakeDeps();
     const result = acquireWriterLease(deps);
-    if (!result.ok) throw new Error('획득했어야 한다');
+    if (!result.ok) throw new Error('should have acquired the lease');
 
     result.lease.release();
     result.lease.release();
@@ -68,10 +69,10 @@ describe('acquireWriterLease', () => {
     expect(deps.release).toHaveBeenCalledTimes(1);
   });
 
-  it('하트비트 갱신에 실패하면(인수당함) 즉시 비홀더가 된다', () => {
+  it('becomes a non-holder immediately when heartbeat renewal fails (taken over)', () => {
     const { deps, tick } = fakeDeps({ renew: vi.fn(() => null) });
     const result = acquireWriterLease(deps);
-    if (!result.ok) throw new Error('획득했어야 한다');
+    if (!result.ok) throw new Error('should have acquired the lease');
 
     expect(result.lease.isHolder()).toBe(true);
     tick();
@@ -80,7 +81,7 @@ describe('acquireWriterLease', () => {
 });
 
 describe('withWriterLease', () => {
-  it('본문 실행 전후로 잡고 놓는다', async () => {
+  it('takes the lease before the body and releases it after', async () => {
     const { deps } = fakeDeps();
     const order: string[] = [];
     deps.release = vi.fn(() => { order.push('release'); });
@@ -91,13 +92,13 @@ describe('withWriterLease', () => {
     expect(order).toEqual(['body', 'release']);
   });
 
-  it('본문이 던져도 리스를 놓는다', async () => {
+  it('releases the lease even when the body throws', async () => {
     const { deps } = fakeDeps();
     await expect(withWriterLease(async () => { throw new Error('boom'); }, deps)).rejects.toThrow('boom');
     expect(deps.release).toHaveBeenCalledWith('/fake/.mcplens/db-writer.lock', 't1');
   });
 
-  it('획득 실패면 본문을 아예 실행하지 않는다', async () => {
+  it('never runs the body when acquisition fails', async () => {
     const { deps } = fakeDeps({ acquire: vi.fn(() => null) });
     const body = vi.fn(async () => 1);
 
@@ -109,11 +110,11 @@ describe('withWriterLease', () => {
 });
 
 /**
- * core의 실제 리스 구현과 맞물리는지 확인한다. 확장이 홀더인 상황을 같은 락 경로에
- * acquireLease로 재현하고, CLI가 그 위에서 잡히지 않는지 본다.
- * 공유 DB(~/.mcplens/lens.db)는 건드리지 않고 임시 디렉터리의 락 파일만 쓴다.
+ * Checks the interlock with core's real lease implementation. It reproduces "the extension is
+ * the holder" with acquireLease on the same lock path and verifies the CLI cannot take it.
+ * The shared DB (~/.mcplens/lens.db) is untouched; only a lock file in a temp directory is used.
  */
-describe('core 리스와의 실제 상호작용', () => {
+describe('real interaction with the core lease', () => {
   const dirs: string[] = [];
   afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
 
@@ -123,7 +124,7 @@ describe('core 리스와의 실제 상호작용', () => {
     return join(dir, 'db-writer.lock');
   }
 
-  it('다른 홀더(확장)가 살아 있으면 CLI는 리스를 못 잡는다', () => {
+  it('cannot take the lease while another holder (the extension) is alive', () => {
     const lockPath = tempLock();
     const holder = acquireLease(lockPath, 30_000) as Lease;
     expect(holder).not.toBeNull();
@@ -134,11 +135,11 @@ describe('core 리스와의 실제 상호작용', () => {
     releaseLease(lockPath, holder.token);
   });
 
-  it('홀더가 놓으면 CLI가 잡고, CLI가 놓으면 다음 실행이 다시 잡는다', () => {
+  it('takes the lease once the holder releases, and frees it for the next run', () => {
     const lockPath = tempLock();
     const first = acquireWriterLease({ lockPath: () => lockPath });
-    if (!first.ok) throw new Error('첫 실행은 잡았어야 한다');
-    expect(acquireLease(lockPath, 30_000)).toBeNull(); // 그 사이 확장은 못 잡는다
+    if (!first.ok) throw new Error('the first run should have acquired it');
+    expect(acquireLease(lockPath, 30_000)).toBeNull(); // meanwhile the extension cannot take it
 
     first.lease.release();
 

@@ -16,7 +16,7 @@ const blocker: DependencyEvidence = {
 };
 
 describe('mergeDependencyResults', () => {
-  it('정적/call-chain blocker가 있으면 LLM Independent로 낮추지 않고 Review required로 둔다', () => {
+  it('does not lower to LLM Independent when a static or call-chain blocker exists, leaving Review required', () => {
     const merged = mergeDependencyResults({
       bodies,
       staticRefs: [blocker],
@@ -43,7 +43,7 @@ describe('mergeDependencyResults', () => {
     });
   });
 
-  it('LLM Dependent는 그대로 보존하고 결과 누락은 Review required다', () => {
+  it('preserves LLM Dependent as it is and treats a missing result as Review required', () => {
     const merged = mergeDependencyResults({
       bodies,
       staticRefs: [],

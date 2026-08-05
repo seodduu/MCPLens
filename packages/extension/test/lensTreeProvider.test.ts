@@ -34,7 +34,7 @@ describe('LensTreeProvider global action contexts', () => {
     expect(item.contextValue).toBe('mcpAnalysis-restore');
   });
 
-  // 호버 설명은 툴·클라이언트마다 문구가 갈렸다. 다시 붙지 않도록 고정한다.
+  // Hover descriptions diverged per tool and client. This pins them out so they do not come back.
   it('leaves the hover tooltip unset even when analysis text exists', () => {
     const item = new LensTreeProvider().getTreeItem(tool({
       analysisStatus: 'Independent', analysisSummary: 'safe to remove',

@@ -1,117 +1,118 @@
-# 변경 내역
+# Changelog
 
 ## 0.3.0
 
-이번 릴리스의 중심은 두 가지입니다. 첫째, "이 툴을 꺼도 되는가"를 판정하는 의존성 분석과
-전역 조치를 확장 안으로 들여왔습니다. 둘째, 설치 직후 무엇을 해야 하는지 알려주는 온보딩
-워크스루와 Setup Status 뷰를 넣었습니다.
+This release centres on two things. First, the dependency analysis that decides "is this tool safe
+to turn off" and the global actions moved inside the extension. Second, an onboarding walkthrough
+and a Setup Status view now tell you what to do right after installing.
 
-### 추가
+### Added
 
-- **툴 의존성 분석과 독립성 판정.** `MCP Lens: Analyze Dependencies`로 툴 사이의 의존
-  관계를 분석합니다. 정의 텍스트의 상호 참조, 실제 호출 연쇄, 필요 시 LLM 의미 판정을
-  합쳐 어떤 툴을 꺼도 다른 툴이 깨지지 않는지 판정합니다. `MCP Lens: Open Analysis
-  Details`로 판정 근거를 열어볼 수 있고 `MCP Lens: Reanalyze Server`로 서버 단위 재분석을
-  돌립니다.
-- **나중에 붙는 서버는 자동으로 처리합니다(동의한 경우).** 첫 실행에서는 확장이 스스로
-  스캔하지도 분석하지도 않습니다. 온보딩 워크스루로 사용자가 직접 시작하고, 마지막
-  단계에서 "새 서버를 알아서 재고 분석할까"를 한 번 묻습니다. 스캔과 분석 모두 맡기거나,
-  스캔만 맡기거나, 둘 다 직접 하는 세 가지 중에 고릅니다. 승낙하면 그 뒤 새 MCP 서버를
-  붙였을 때 알림 없이 스캔하고, 이어서 아직 분석하지 않은 툴만 분석합니다. 이때는 이미
-  받아 둔 동의와 **거기 적힌 제공자·모델을 그대로** 씁니다. 로그인이 필요한 서버는 그때
-  로그인 알림이 뜹니다. `mcpLens.autoScan`과 `mcpLens.autoAnalyze`로 나중에 바꿀 수
-  있습니다.
-- **추론 제공자 설정과 사전 고지 동의.** `mcpLens.inferenceProvider`(auto/claude/codex),
-  `mcpLens.claudeModel`, `mcpLens.codexModel`로 분석에 쓸 제공자와 모델을 고릅니다.
-  분석 실행 전에 전송 범위와 예상 비용을 고지하고 동의를 받으며, `MCP Lens: Withdraw
-  Inference Consent`로 철회하면 자동 분석까지 함께 멈춥니다. 전송되는 것은 툴 정의와
-  집계된 사용 횟수뿐이고 프롬프트, 툴 입력, 툴 출력, 소스 코드는 보내지 않습니다.
-- **전역 비활성화와 복구.** `MCP Lens: Disable Globally` / `MCP Lens: Restore Globally`로
-  쓰지 않는 툴을 클라이언트 설정에서 직접 꺼고 되돌립니다. 기본값은 잠김입니다.
-  `mcplens.dependencyAnalysis.rollout` 설정으로 어떤 클라이언트에 허용할지 명시해야만
-  동작하며(off/claude/codex/all), 실행 전에 무엇을 잃는지 확인받습니다. Gemini CLI는
-  전역 조치 대상이 아닙니다.
-- **온보딩 워크스루.** 설치 후 첫 활성화에서 워크스루가 열립니다. 스캔, 훅 설치, 의존성
-  분석, 전역 조치 활성화의 4단계를 안내하고 각 단계는 실제 상태를 근거로 체크가
-  켜지고 꺼집니다.
-- **Setup Status 뷰.** 사이드바에서 스캔 상태와 클라이언트별 훅 수집 상태를 한 곳에서
-  봅니다. 이전의 Collection Status 뷰는 이 뷰로 흡수됐습니다. 행에서 바로 훅 설치와
-  제거를 실행할 수 있습니다.
-- **커맨드 추가.** `MCP Lens: Scan MCP Servers`, `MCP Lens: Install Hooks for All
-  Clients`, `MCP Lens: Sign In to Server`, `MCP Lens: Open Global Actions Setting`.
-- **서버별 마지막 스캔 상태 저장.** 어떤 서버가 언제 성공하고 실패했는지 남겨 스캔 결과를
-  뷰에서 그대로 설명할 수 있게 했습니다.
+- **Tool dependency analysis and the independence verdict.** `MCP Lens: Analyze Dependencies`
+  analyzes the relationships between tools. It combines cross-references in the definition text,
+  real call chains and, where needed, an LLM semantic verdict to decide which tools can be turned
+  off without breaking others. `MCP Lens: Open Analysis Details` opens the basis of a verdict, and
+  `MCP Lens: Reanalyze Server` reruns the analysis for one server.
+- **Servers added later are handled automatically (with consent).** On the first run the extension
+  neither scans nor analyzes on its own. The onboarding walkthrough has you start it yourself, and
+  its last step asks once whether new servers should be measured and analyzed for you. You pick one
+  of three: both scanning and analysis, scanning only, or neither. If you accept, a newly added MCP
+  server is scanned without a notification and then only the not-yet-analyzed tools are analyzed,
+  using the consent already on file **and the provider and model recorded in it**. A server that
+  needs a login raises the login notification at that point. `mcpLens.autoScan` and
+  `mcpLens.autoAnalyze` change it later.
+- **Inference provider settings and up-front consent.** `mcpLens.inferenceProvider`
+  (auto/claude/codex), `mcpLens.claudeModel` and `mcpLens.codexModel` pick the provider and model
+  used for the analysis. Before running, it states what is transmitted and the expected cost and
+  asks for consent; withdrawing it with `MCP Lens: Withdraw Inference Consent` also stops the
+  automatic analysis. Only tool definitions and aggregated usage counts are transmitted: no prompts,
+  tool inputs, tool outputs or source code.
+- **Global disable and restore.** `MCP Lens: Disable Globally` / `MCP Lens: Restore Globally` turn
+  unused tools off directly in the client config and put them back. It is locked by default: the
+  `mcplens.dependencyAnalysis.rollout` setting must name which clients are allowed
+  (off/claude/codex/all), and you are shown what will be lost before it runs. Gemini CLI is not a
+  target of global actions.
+- **Onboarding walkthrough.** The walkthrough opens on the first activation after installation. It
+  guides you through four steps (scan, hook installation, dependency analysis, enabling global
+  actions), and each step's checkmark turns on and off from the real state.
+- **Setup Status view.** See the scan state and the per-client hook collection state in one place in
+  the sidebar. The former Collection Status view was absorbed into it. Hook installation and removal
+  run directly from the rows.
+- **New commands.** `MCP Lens: Scan MCP Servers`, `MCP Lens: Install Hooks for All Clients`,
+  `MCP Lens: Sign In to Server`, `MCP Lens: Open Global Actions Setting`.
+- **The last scan state is stored per server,** recording which server succeeded or failed and when,
+  so the views can explain the scan results as they are.
 
-### 변경
+### Changed
 
-- **사용자에게 보이는 문자열을 영어로 통일했습니다.** 커맨드 제목, 설정 설명, 뷰 이름이
-  섞여 있던 문제를 정리했습니다.
-- **매트릭스 트리를 비용 순으로 정렬합니다.** 가장 비싼 것이 위에 오도록 바꾸고, 행마다
-  같은 말을 되풀이하던 문구와 호버 설명을 걷어냈습니다.
-- **Setup Status 아이콘에 상태 색을 넣고 토큰 단위 표기를 `tokens`로 통일했습니다.**
-- 복원 액션도 제거 액션과 마찬가지로 행 호버에서 바로 보입니다.
+- **User-facing strings are all English now,** cleaning up the mixture in command titles, setting
+  descriptions and view names.
+- **The matrix tree is sorted by cost,** putting the most expensive first, and the wording and hover
+  descriptions that repeated the same thing on every row are gone.
+- **Setup Status icons carry a status colour and the token unit is uniformly `tokens`.**
+- The restore action, like the removal action, is visible directly on row hover.
 
-### 수정
+### Fixed
 
-- **Codex 코드 모드에서 load 귀속이 어긋나던 문제.** 로드된 정의를 서버에 붙이는 시점이
-  잘못돼 있어 사용량이 엉뚱한 서버로 갔습니다. materialize 시점으로 옮기고 이미 쌓인
-  데이터도 소급 회복시킵니다. 부분일치 검색 출력의 정의 N개도 툴별 로드로 기록합니다.
-- **배달 lock 잔해가 계속 쌓이던 문제.** 실기기에서 잔해 디렉터리가 누적됐습니다. 인수
-  시점에 정리하고 옛 잔해도 회수합니다.
-- **클라이언트별 서버 매핑 갱신이 중간에 끊길 수 있던 문제.** `upsertClientServers`를 한
-  트랜잭션으로 묶어 부분 적용 상태가 남지 않게 했습니다.
-- **스캔과 로그인 경로에서 서버 스캔 상태가 기록되지 않던 문제.**
-- **CLI가 Error가 아닌 예외에 죽던 문제.** 스캔 예외 분류와 로그인 실패 처리 모두 비Error
-  값을 정규화합니다. 로그인 재스캔이 실패해도 저장을 건너뛰지 않습니다.
-- **CLI 모듈을 import하는 것만으로 실 DB가 열리던 문제.**
-- **트리 갱신 세대 가드를 우회할 수 있던 경로를 막았습니다.** 늦게 도착한 오래된 결과가
-  최신 화면을 덮어쓸 수 있었습니다.
+- **Load attribution was wrong in Codex code mode.** Loaded definitions were attached to a server at
+  the wrong moment, so usage went to the wrong server. It now happens at materialization time and
+  already-collected data recovers retroactively. The N definitions in a substring search output are
+  recorded as per-tool loads too.
+- **Delivery lock debris kept piling up** on real devices. It is now cleared at takeover time and
+  old debris is reclaimed.
+- **The per-client server mapping update could be cut off midway.** `upsertClientServers` is now one
+  transaction, so no partially applied state remains.
+- **The server scan state was not recorded on the scan and login paths.**
+- **The CLI died on non-Error exceptions.** Both the scan exception classification and the login
+  failure handling normalize non-Error values now, and a failed login rescan no longer skips saving.
+- **Merely importing a CLI module opened the real DB.**
+- **A path that bypassed the tree refresh generation guard is closed.** A stale result arriving late
+  could overwrite the newest screen.
 
 ## 0.2.0
 
-배포하지 않았습니다. 0.1.1 이후의 작업이 하나의 릴리스로 묶이면서 버전 번호를 0.3.0으로
-건너뛰었습니다.
+Never released. Work after 0.1.1 was bundled into one release, so the version skipped to 0.3.0.
 
 ## 0.1.1
 
-Windows 지원 수정이 중심입니다. 0.1.0은 Windows에서 수집이 사실상 동작하지 않았습니다.
+Centred on Windows support fixes. Collection was effectively broken on Windows in 0.1.0.
 
-### 수정
+### Fixed
 
-- **Windows에서 클라이언트 CLI를 찾지 못하던 문제.** 수집 상태에 claude-code가
-  아예 표시되지 않고, codex·gemini-cli는 훅이 설치돼 있어도 영구히 "미연결"로
-  남았습니다. 바이너리 탐색이 POSIX 전용이었습니다.
-  - `PATHEXT` 확장자(`.exe`/`.cmd`/`.bat`)를 조회합니다. npm 전역 설치가 같이
-    까는 실행 불가능한 확장자 없는 스크립트보다 `.cmd`를 우선합니다.
-  - Windows 설치 위치를 후보에 넣습니다: `%USERPROFILE%\.local\bin`(Claude Code
-    네이티브), `%APPDATA%\npm`, `%LOCALAPPDATA%\Volta\bin`.
-  - nvm-windows 레이아웃(`<root>\<version>\<name>`)을 인식합니다.
-  - `.cmd`/`.bat`은 셸을 경유해 실행합니다. Node 18.20.2+ 는 직접 spawn을
-    EINVAL로 막습니다.
+- **Client CLIs were not found on Windows.** claude-code did not appear in the collection state at
+  all, and codex and gemini-cli stayed permanently "disconnected" even with hooks installed. Binary
+  lookup was POSIX-only.
+  - `PATHEXT` extensions (`.exe`/`.cmd`/`.bat`) are looked up. `.cmd` wins over the unrunnable
+    extensionless script an npm global install ships alongside it.
+  - Windows install locations are candidates now: `%USERPROFILE%\.local\bin` (Claude Code native),
+    `%APPDATA%\npm`, `%LOCALAPPDATA%\Volta\bin`.
+  - The nvm-windows layout (`<root>\<version>\<name>`) is recognized.
+  - `.cmd`/`.bat` run through the shell. Node 18.20.2+ blocks a direct spawn with EINVAL.
 
-- **Windows에서 MCP 호출마다 상관관계 불일치가 쌓이던 문제.** 훅 봉투 파일명에
-  콜론이 들어가 있었고, Windows에서 `:`는 파일명 예약 문자입니다. NTFS가 이를
-  대체 데이터 스트림으로 해석해 툴 호출 봉투만 선택적으로 유실됐습니다. 세션
-  훅은 정상 도착했기 때문에 "훅은 살아 있는데 상관관계만 계속 어긋나는" 상태로
-  보였습니다. 파일 시스템 경계에서 안전한 이름으로 인코딩합니다. 기존 사용자의
-  콜론 파일명도 계속 읽힙니다.
+- **Correlation mismatches piled up on every MCP call on Windows.** The hook envelope file name
+  contained a colon, and `:` is a reserved file-name character on Windows. NTFS read it as an
+  alternate data stream, so only the tool-call envelopes were selectively lost. The session hooks
+  arrived fine, which made it look like "the hooks are alive but the correlation keeps failing".
+  Names are now encoded safely at the file system boundary, and existing colon file names stay
+  readable.
 
-- **Gemini 훅 설치가 무한 대기하던 문제.** gemini-cli 0.51.0은 로컬 경로 설치 시
-  `--consent`로도 폴더 신뢰 프롬프트를 띄우며, 이를 건너뛰는 플래그가 없습니다.
-  설치 버튼이 아무 반응 없이 매달리고 프로세스가 쌓였습니다. 설치 전에 번들
-  디렉터리를 신뢰 목록에 등록합니다.
+- **Gemini hook installation waited forever.** For a local-path install, gemini-cli 0.51.0 raises a
+  folder trust prompt even with `--consent`, and there is no flag to skip it. The install button
+  hung with no feedback while processes piled up. The bundle directory is now registered in the
+  trust list before installing.
 
-### 추가
+### Added
 
-- **낡은 훅 런타임 자동 갱신.** 확장이 자동 업데이트돼도 이미 설치된 훅 런타임은
-  그대로 남아, 두 버전이 어긋나면 수집이 아무 경고 없이 망가졌습니다. 런타임에
-  내용 지문을 심고, 기동 시 번들과 다르면 훅을 자동으로 재설치합니다.
+- **Automatic refresh of a stale hook runtime.** When the extension auto-updated, the already
+  installed hook runtime stayed as it was, and a mismatch between the two broke collection with no
+  warning. The runtime now carries a content fingerprint, and the hooks are reinstalled
+  automatically at startup when it differs from the bundle.
 
-### 내부
+### Internal
 
-- 자식 프로세스 실행에 120초 상한을 둡니다. 어떤 CLI가 새 대화형 프롬프트를
-  추가하더라도 UI가 무한 대기하는 대신 실패로 떨어집니다.
+- Child process execution has a 120-second ceiling. If any CLI adds a new interactive prompt, the UI
+  fails instead of waiting forever.
 
 ## 0.1.0
 
-최초 배포.
+Initial release.

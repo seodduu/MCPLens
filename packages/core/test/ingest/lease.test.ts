@@ -9,13 +9,13 @@ beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'lease-')); lock = join(dir,
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 describe('lease', () => {
-  it('한 번에 하나만 획득한다', () => {
+  it('grants only one holder at a time', () => {
     const a = acquireLease(lock, 1000);
     expect(a).not.toBeNull();
-    expect(acquireLease(lock, 1000)).toBeNull(); // 이미 유효한 홀더
+    expect(acquireLease(lock, 1000)).toBeNull(); // there is already a valid holder
   });
 
-  it('renew는 만료를 연장하고 같은 토큰을 유지한다', () => {
+  it('extends the expiry on renew and keeps the same token', () => {
     let t = 1000;
     const now = () => t;
     const a = acquireLease(lock, 1000, now)!;
@@ -25,16 +25,16 @@ describe('lease', () => {
     expect(r.expiresAt).toBe(2500); // 1500 + 1000
   });
 
-  it('인수당한 뒤 renew는 null', () => {
+  it('returns null from renew after being taken over', () => {
     let t = 1000; const now = () => t;
     const a = acquireLease(lock, 1000, now)!;
-    t = 3000; // a 만료
-    const b = acquireLease(lock, 1000, now)!; // b가 인수
+    t = 3000; // a expires
+    const b = acquireLease(lock, 1000, now)!; // b takes over
     expect(b.token).not.toBe(a.token);
-    expect(renewLease(lock, a.token, 1000, now)).toBeNull(); // a는 잃음
+    expect(renewLease(lock, a.token, 1000, now)).toBeNull(); // a lost it
   });
 
-  it('만료된 리스는 다른 프로세스가 인수한다', () => {
+  it('lets another process take over an expired lease', () => {
     let t = 1000; const now = () => t;
     acquireLease(lock, 1000, now);
     t = 5000;
@@ -42,10 +42,10 @@ describe('lease', () => {
     expect(b).not.toBeNull();
   });
 
-  it('split-brain: check와 write 사이 인수당하면 renew는 null이고 B의 정체성을 오염시키지 않는다', () => {
+  it('split-brain: a takeover between check and write makes renew null and does not corrupt B identity', () => {
     let t = 1000; const now = () => t;
     const a = acquireLease(lock, 1000, now)!;
-    // check(readLease) 직후·write 직전에 경쟁자 B의 완전한 인수를 끼워넣는다.
+    // A complete takeover by competitor B is injected right after check (readLease) and right before the write.
     let ran = false;
     const r = renewLease(lock, a.token, 1000, now, {
       beforeWrite: () => {
@@ -55,30 +55,30 @@ describe('lease', () => {
       },
     });
     expect(ran).toBe(true);
-    // 단언 1: A는 졌다.
+    // Assertion 1: A lost.
     expect(r).toBeNull();
-    // 단언 2: B의 정체성 토큰은 오염되지 않았다 (둘 다 홀더면 여기서 실패).
+    // Assertion 2: B's identity token is uncorrupted (this fails if both are holders).
     const after = readLease(lock)!;
     expect(after.token).toBe('B');
-    // 단언 3: B의 만료도 A가 넣은 값으로 오염되지 않았다.
+    // Assertion 3: B's expiry is not corrupted by the value A wrote either.
     expect(after.expiresAt).toBe(9999);
   });
 
-  it('release 후 재획득 가능', () => {
+  it('can be acquired again after release', () => {
     const a = acquireLease(lock, 1000)!;
     releaseLease(lock, a.token);
     expect(readLease(lock)).toBeNull();
     expect(acquireLease(lock, 1000)).not.toBeNull();
   });
 
-  it('release는 reaping 잔해를 남기지 않는다', () => {
+  it('leaves no reaping debris on release', () => {
     const a = acquireLease(lock, 1000)!;
     releaseLease(lock, a.token);
     expect(readdirSync(dir).filter((name) => name.includes('.reaping-'))).toEqual([]);
   });
 
-  // reaping 이름은 rename 이후에만 생기므로 활성 리스가 아니다. 남아 있으면 잔해다.
-  it('sweepReapingDirs는 잔해만 지우고 살아 있는 락과 다른 파일은 건드리지 않는다', () => {
+  // A reaping name only appears after a rename, so it is never an active lease. Anything left is debris.
+  it('makes sweepReapingDirs delete only debris, leaving a live lock and other files alone', () => {
     const a = acquireLease(lock, 1000)!;
     mkdirSync(`${lock}.reaping-dead1`, { recursive: true });
     mkdirSync(`${lock}.reaping-dead2`, { recursive: true });
@@ -88,7 +88,7 @@ describe('lease', () => {
     expect(readLease(lock)?.token).toBe(a.token);
   });
 
-  it('획득 시 이전 실행이 남긴 잔해를 함께 치운다', () => {
+  it('clears debris left by a previous run while acquiring', () => {
     mkdirSync(`${lock}.reaping-crashed`, { recursive: true });
     expect(acquireLease(lock, 1000)).not.toBeNull();
     expect(readdirSync(dir).filter((name) => name.includes('.reaping-'))).toEqual([]);

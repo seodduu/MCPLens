@@ -11,18 +11,20 @@ export interface EngineInput {
   loads: ToolLoadEvent[];
   sessions: SessionMeta[];
   /**
-   * "server tool" → 전 기간 마지막 호출 시각 (store.lastCallByTool()).
-   * 선택 — 없으면 분석 창 안의 호출만으로 판정하며, 창 밖 과거 사용은 보이지 않는다.
+   * "server tool" -> all-time last call timestamp (store.lastCallByTool()).
+   * Optional. Without it the verdict uses only calls inside the analysis window, and past use
+   * outside the window is invisible.
    */
   lastCallByTool?: Map<string, string>;
   /**
-   * 클라이언트 → 그 클라이언트에 설정된 서버 이름 집합 (store.serversByClient()).
-   * 선택 — 없으면 정의를 필터링하지 않는다(기존 동작). 스캔 전 DB에서도 안전하다.
+   * client -> the set of server names configured for that client (store.serversByClient()).
+   * Optional. Without it definitions are not filtered (legacy behaviour), which is safe even on
+   * a DB that has never been scanned.
    */
   serversByClient?: Map<ClientId, Set<string>>;
 }
 
-// 판정 임계값 (설계문서 7장 기능 1 개정)
+// Verdict thresholds (design doc ch. 7, feature 1 revision)
 const INSPECT_MIN_CALLS = 3;
 const INSPECT_ERROR_RATE = 0.5;
 const ALWAYS_LOAD_SESSION_RATIO = 0.5;
@@ -45,7 +47,7 @@ export function buildMatrix(input: EngineInput): MatrixRow[] {
     (loadSessions.get(k) ?? loadSessions.set(k, new Set()).get(k)!).add(l.sessionId);
   }
 
-  // 서버별 사용률 (filter-server 판정용)
+  // Per-server usage ratio (for the filter-server verdict)
   const byServer = new Map<string, { total: number; used: number }>();
   for (const d of definitions) {
     const s = byServer.get(d.serverName) ?? { total: 0, used: 0 };
@@ -58,8 +60,8 @@ export function buildMatrix(input: EngineInput): MatrixRow[] {
   const evidenceCtx = buildEvidenceContext(
     definitions, calls, loads, sessions, input.lastCallByTool);
 
-  // 정의된 툴 + 호출만 된 툴 + 로드만 된 툴의 합집합 (M4)
-  // 로드만 된 툴을 빼면 "로드됐는데 호출 0회"(검색 공간 오염)가 표면화되지 않는다.
+  // Union of defined tools, call-only tools and load-only tools (M4).
+  // Dropping load-only tools would hide "loaded but never called" (search-space pollution).
   const rows = new Map<string, MatrixRow>();
   for (const d of definitions) rows.set(key(d.serverName, d.toolName), baseRow(d.serverName, d.toolName, d.definitionTokens));
   for (const c of calls) {
@@ -67,7 +69,7 @@ export function buildMatrix(input: EngineInput): MatrixRow[] {
     if (!rows.has(k)) rows.set(k, baseRow(c.serverName, c.toolName, null));
   }
   for (const l of loads) {
-    if (l.serverName == null) continue; // 서버 귀속 불가 로드(코드모드 검색 집계 등)는 행 대상 아님
+    if (l.serverName == null) continue; // loads with no server attribution (code-mode search aggregates) get no row
     const k = key(l.serverName, l.toolName);
     if (!rows.has(k)) rows.set(k, baseRow(l.serverName, l.toolName, null));
   }
@@ -94,8 +96,9 @@ export function sessionSavings(input: EngineInput) {
   const potentialTokens = input.definitions.reduce((s, d) => s + d.definitionTokens, 0);
   const defTokens = new Map(input.definitions.map(
     (d) => [`${d.serverName} ${d.toolName}`, d.definitionTokens]));
-  // 키(서버/툴) 단위로 택일: 직접 기록(loadedTokens)이 있으면 그 값, 없으면 정의 조인값.
-  // 정의가 없는 서버(스캔 미커버)의 로드는 비교집합 밖 — 제외 (potentialTokens와 집합 일치).
+  // Pick per key (server/tool): the directly recorded loadedTokens when present, else the value
+  // joined from the definition. Loads from servers with no definition (not covered by a scan) are
+  // outside the comparison set and excluded, keeping the set identical to potentialTokens.
   const perKey = new Map<string, number>();
   for (const l of input.loads) {
     const k = `${l.serverName ?? ''} ${l.toolName}`;
@@ -116,7 +119,7 @@ function baseRow(serverName: string, toolName: string, definitionTokens: number 
   return { serverName, toolName, definitionTokens, callCount: 0, responseTokens: 0,
     loadedSessionCount: 0, sessionCount: 0,
     recommendation: { action: 'unknown', confidence: 'low', reason: joinReason(reasonParts),
-      reasonParts, evidenceLabel: '측정 불가', evidence: EMPTY_EVIDENCE },
+      reasonParts, evidenceLabel: 'not measurable', evidence: EMPTY_EVIDENCE },
     reliability: { errorCount: 0, errorRate: null, failedResponseTokens: 0 },
     loadPattern: null };
 }
@@ -130,8 +133,9 @@ function pickLoadPattern(row: MatrixRow): LoadPattern {
 }
 
 /**
- * 세션들의 지배 회계 모드. DEFERRED_OPAQUE는 "MCP 증거 없음"이지 모드의 증거가 아니므로
- * 다수결에서 제외한다 — 증거 있는 세션이 하나도 없을 때만 OPAQUE.
+ * Dominant accounting mode across sessions. DEFERRED_OPAQUE means "no MCP evidence", not
+ * evidence of a mode, so it is excluded from the majority vote: the result is OPAQUE only when
+ * no session carries evidence at all.
  */
 export function dominantMode(sessions: SessionMeta[]): SessionMeta['mode'] {
   const counts = new Map<SessionMeta['mode'], number>();
@@ -145,10 +149,11 @@ export function dominantMode(sessions: SessionMeta[]): SessionMeta['mode'] {
 }
 
 /**
- * 모드 인지 표시 필터 (설계문서 4-2의 표시 계층 적용).
- * 지연 로딩: 호출 0 && 로드 0 툴은 실비용 0 → 숨김 (search-pollution은 로드분 실비용이 있어 유지).
- * 업프론트: 미사용 정의도 매 세션 실비용 → 전부 표시.
- * DB에는 전부 기록돼 있으며 이 필터는 표시 전용이다.
+ * Mode-aware display filter (the display layer of design 4-2).
+ * Deferred loading: tools with 0 calls and 0 loads cost nothing, so they are hidden
+ * (search-pollution rows stay, since their loads do cost).
+ * Upfront: an unused definition still costs every session, so everything is shown.
+ * The DB records all of it; this filter is display-only.
  */
 export function visibleMatrixRows(rows: MatrixRow[], sessions: SessionMeta[]): MatrixRow[] {
   if (dominantMode(sessions) === 'UPFRONT') return rows;
@@ -167,25 +172,25 @@ function recommend(
 ): Recommendation {
   const evidence = toolEvidence(row.serverName, row.toolName, row.definitionTokens, ctx);
   const evidenceLabel =
-    mode === 'DEFERRED_MEASURABLE' ? '실측' :
-    mode === 'DEFERRED_ESTIMATED' ? '하한 추정' :
-    mode === 'UPFRONT' ? '전량 가정' : '측정 불가';
+    mode === 'DEFERRED_MEASURABLE' ? 'measured' :
+    mode === 'DEFERRED_ESTIMATED' ? 'lower-bound estimate' :
+    mode === 'UPFRONT' ? 'assumed full load' : 'not measurable';
   const sizePhrase = (t: number) =>
     mode === 'UPFRONT'
-      ? `제거 시 매 세션 약 ${formatTokens(t)}토큰 절약`
-      : `절약은 작지만 검색 공간 정리 효과`;
+      ? `about ${formatTokens(t)} tokens saved per session when removed`
+      : `small savings, but cleans up the search space`;
 
   const pollutionSuffix = row.loadPattern === 'search-pollution'
-    ? ' (로드는 되나 호출이 0회라 검색 공간 오염)' : '';
+    ? ' (loaded but never called, so it pollutes the search space)' : '';
 
   if (row.callCount === 0 && row.definitionTokens != null) {
-    // 확신이 낮아도 판정은 강등하지 않는다 — 표면이 "후보"로 렌더링한다 (스펙 결정사항 2)
+    // Low confidence never demotes the verdict; the surface renders it as a "candidate" (spec decision 2)
     const confidence = removeConfidence(evidence);
     const caveat = confidenceCaveat(confidence, evidence);
     if (server && server.total >= 10 && server.used > 0 && server.used / server.total < 0.2) {
       const reasonParts: RecommendationReason = {
         basis: '',
-        serverBasis: `서버 ${row.serverName}의 ${server.total}툴 중 ${server.used}개만 사용. 툴 필터링 권장.`,
+        serverBasis: `Only ${server.used} of ${server.total} tools used on server ${row.serverName}. Tool filtering recommended.`,
         effect: `${sizePhrase(row.definitionTokens)}${pollutionSuffix}`,
         caveat,
       };
@@ -193,7 +198,7 @@ function recommend(
         evidenceLabel, evidence };
     }
     const reasonParts: RecommendationReason = {
-      basis: `정의 ${formatTokens(row.definitionTokens)}토큰, 호출 0회`,
+      basis: `definition ${formatTokens(row.definitionTokens)} tokens, 0 calls`,
       serverBasis: null,
       effect: `${sizePhrase(row.definitionTokens)}${pollutionSuffix}`,
       caveat,
@@ -208,31 +213,32 @@ function recommend(
   ) {
     const rate = Math.round(row.reliability.errorRate * 100);
     const reasonParts: RecommendationReason = {
-      basis: `${row.callCount}회 중 ${row.reliability.errorCount}회 실패(${rate}%), `
-        + `실패 응답 ${formatTokens(row.reliability.failedResponseTokens)}토큰 낭비`,
-      serverBasis: null, effect: '점검·대체 권장', caveat: null,
+      basis: `${row.reliability.errorCount} of ${row.callCount} calls failed (${rate}%), `
+        + `${formatTokens(row.reliability.failedResponseTokens)} tokens wasted on failed responses`,
+      serverBasis: null, effect: 'inspect or replace', caveat: null,
     };
     return { action: 'inspect', confidence: inspectConfidence(row.callCount),
       reason: joinReason(reasonParts), reasonParts, evidenceLabel, evidence };
   }
-  // 호출됨 = 자기 증명 → high 고정
+  // Called at all is self-evident, so confidence is pinned high
   if (row.callCount > 0) {
     const reasonParts: RecommendationReason = {
-      basis: `${row.callCount}회 호출됨`, serverBasis: null, effect: null, caveat: null };
+      basis: `called ${row.callCount} ${row.callCount === 1 ? 'time' : 'times'}`,
+      serverBasis: null, effect: null, caveat: null };
     return { action: 'keep', confidence: 'high', reason: joinReason(reasonParts), reasonParts,
       evidenceLabel, evidence };
   }
   const reasonParts: RecommendationReason = {
-    basis: '정의 토큰 미확보 (스캐너 미커버)', serverBasis: null, effect: null, caveat: null };
+    basis: 'definition tokens unavailable (not covered by the scanner)', serverBasis: null, effect: null, caveat: null };
   return { action: 'unknown', confidence: 'low', reason: joinReason(reasonParts), reasonParts,
-    evidenceLabel: '측정 불가', evidence };
+    evidenceLabel: 'not measurable', evidence };
 }
 
-/** parts → 현행 reason 문자열. 구분자 규칙이 여기 한 곳에만 있다 */
+/** parts -> the reason string. The separator rule lives in this one place. */
 export function joinReason(p: RecommendationReason): string {
-  // lead는 serverBasis가 있으면 그것, 없으면 basis.
-  // 조각끼리는 마침표로 잇는다. 대시로 이으면 문장이 끊기는 느낌이 나기 때문이다.
-  // 조각이 이미 마침표로 끝나면 겹치지 않게 하나만 남긴다.
+  // The lead is serverBasis when present, otherwise basis.
+  // Pieces are joined with a period, since joining with a dash makes the sentence feel broken.
+  // If a piece already ends in a period, only one is kept.
   const lead = p.serverBasis ?? p.basis;
   return [lead, p.effect, p.caveat]
     .filter((part): part is string => part != null && part.trim() !== '')
@@ -241,12 +247,12 @@ export function joinReason(p: RecommendationReason): string {
 }
 
 /**
- * EngineInput을 클라이언트별로 분할한다 (클라이언트별 매트릭스 표시용).
- * definitions는 클라이언트 무관 공유 자원이므로 각 분할에 그대로 포함된다.
- * lastCallByTool도 같은 이유로 전 클라이언트 공통 맵을 각 분할에 그대로 넘긴다 —
- * 다른 클라이언트에서의 호출 이력은 "예전엔 쓰던 툴"의 증거이므로 확신을 낮추는
- * 쪽으로만 작용한다(high → medium). 보수적 방향이라 그대로 넘기는 것이 맞다.
- * 넘기지 않으면 "창 밖 과거 사용"이 보이지 않아 미사용 툴로 둔갑, 거짓 high가 난다.
+ * Splits EngineInput per client (for the per-client matrix display).
+ * definitions are a client-independent shared resource, so each split keeps them intact.
+ * lastCallByTool is passed through for the same reason: call history from another client is
+ * evidence of a "tool we used to use", so it can only lower confidence (high -> medium). That is
+ * the conservative direction, so passing it through is correct. Withholding it would hide
+ * "past use outside the window", turning the tool into an unused one and producing a false high.
  */
 export function splitByClient(
   input: EngineInput,
@@ -255,17 +261,18 @@ export function splitByClient(
   return clients.map((client) => {
     const ids = new Set(
       input.sessions.filter((s) => s.client === client).map((s) => s.sessionId));
-    // serversByClient 맵 자체가 없거나 표 전체가 비어 있으면(size 0) 필터링하지 않는다
-    // (없음/비어 있음 = 매핑 정보 없음 — 스캔 전이거나 마이그레이션 중).
-    // 맵에 행이 있는데 이 클라이언트 키가 없으면 그 클라이언트엔 서버가 0개인 것 — 빈 Set으로 취급.
+    // No serversByClient map at all, or a completely empty one (size 0), means no filtering
+    // (absent/empty = no mapping information: before a scan, or mid-migration).
+    // If the map has rows but not this client's key, that client has zero servers: treat as an empty Set.
     const allowed = input.serversByClient && input.serversByClient.size > 0
       ? (input.serversByClient.get(client) ?? new Set<string>())
       : undefined;
     return {
       client,
       input: {
-        // 매핑이 없으면 전량 통과(기존 동작). 매핑이 있으면 그 클라이언트 서버만.
-        // 호출·로드는 필터링하지 않는다 — 설정에서 지운 서버의 실사용 이력도 보여야 한다.
+        // No mapping lets everything through (legacy behaviour). With a mapping, only that
+        // client's servers pass. Calls and loads are never filtered: real usage history of a
+        // server deleted from the config must still be visible.
         definitions: allowed === undefined
           ? input.definitions
           : input.definitions.filter((d) => allowed.has(d.serverName)),

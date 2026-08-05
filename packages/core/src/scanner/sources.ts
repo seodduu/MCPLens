@@ -9,14 +9,14 @@ import { computeEndpointHash, computeSourcePathHash } from './serverIdentity.js'
 import type { ClientId, ConfigSourceKind, ServerIdentity } from '../types.js';
 import { specTransport } from './configs.js';
 
-/** 설정 소스 종류: 'claude-user' | 'claude-project' | 'codex' | 'gemini' */
+/** Config source kind: 'claude-user' | 'claude-project' | 'codex' | 'gemini' */
 export interface ConfigSource {
   kind: string;
-  /** 감시 대상 절대경로 (존재하지 않을 수 있음) */
+  /** Absolute path to watch (may not exist). */
   filePath: string;
 }
 
-/** ~/.claude.json 텍스트의 projects 키에서 프로젝트 경로 목록을 뽑는다 (파싱 실패 시 빈 배열). */
+/** Extracts project paths from the projects key of ~/.claude.json text (empty array on a parse failure). */
 function claudeProjectPathsFromText(text: string): string[] {
   try {
     const cfg = JSON.parse(text);
@@ -28,7 +28,7 @@ function claudeProjectPathsFromText(text: string): string[] {
   }
 }
 
-/** ~/.claude.json 을 읽어 projects 키에서 프로젝트 경로 목록을 뽑는다 (읽기 실패 시 빈 배열). */
+/** Reads ~/.claude.json and extracts project paths from its projects key (empty array on a read failure). */
 function claudeProjectPaths(): string[] {
   const claudeJsonPath = path.join(os.homedir(), '.claude.json');
   try {
@@ -41,14 +41,14 @@ function claudeProjectPaths(): string[] {
 
 export interface ConfigSourcesOptions {
   /**
-   * ~/.claude.json 내용을 주입해 claude-project 경로를 유도한다.
-   * 제공되면 실제 파일을 읽지 않는다 (유닛테스트에서 실기기 파일 접근을 피하기 위함).
-   * 생략 시 기존 동작대로 ~/.claude.json 을 readFileSync 한다 (없으면 무시).
+   * Injects the contents of ~/.claude.json to derive the claude-project paths.
+   * When provided, no real file is read (so unit tests never touch real-device files).
+   * When omitted, ~/.claude.json is readFileSync'd as before (ignored when missing).
    */
   claudeUserJson?: string;
 }
 
-/** 이 머신에서 감시·수집할 설정 파일 목록 (존재 여부와 무관하게 경로 반환). */
+/** Config files to watch and collect on this machine (paths are returned whether or not they exist). */
 export function configSources(opts?: ConfigSourcesOptions): ConfigSource[] {
   const h = os.homedir();
   const sources: ConfigSource[] = [
@@ -66,7 +66,7 @@ export function configSources(opts?: ConfigSourcesOptions): ConfigSource[] {
   return sources;
 }
 
-/** codex `~/.codex/config.toml` 의 mcp_servers 테이블을 파싱한다. enabled=false 인 서버는 skipped 처리. */
+/** Parses the mcp_servers table of codex `~/.codex/config.toml`. Servers with enabled=false are reported as skipped. */
 function collectCodex(text: string): CollectResult {
   let toml: any;
   try {
@@ -89,14 +89,14 @@ function collectCodex(text: string): CollectResult {
     if (typeof s?.command === 'string') {
       specs.push({ name, command: s.command, args: s.args ?? [], env: s.env });
     }
-    // command 도 없고 enabled=false 도 아닌 항목(전송 판별 불가)은 의도적으로 무시한다.
-    // collectServerSpecs 의 unknown 처리와 달리 codex 는 http url 필드가 없어 skipped 사유가 다르므로 별도 계약 없이 drop.
+    // Entries with neither a command nor enabled=false (transport undeterminable) are ignored on purpose.
+    // Unlike the unknown handling in collectServerSpecs, codex has no http url field, so the skip reason differs and it is dropped with no contract.
   }
 
   return { specs, skipped };
 }
 
-/** 파일 내용 문자열 → 스펙. 파싱 실패는 빈 결과 (throw 금지). */
+/** File content string -> specs. A parse failure yields an empty result (never throws). */
 export function collectFromSource(kind: string, text: string): CollectResult {
   switch (kind) {
     case 'claude-user':
@@ -111,7 +111,7 @@ export function collectFromSource(kind: string, text: string): CollectResult {
   }
 }
 
-/** 소스 목록과 파일 읽기 함수를 받아 병합한다. collectAllSpecs의 테스트 가능한 알맹이. */
+/** Merges the given sources using the given file reader. The testable core of collectAllSpecs. */
 export function collectFromSources(
   sources: ConfigSource[],
   readFile: (filePath: string) => string,
@@ -140,7 +140,7 @@ export function collectFromSources(
     try {
       text = readFile(source.filePath);
     } catch (err) {
-      // 파일 부재는 정상(프로젝트별 .mcp.json은 대부분 없다) — 관찰 실패와 구분한다.
+      // A missing file is normal (most projects have no .mcp.json), so it is distinguished from a failed observation.
       const missing = (err as NodeJS.ErrnoException)?.code === 'ENOENT';
       reads.push({ kind: source.kind, servers: [], failed: missing ? 'missing' : 'error' });
       continue;
@@ -176,7 +176,7 @@ export function collectFromSources(
     attribution, replaceable, identities };
 }
 
-/** 모든 소스 파일을 읽어 병합 (읽기 전용, 없는 파일은 무시). 우선순위: claude-user > claude-project > codex > gemini (이름 충돌 시 먼저 온 것). */
+/** Reads and merges every source file (read-only, missing files ignored). Priority: claude-user > claude-project > codex > gemini (first one wins on a name clash). */
 export function collectAllSpecs(): CollectResult & {
   sources: ConfigSource[];
   attribution: Map<string, Set<ClientId>>;

@@ -19,7 +19,7 @@ const multiFx = readFileSync(
 const multiMixedFx = readFileSync(
   path.join(here, '../../../../../fixtures/codex/tool-search-multi-mixed.jsonl'), 'utf8');
 
-// 기대 토큰은 계획서 수치가 아니라 픽스처 원문에서 뽑는다. 픽스처가 진실이다.
+// Expected tokens come from the raw fixture, not from the numbers in the plan. The fixture is the truth.
 const multiDefinitions: unknown[] = JSON.parse(
   JSON.parse(multiFx.trim().split('\n').at(-1)!).payload.output.at(-1).text as string,
 );
@@ -27,14 +27,14 @@ const multiDefinitions: unknown[] = JSON.parse(
 describe('CodexAdapter', () => {
   const a = new CodexAdapter();
 
-  it('matches는 .codex/sessions 밑 rollout-*.jsonl만 승인', () => {
+  it('matches only rollout-*.jsonl under .codex/sessions', () => {
     expect(a.matches('/h/.codex/sessions/2026-07-19/rollout-1.jsonl')).toBe(true);
-    // 회귀: 실기기 레이아웃은 연/월/일 중첩 디렉토리
+    // Regression: the real-device layout uses nested year/month/day directories
     expect(a.matches('/h/.codex/sessions/2026/07/19/rollout-1.jsonl')).toBe(true);
     expect(a.matches('/h/.claude/projects/x/y.jsonl')).toBe(false);
   });
 
-  it('mcp_tool_call_end에서 server/tool/duration을 구조화 필드로 뽑는다', () => {
+  it('extracts server, tool and duration from mcp_tool_call_end as structured fields', () => {
     const r = a.parseFile('/fake/r.jsonl', fx);
     expect(r.toolCalls.length).toBeGreaterThan(0);
     expect(r.toolCalls[0].serverName).toBeTruthy();
@@ -43,7 +43,7 @@ describe('CodexAdapter', () => {
            r.toolCalls[0].durationMs! >= 0).toBe(true);
   });
 
-  it('실측 응답 토큰이 없으므로 responseText를 tiktoken으로 계상한다', () => {
+  it('counts responseText with tiktoken, since there is no measured response token count', () => {
     const r = a.parseFile('/fake/r.jsonl', fx);
     const call = r.toolCalls[0];
 
@@ -52,7 +52,7 @@ describe('CodexAdapter', () => {
     expect(call.responseTokens).toBeGreaterThan(0);
   });
 
-  it('응답 본문이 없으면 responseTokens는 null', () => {
+  it('leaves responseTokens null when there is no response body', () => {
     const line = JSON.stringify({
       timestamp: '2026-07-20T00:00:00.000Z',
       type: 'event_msg',
@@ -69,13 +69,13 @@ describe('CodexAdapter', () => {
     expect(r.toolCalls[0].responseTokens).toBeNull();
   });
 
-  it('session_meta의 native session ID를 externalSessionId로 보존한다', () => {
+  it('preserves the native session ID from session_meta as externalSessionId', () => {
     const r = a.parseFile('/fake/r.jsonl', fx);
 
     expect(r.session.externalSessionId).toBe('019f762f-611f-73d3-9acb-d4875d9e42a7');
   });
 
-  it('실제 task_started/turn_context payload의 turn_id를 호출 순서에 맞춰 보존한다', () => {
+  it('preserves turn_id from real task_started/turn_context payloads in call order', () => {
     const r = a.parseFile('/fake/r.jsonl', fx) as ReturnType<CodexAdapter['parseFile']> & {
       toolCallTurnIds?: readonly (string | null)[];
     };
@@ -83,7 +83,7 @@ describe('CodexAdapter', () => {
     expect(r.toolCallTurnIds).toEqual(['019f762f-617e-78f0-94e3-cde547506bf3']);
   });
 
-  it('공백 native session/call ID를 null로 정규화한다', () => {
+  it('normalizes blank native session/call IDs to null', () => {
     const content = [
       JSON.stringify({ type: 'session_meta', payload: { type: 'session_meta', session_id: '  ', id: '\t' } }),
       JSON.stringify({
@@ -101,43 +101,43 @@ describe('CodexAdapter', () => {
     expect(r.toolCalls[0].externalCallId).toBeNull();
   });
 
-  it('Rust 스타일 result의 Err는 isError=true', () => {
+  it('marks a Rust-style result Err as isError=true', () => {
     const r = a.parseFile('/fake/r.jsonl', fx);
     expect(r.toolCalls[0].isError).toBe(true);
   });
 
-  it('코드 모드 검색 스크립트가 있으면 DEFERRED_MEASURABLE이고 loadedTokens가 직접 계산된다', () => {
+  it('reports DEFERRED_MEASURABLE with directly computed loadedTokens when a code-mode search script is present', () => {
     const r = a.parseFile('/fake/r.jsonl', fx);
     expect(r.session.mode).toBe('DEFERRED_MEASURABLE');
     const withTokens = r.toolLoads.filter((l) => (l.loadedTokens ?? 0) > 0);
-    expect(withTokens.length).toBeGreaterThan(0); // Codex는 원문 기록 → 직접 토크나이즈
+    expect(withTokens.length).toBeGreaterThan(0); // Codex records the raw text, so it is tokenized directly
   });
 
-  it('token_count는 턴별 값으로 usage 적재 (누적 아님)', () => {
+  it('ingests token_count as the per-turn value, not the cumulative one', () => {
     const r = a.parseFile('/fake/r.jsonl', fx);
     expect(r.usage.length).toBeGreaterThan(0);
-    // 턴별(last_token_usage) 값이어야 함 — 첫 이벤트 input_tokens=21928 (누적 total과 다름)
+    // It must be the per-turn (last_token_usage) value: the first event has input_tokens=21928, different from the cumulative total
     expect(r.usage[0].inputTokens).toBe(21928);
     expect(r.usage[0].cacheReadTokens).toBe(9984);
   });
 
-  it('깨진 줄은 parseErrors', () => {
+  it('counts a broken line as a parseError', () => {
     const r = a.parseFile('/fake/r.jsonl', '{broken\n' + fx);
     expect(r.parseErrors).toBe(1);
   });
 
-  it('legacy exact-name fixture는 canonical ToolSearchAttempt를 만들지 않는다', () => {
+  it('creates no canonical ToolSearchAttempt from the legacy exact-name fixture', () => {
     const r = a.parseFile('/fake/tool-search-no-match.jsonl', noMatchFx);
     expect(r.toolSearchAttempts ?? []).toEqual([]);
   });
 
-  it('스크립트에 TOOL_NOT_FOUND가 있어도 실제 output이 user-cancelled이면 검색 실패로 보지 않는다', () => {
+  it('does not treat TOOL_NOT_FOUND in the script as a failed search when the real output is user-cancelled', () => {
     const r = a.parseFile('/fake/tool-search-cancelled.jsonl', cancelledFx);
 
     expect(r.toolSearchAttempts ?? []).toEqual([]);
   });
 
-  it('정확한 단일 정의 output은 exposed tool name과 토큰 수만 보존한다', () => {
+  it('keeps only the exposed tool name and token count from an exact single-definition output', () => {
     const r = a.parseFile('/fake/tool-search-success.jsonl', successFx);
 
     expect(r.toolLoads).toEqual([{
@@ -151,7 +151,7 @@ describe('CodexAdapter', () => {
     expect(JSON.stringify(r)).not.toContain('anonymous definition');
   });
 
-  it('취소·malformed·중복 exact output은 generic load로 fail-closed한다', () => {
+  it('fails closed to a generic load for cancelled, malformed and duplicate exact outputs', () => {
     const cases = [
       cancelledFx,
       [
@@ -173,7 +173,7 @@ describe('CodexAdapter', () => {
     }
   });
 
-  it('정확한 입력이어도 여러 정의를 반환한 broad output은 generic load로 남긴다', () => {
+  it('leaves a broad output returning several definitions as a generic load, even for exact input', () => {
     const content = [
       JSON.stringify({ payload: { type: 'custom_tool_call', call_id: 'broad', input: 'ALL_TOOLS.filter(x => x.name === "mcp__atlas__lookup")' } }),
       JSON.stringify({ payload: { type: 'custom_tool_call_output', call_id: 'broad', output: '[{"name":"mcp__atlas__lookup"},{"name":"mcp__atlas__other"}]' } }),
@@ -184,7 +184,7 @@ describe('CodexAdapter', () => {
     }]);
   });
 
-  it('broad name search는 단일 canonical definition을 반환해도 generic load로 남긴다', () => {
+  it('leaves a broad name search as a generic load even when it returns a single canonical definition', () => {
     const content = [
       JSON.stringify({ payload: { type: 'custom_tool_call', call_id: 'broad-input', input: 'ALL_TOOLS.filter(x => x.name.includes("mcp__atlas__lookup"))' } }),
       JSON.stringify({ payload: { type: 'custom_tool_call_output', call_id: 'broad-input', output: '[{"name":"mcp__atlas__lookup"}]' } }),
@@ -195,7 +195,7 @@ describe('CodexAdapter', () => {
     }]);
   });
 
-  it('canonical .includes no-match는 ToolSearchAttempt를 만들지 않는다', () => {
+  it('creates no ToolSearchAttempt for a canonical .includes no-match', () => {
     const content = [
       JSON.stringify({ payload: { type: 'custom_tool_call', call_id: 'broad-no-match', input: 'ALL_TOOLS.filter(x => x.name.includes("mcp__atlas__lookup"))' } }),
       JSON.stringify({ payload: { type: 'custom_tool_call_output', call_id: 'broad-no-match', output: 'TOOL_NOT_FOUND' } }),
@@ -206,7 +206,7 @@ describe('CodexAdapter', () => {
     expect(r.toolSearchAttempts ?? []).toEqual([]);
   });
 
-  it('canonical literal equality no-match는 ToolSearchAttempt를 만든다', () => {
+  it('creates a ToolSearchAttempt for a canonical literal-equality no-match', () => {
     const content = [
       JSON.stringify({ payload: { type: 'custom_tool_call', call_id: 'exact-no-match', input: 'ALL_TOOLS.filter(x => x.name === "mcp__atlas__lookup")' } }),
       JSON.stringify({ timestamp: '2026-07-20T00:30:01.000Z', payload: { type: 'custom_tool_call_output', call_id: 'exact-no-match', output: 'TOOL_NOT_FOUND' } }),
@@ -219,7 +219,7 @@ describe('CodexAdapter', () => {
     }]);
   });
 
-  it('주석·문자열의 fake comparison과 nested metadata name은 exact success가 아니다', () => {
+  it('does not treat fake comparisons in comments or strings, or a nested metadata name, as an exact success', () => {
     const inputs = [
       'ALL_TOOLS; // ALL_TOOLS.filter(x => x.name === "mcp__atlas__lookup")',
       'ALL_TOOLS; /* ALL_TOOLS.filter(x => x.name === "mcp__atlas__lookup") */',
@@ -244,7 +244,7 @@ describe('CodexAdapter', () => {
     expect(a.parseFile('/fake/nested.jsonl', nested).toolLoads[0]?.toolName).toBe('(code-mode-search)');
   });
 
-  it('name-only definition은 거부하고 description의 error/cancelled 문구가 있는 실제 definition은 허용한다', () => {
+  it('rejects a name-only definition and accepts a real definition whose description mentions error or cancelled', () => {
     const input = 'ALL_TOOLS.filter(x => x.name === "mcp__atlas__lookup")';
     const cases: Array<[unknown, string]> = [
       ['[{"name":"mcp__atlas__lookup"}]', '(code-mode-search)'],
@@ -264,7 +264,7 @@ describe('CodexAdapter', () => {
     }
   });
 
-  it('multipart empty array만 구조적 no-match로 기록하고 sentinel 혼합물은 거부한다', () => {
+  it('records only a multipart empty array as a structural no-match and rejects sentinel mixtures', () => {
     const input = 'ALL_TOOLS.filter(x => x.name === "mcp__atlas__lookup")';
     const cases: Array<[unknown, boolean]> = [
       [[{ type: 'input_text', text: 'Output:' }, { type: 'input_text', text: '[]' }], true],
@@ -284,7 +284,7 @@ describe('CodexAdapter', () => {
     }
   });
 
-  it('definition 또는 sentinel에 임의 prose·미지원 block이 섞이면 fail-closed한다', () => {
+  it('fails closed when arbitrary prose or an unsupported block is mixed into a definition or sentinel', () => {
     const input = 'ALL_TOOLS.filter(x => x.name === "mcp__atlas__lookup")';
     const cases: unknown[] = [
       [{ type: 'input_text', text: '[{"name":"mcp__atlas__lookup","description":"anonymous"}]' }, { type: 'input_text', text: 'unrelated prose' }],
@@ -303,7 +303,7 @@ describe('CodexAdapter', () => {
     }
   });
 
-  it('비정상 metadata와 빈 transport array는 success/no-match가 아니다', () => {
+  it('treats abnormal metadata and an empty transport array as neither success nor no-match', () => {
     const input = 'ALL_TOOLS.filter(x => x.name === "mcp__atlas__lookup")';
     const cases: unknown[] = [
       [{ type: 'input_text', text: 'Output: unrelated prose' }, { type: 'input_text', text: '[{"name":"mcp__atlas__lookup","description":"anonymous"}]' }],
@@ -323,7 +323,7 @@ describe('CodexAdapter', () => {
     }
   });
 
-  it('증거는 metadata 뒤의 단일 block 하나여야 하며 순서·중복 혼합을 거부한다', () => {
+  it('requires the evidence to be a single block after the metadata and rejects order or duplicate mixtures', () => {
     const input = 'ALL_TOOLS.filter(x => x.name === "mcp__atlas__lookup")';
     const accepted = [
       { type: 'input_text', text: 'Script completed\nOutput:\nTOOL_NOT_FOUND' },
@@ -347,14 +347,14 @@ describe('CodexAdapter', () => {
     }
   });
 
-  it('unterminated block comment는 숨은 리터럴을 exact 검색 대상으로 새어나가게 하지 않는다', () => {
+  it('does not let an unterminated block comment leak a hidden literal into the exact search target', () => {
     const input = 'ALL_TOOLS.filter(x => x.name === "mcp__atlas__lookup") /* unterminated';
-    // maskJavaScript가 안전하게 포기하므로 extractExactCanonicalSearch는 여전히 null이다 —
-    // 코멘트에 숨은 리터럴이 "이 이름을 정확히 검색했다"는 신뢰로 둔갑하지 않는다는 방어는
-    // 그대로 유지된다. 다만 인식 실패(null)는 이제 "넓은 검색"과 같은 신호이므로, 출력이
-    // 온전한 단일 정의면 그 정의 자체의 이름으로 성공 판정된다(변경 3의 의도된 동작).
-    // no-match는 "무엇을 찾다가 없었는지" 아는 경우만 기록하므로, 인식 실패 상태에서는
-    // TOOL_NOT_FOUND가 와도 여전히 generic이고 toolSearchAttempts에 남지 않는다.
+    // maskJavaScript gives up safely, so extractExactCanonicalSearch is still null: the guard that
+    // keeps a literal hidden in a comment from posing as "this exact name was searched" stays intact.
+    // A recognition failure (null) is now the same signal as a broad search, though, so an output
+    // holding one intact definition is judged a success under that definition's own name (the intended
+    // behaviour of change 3). A no-match is recorded only when we know what was being looked for, so in
+    // the recognition-failure state a TOOL_NOT_FOUND is still generic and leaves no toolSearchAttempts.
     const success = a.parseFile('/fake/unterminated-comment-success.jsonl', [
       JSON.stringify({ payload: { type: 'custom_tool_call', call_id: 'unterminated', input } }),
       JSON.stringify({
@@ -377,7 +377,7 @@ describe('CodexAdapter', () => {
     expect(noMatch.toolSearchAttempts ?? []).toEqual([]);
   });
 
-  it('넓은 조건 검색이어도 온전한 단일 정의를 반환하면 exposed tool name을 뽑는다', () => {
+  it('extracts the exposed tool name when a broad search returns one intact definition', () => {
     const content = [
       JSON.stringify({ payload: { type: 'custom_tool_call', call_id: 'broad-exact', input: 'ALL_TOOLS.filter(x => x.name.includes("atlas"))' } }),
       JSON.stringify({ payload: { type: 'custom_tool_call_output', call_id: 'broad-exact', output: [{ type: 'input_text', text: '[{"name":"mcp__atlas__lookup","description":"Look up a record"}]' }] } }),
@@ -392,7 +392,7 @@ describe('CodexAdapter', () => {
     expect(r.toolSearchAttempts ?? []).toEqual([]);
   });
 
-  it('넓은 조건 검색이 canonical 형태가 아닌 이름을 반환하면 generic으로 남긴다', () => {
+  it('leaves a broad search returning a non-canonical name as generic', () => {
     const content = [
       JSON.stringify({ payload: { type: 'custom_tool_call', call_id: 'broad-noncanonical', input: 'ALL_TOOLS.filter(x => x.name.includes("atlas"))' } }),
       JSON.stringify({ payload: { type: 'custom_tool_call_output', call_id: 'broad-noncanonical', output: [{ type: 'input_text', text: '[{"name":"atlas-lookup","description":"Look up a record"}]' }] } }),
@@ -402,7 +402,7 @@ describe('CodexAdapter', () => {
       .toMatchObject([{ toolName: '(code-mode-search)' }]);
   });
 
-  it('부분일치 검색 출력의 정의 N개를 각각 로드로 기록한다', () => {
+  it('records each of the N definitions in a substring search output as a load', () => {
     const r = a.parseFile('/fake/tool-search-multi.jsonl', multiFx);
 
     expect(r.toolLoads).toHaveLength(2);
@@ -412,7 +412,7 @@ describe('CodexAdapter', () => {
     expect(r.toolLoads.filter((l) => l.toolName === '(code-mode-search)')).toHaveLength(0);
   });
 
-  it('다중 로드의 토큰은 원소별 정의 크기로 나뉜다', () => {
+  it('splits the tokens of a multi-load by the size of each definition', () => {
     const r = a.parseFile('/fake/tool-search-multi.jsonl', multiFx);
     const byName = new Map(r.toolLoads.map((l) => [l.toolName, l.loadedTokens]));
 
@@ -421,11 +421,11 @@ describe('CodexAdapter', () => {
       .toBe(countTokens(JSON.stringify(lookupDefinition)));
     expect(byName.get('mcp__atlas__search'))
       .toBe(countTokens(JSON.stringify(searchDefinition)));
-    // 균등 배분이 아님을 고정한다.
+    // Pins that it is not an even split.
     expect(byName.get('mcp__atlas__lookup')).not.toBe(byName.get('mcp__atlas__search'));
   });
 
-  it('canonical이 아닌 원소는 로드로 세지 않는다', () => {
+  it('does not count non-canonical elements as loads', () => {
     const r = a.parseFile('/fake/tool-search-multi-mixed.jsonl', multiMixedFx);
 
     expect(r.toolLoads).toHaveLength(2);
@@ -434,7 +434,7 @@ describe('CodexAdapter', () => {
     expect(r.toolLoads.some((l) => l.toolName === 'exec')).toBe(false);
   });
 
-  it('canonical 정의가 하나도 없으면 집계 행으로 남는다', () => {
+  it('leaves it as an aggregate row when there is no canonical definition at all', () => {
     const output = '[{"name":"exec","description":"Run a shell command."},'
       + '{"name":"apply_patch","description":"Apply a patch."}]';
     const content = [
@@ -449,7 +449,7 @@ describe('CodexAdapter', () => {
     expect(r.toolLoads[0]?.loadedTokens).toBe(countTokens(output));
   });
 
-  it('정확 검색은 원소가 2개 이상이면 여전히 generic이다', () => {
+  it('keeps an exact search generic when it has two or more elements', () => {
     const content = [
       JSON.stringify({ payload: { type: 'custom_tool_call', call_id: 'exact-multi', input: 'ALL_TOOLS.filter(x => x.name === "mcp__atlas__lookup")' } }),
       JSON.stringify({ payload: { type: 'custom_tool_call_output', call_id: 'exact-multi', output: '[{"name":"mcp__atlas__lookup","description":"a"},{"name":"mcp__atlas__search","description":"b"}]' } }),
@@ -461,7 +461,7 @@ describe('CodexAdapter', () => {
     expect(r.toolLoads[0]?.toolName).toBe('(code-mode-search)');
   });
 
-  it('같은 툴이 중복 실린 출력은 한 번만 센다', () => {
+  it('counts an output carrying the same tool twice only once', () => {
     const content = [
       JSON.stringify({ payload: { type: 'custom_tool_call', call_id: 'dup', input: 'ALL_TOOLS.filter(x => x.name.includes("atlas"))' } }),
       JSON.stringify({ payload: { type: 'custom_tool_call_output', call_id: 'dup', output: '[{"name":"mcp__atlas__lookup","description":"a"},{"name":"mcp__atlas__lookup","description":"a"}]' } }),
@@ -473,7 +473,7 @@ describe('CodexAdapter', () => {
     expect(r.toolLoads[0]?.toolName).toBe('mcp__atlas__lookup');
   });
 
-  it('객체 래퍼 출력은 계속 generic이다', () => {
+  it('keeps an object-wrapper output generic', () => {
     const content = [
       JSON.stringify({ payload: { type: 'custom_tool_call', call_id: 'wrapper', input: 'ALL_TOOLS.filter(x => x.name.includes("atlas"))' } }),
       JSON.stringify({ payload: { type: 'custom_tool_call_output', call_id: 'wrapper', output: '{"matches":[{"name":"mcp__atlas__lookup","description":"a"},{"name":"mcp__atlas__search","description":"b"}]}' } }),
@@ -485,7 +485,7 @@ describe('CodexAdapter', () => {
     expect(r.toolLoads[0]?.toolName).toBe('(code-mode-search)');
   });
 
-  it('잘린 출력은 계속 generic이다', () => {
+  it('keeps a truncated output generic', () => {
     const content = [
       JSON.stringify({ payload: { type: 'custom_tool_call', call_id: 'truncated', input: 'ALL_TOOLS.filter(x => x.name.includes("atlas"))' } }),
       JSON.stringify({

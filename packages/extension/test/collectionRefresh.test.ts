@@ -1,17 +1,17 @@
 import { describe, it, expect, vi } from 'vitest';
 import { applyCollectionResult } from '../src/collectionRefresh.js';
 
-// computeCollection()이 실제로 부르는 지점: extension.ts는 이 함수에 vscode API를 감싼
-// 콜백(applyInputs/refreshSetupKeys/refreshSetupRows)만 넘긴다. 이 모듈은 vscode를
-// import하지 않으므로, 여기서 이 함수를 직접 호출해 "가드 밖에서 refreshSetupKeys/refreshSetupRows가
-// 실행되는" 버그가 재발하면 실패하는 테스트를 만들 수 있다.
+// The point computeCollection() actually calls: extension.ts passes only the vscode-wrapping
+// callbacks (applyInputs/refreshSetupKeys/refreshSetupRows) into this function. The module never
+// imports vscode, so calling it directly here gives a test that fails if the bug where
+// refreshSetupKeys/refreshSetupRows run outside the guard ever returns.
 describe('applyCollectionResult', () => {
-  it('세대가 앞서 있으면 어떤 효과도 실행하지 않는다', async () => {
+  it('runs no effect at all when the generation has moved on', async () => {
     const applyInputs = vi.fn();
     const refreshSetupKeys = vi.fn();
     const refreshSetupRows = vi.fn();
 
-    // gen(1)이 시작될 때 이미 최신 실행이 collectionGeneration을 2로 올려놓은 상황.
+    // By the time gen(1) starts, a newer run has already bumped collectionGeneration to 2.
     await applyCollectionResult(1, () => 2, ['inputs'], {
       applyInputs,
       refreshSetupKeys,
@@ -23,7 +23,7 @@ describe('applyCollectionResult', () => {
     expect(refreshSetupRows).not.toHaveBeenCalled();
   });
 
-  it('세대가 같으면 모든 효과를 순서대로 실행한다', async () => {
+  it('runs every effect in order when the generation matches', async () => {
     const order: string[] = [];
     const inputs = ['inputs'];
 
@@ -36,7 +36,7 @@ describe('applyCollectionResult', () => {
     expect(order).toEqual(['applyInputs', 'refreshSetupKeys', 'refreshSetupRows']);
   });
 
-  it('키 갱신이 비동기여도 그 완료를 기다린 뒤 행 갱신을 한다', async () => {
+  it('waits for an asynchronous key refresh to finish before refreshing rows', async () => {
     const order: string[] = [];
 
     await applyCollectionResult(1, () => 1, ['inputs'], {
@@ -51,18 +51,18 @@ describe('applyCollectionResult', () => {
     expect(order).toEqual(['refreshSetupKeys(resolved)', 'refreshSetupRows']);
   });
 
-  it('효과 실행 도중 세대가 바뀌어도 이미 시작한 실행은 끝까지 간다', async () => {
-    // withGenerationGuard는 시작 시점에만 gen을 검사하고 apply() 내부에서 재검사하지 않는다.
-    // 따라서 실행이 시작된 뒤 currentGeneration()이 바뀌어도(예: refreshSetupKeys가 await하는 동안
-    // 새 refresh가 시작돼 collectionGeneration이 증가해도) 이번 실행의 나머지 효과는 전부 실행된다.
-    // 이건 요구사항이 아니라 현재 코드의 실제 동작을 고정해 두는 것이다.
+  it('lets an already-started run finish even when the generation changes mid-run', async () => {
+    // withGenerationGuard checks gen only at the start and never re-checks inside apply().
+    // So once a run has started, a change to currentGeneration() (a new refresh bumping
+    // collectionGeneration while refreshSetupKeys awaits, say) still lets the remaining effects run.
+    // This is not a requirement; it pins the current behaviour of the code.
     let generation = 1;
     const order: string[] = [];
 
     await applyCollectionResult(1, () => generation, ['inputs'], {
       applyInputs: () => { order.push('applyInputs'); },
       refreshSetupKeys: async () => {
-        generation = 2; // 실행 도중 최신 refresh가 시작됐다고 가정
+        generation = 2; // assume a newer refresh started mid-run
         order.push('refreshSetupKeys');
       },
       refreshSetupRows: () => { order.push('refreshSetupRows'); },

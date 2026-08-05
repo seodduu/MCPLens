@@ -1,16 +1,16 @@
 import type { ToolDependencyResult } from '@mcp-lens/core';
 
 export interface DisableConfirmation {
-  /** 모달 제목 줄 */
+  /** Modal title line */
   message: string;
-  /** 본문 — 무엇을 잃는지, 되돌릴 수 있는지, 언제 적용되는지 */
+  /** Body: what is lost, whether it can be undone, when it takes effect */
   detail: string;
   confirmLabel: string;
 }
 
 const FALLBACK = 'Not available.';
 
-/** 대화상자 문구는 순수 데이터로 만든다. 표시 방법은 커맨드 쪽이 정한다. */
+/** The dialog wording is built as pure data. How it is displayed is up to the command side. */
 export function buildDisableConfirmation(result: ToolDependencyResult): DisableConfirmation {
   const lines = [
     `What you lose: ${result.whatYouLose ?? FALLBACK}`,

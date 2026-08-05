@@ -4,7 +4,7 @@ import { findCallChainDependencies } from '../../src/dependency/callChains.js';
 import type { DependencyCallRecord } from '../../src/types.js';
 
 describe('findCallChainDependencies', () => {
-  it('최근 90일 성공 호출에서 A-before-B가 3세션 이상, 80% 이상이면 A를 B의 blocker로 센다', () => {
+  it('counts A as a blocker of B when A-before-B appears in >=3 sessions and >=80% of successful calls in the last 90 days', () => {
     expect(findCallChainDependencies(records as DependencyCallRecord[], {
       now: '2026-08-03T00:02:00.000Z',
     })).toEqual([
@@ -17,7 +17,7 @@ describe('findCallChainDependencies', () => {
     ]);
   });
 
-  it('실패 호출과 A 없는 B 성공 세션 2개 이상은 blocker에서 제외한다', () => {
+  it('excludes failed calls and >=2 successful B sessions without A from the blockers', () => {
     const calls: DependencyCallRecord[] = [
       { sequence: 1, sessionId: 's1', serverName: 's', toolName: 'a', calledAt: '2026-08-01T00:00:00.000Z', isError: false },
       { sequence: 2, sessionId: 's1', serverName: 's', toolName: 'b', calledAt: '2026-08-01T00:01:00.000Z', isError: false },

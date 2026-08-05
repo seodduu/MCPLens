@@ -10,7 +10,7 @@ const row = (over: Partial<MatrixRow> = {}): MatrixRow => ({
   loadedSessionCount: 0, sessionCount: 1,
   recommendation: { action: 'remove', confidence: 'low', reason: '',
     reasonParts: { basis: '', serverBasis: null, effect: null, caveat: null },
-    evidenceLabel: '실측', evidence: EMPTY_EVIDENCE },
+    evidenceLabel: 'measured', evidence: EMPTY_EVIDENCE },
   reliability: { errorCount: 0, errorRate: null, failedResponseTokens: 0 },
   loadPattern: null,
   ...over,
@@ -23,13 +23,13 @@ const call = (sessionId: string, tool: string): ToolCallEvent => ({
 });
 
 describe('toolCostKey', () => {
-  it('엔진과 같은 공백 구분 키를 만든다', () => {
+  it('builds the same space-separated key as the engine', () => {
     expect(toolCostKey('notion', 'notion-update-page')).toBe('notion notion-update-page');
   });
 });
 
 describe('callSessionCounts', () => {
-  it('툴별 호출된 고유 세션 수를 센다', () => {
+  it('counts the distinct sessions that called each tool', () => {
     const m = callSessionCounts([
       call('s1', 'notion-search'), call('s2', 'notion-search'),
       call('s1', 'notion-fetch'),
@@ -38,7 +38,7 @@ describe('callSessionCounts', () => {
     expect(m.get('notion notion-fetch')).toBe(1);
   });
 
-  it('같은 세션에서 여러 번 호출해도 1로 센다', () => {
+  it('counts several calls in one session as 1', () => {
     const m = callSessionCounts([
       call('s1', 'notion-search'), call('s1', 'notion-search'),
       call('s1', 'notion-search'),
@@ -46,47 +46,47 @@ describe('callSessionCounts', () => {
     expect(m.get('notion notion-search')).toBe(1);
   });
 
-  it('호출이 없으면 빈 맵이다', () => {
+  it('returns an empty map when there is no call', () => {
     expect(callSessionCounts([]).size).toBe(0);
   });
 });
 
 describe('cumulativeCost', () => {
-  it('로드 1세션·호출 0 → 정의 토큰 그대로', () => {
+  it('gives the definition tokens as they are for 1 load session and 0 calls', () => {
     const c = cumulativeCost(row({ loadedSessionCount: 1 }), 0);
     expect(c.tokens).toBe(3287);
     expect(c.definitionMeasured).toBe(true);
   });
 
-  it('로드 3세션 → 정의 토큰의 3배', () => {
+  it('gives three times the definition tokens for 3 load sessions', () => {
     expect(cumulativeCost(row({ loadedSessionCount: 3 }), 0).tokens).toBe(9861);
   });
 
-  it('로드 0·호출 0 → 0', () => {
+  it('gives 0 for 0 loads and 0 calls', () => {
     expect(cumulativeCost(row(), 0).tokens).toBe(0);
   });
 
-  it('정의 로드분과 호출 응답분을 합산한다', () => {
+  it('sums the definition loads and the call responses', () => {
     const c = cumulativeCost(row({ loadedSessionCount: 1, responseTokens: 500 }), 0);
     expect(c.tokens).toBe(3787);
   });
 
-  it('로드 0·2세션에서 호출 → 호출 기반으로 역산해 2배', () => {
+  it('infers double from the calls when there are 0 loads and calls in 2 sessions', () => {
     expect(cumulativeCost(row({ callCount: 2 }), 2).tokens).toBe(6574);
   });
 
-  it('로드 3·호출 1세션 → 큰 쪽인 3배를 택한다', () => {
+  it('takes the larger side, three times, for 3 loads and calls in 1 session', () => {
     expect(cumulativeCost(row({ loadedSessionCount: 3, callCount: 1 }), 1).tokens).toBe(9861);
   });
 
-  it('정의 미측정 + 응답 있음 → 응답분은 남기고 미측정으로 표시한다', () => {
+  it('keeps the response part and marks it unmeasured when the definition is unmeasured', () => {
     const c = cumulativeCost(
       row({ definitionTokens: null, callCount: 1, responseTokens: 50 }), 1);
     expect(c.tokens).toBe(50);
     expect(c.definitionMeasured).toBe(false);
   });
 
-  it('정의 미측정이어도 로드·호출이 0이면 정의분이 실제로 0이므로 측정됨으로 본다', () => {
+  it('counts as measured when loads and calls are 0, since the definition part really is 0 even if unmeasured', () => {
     const c = cumulativeCost(row({ definitionTokens: null }), 0);
     expect(c.tokens).toBe(0);
     expect(c.definitionMeasured).toBe(true);

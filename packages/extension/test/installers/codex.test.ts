@@ -8,15 +8,15 @@ import { PLUGIN_ID, MARKETPLACE_NAME, stableDir, type InstallerDeps, type RunRes
 import { CODEX_HOOK_STATE_KEYS } from '../../src/installers/codexHookState.js';
 
 const here = join(fileURLToPath(import.meta.url), '..');
-/** `codex plugin list --json` 실측 출력 (codex-cli 0.144.6). */
+/** Measured `codex plugin list --json` output (codex-cli 0.144.6). */
 const listJson = readFileSync(join(here, '../fixtures/codex-plugin-list.json'), 'utf8');
-/** mcp-lens가 없는 상태 — 실측상 미설치 플러그인은 installed[]에 아예 없다. */
+/** State without mcp-lens: measured, an uninstalled plugin is absent from installed[] entirely. */
 const emptyJson = JSON.stringify({ installed: [], available: [] });
 
 const HOME = '/home/u';
 const CONFIG_PATH = join(HOME, '.codex', 'config.toml');
 
-/** 우리 훅 4개 모두 `enabled = true`(+선택적으로 trusted_hash)를 갖는 config.toml 본문. */
+/** config.toml body with `enabled = true` (and optionally trusted_hash) on all four of our hooks. */
 function configWith(opts: { enabled?: boolean; trusted?: boolean } = {}): string {
   const { enabled = true, trusted = false } = opts;
   return CODEX_HOOK_STATE_KEYS.map((key) => [
@@ -38,7 +38,7 @@ function deps(over: Partial<InstallerDeps> = {}): InstallerDeps {
   };
 }
 
-/** 호출된 인자를 기록하고, list에는 지정한 JSON을, 나머지엔 성공을 돌려주는 run. */
+/** run that records its arguments, returns the given JSON for list and success for everything else. */
 function recorder(listOut = emptyJson, rest: Partial<RunResult> = {}) {
   const calls: string[][] = [];
   const run = async (_bin: string, args: string[]): Promise<RunResult> => {
@@ -50,16 +50,16 @@ function recorder(listOut = emptyJson, rest: Partial<RunResult> = {}) {
 }
 
 describe('CodexHookInstaller.detect', () => {
-  it('실측 픽스처에 mcp-lens@mcplens가 있으면 installed', async () => {
+  it('reports installed when the measured fixture contains mcp-lens@mcplens', async () => {
     expect(await new CodexHookInstaller(deps()).detect()).toBe('installed');
   });
 
-  it('installed[]에 없으면 not-installed', async () => {
+  it('reports not-installed when it is absent from installed[]', async () => {
     const run = async (): Promise<RunResult> => ({ stdout: emptyJson, stderr: '', code: 0 });
     expect(await new CodexHookInstaller(deps({ run })).detect()).toBe('not-installed');
   });
 
-  it('엔트리가 installed:false면 not-installed', async () => {
+  it('reports not-installed when the entry has installed:false', async () => {
     const stdout = JSON.stringify({
       installed: [{ pluginId: PLUGIN_ID, name: 'mcp-lens', marketplaceName: 'mcplens', installed: false }],
       available: [],
@@ -68,11 +68,11 @@ describe('CodexHookInstaller.detect', () => {
     expect(await new CodexHookInstaller(deps({ run })).detect()).toBe('not-installed');
   });
 
-  it('바이너리가 없으면 client-missing', async () => {
+  it('reports client-missing when the binary is absent', async () => {
     expect(await new CodexHookInstaller(deps({ findBinary: () => null })).detect()).toBe('client-missing');
   });
 
-  it('findBinary가 throw해도 전파하지 않고 client-missing으로 취급한다', async () => {
+  it('treats a throwing findBinary as client-missing without propagating', async () => {
     const findBinary = (): never => { throw new Error('boom'); };
     const inst = new CodexHookInstaller(deps({ findBinary }));
     expect(await inst.detect()).toBe('client-missing');
@@ -80,51 +80,51 @@ describe('CodexHookInstaller.detect', () => {
     expect(await inst.uninstall()).toEqual({ kind: 'client-missing' });
   });
 
-  it('codex 바이너리를 이름으로 찾는다', async () => {
+  it('finds the codex binary by name', async () => {
     const asked: string[] = [];
     const findBinary = (n: string): string | null => { asked.push(n); return '/bin/codex'; };
     await new CodexHookInstaller(deps({ findBinary })).detect();
     expect(asked).toEqual(['codex']);
   });
 
-  it('JSON이 깨져 있으면 throw하지 않고 not-installed', async () => {
+  it('reports not-installed without throwing on broken JSON', async () => {
     const run = async (): Promise<RunResult> => ({ stdout: 'not json {{', stderr: '', code: 0 });
     expect(await new CodexHookInstaller(deps({ run })).detect()).toBe('not-installed');
   });
 
-  it('종료 코드가 0이 아니면 not-installed', async () => {
+  it('reports not-installed on a non-zero exit code', async () => {
     const run = async (): Promise<RunResult> => ({ stdout: listJson, stderr: 'boom', code: 2 });
     expect(await new CodexHookInstaller(deps({ run })).detect()).toBe('not-installed');
   });
 
-  it('run이 throw해도 전파하지 않고 not-installed', async () => {
+  it('reports not-installed without propagating when run throws', async () => {
     const run = async (): Promise<RunResult> => { throw new Error('spawn ENOENT'); };
     expect(await new CodexHookInstaller(deps({ run })).detect()).toBe('not-installed');
   });
 
-  it('plugin은 있지만 enabled가 없으면 not-installed로 보고 설치가 다시 돈다', async () => {
+  it('reports not-installed and reruns the install when the plugin exists but enabled is missing', async () => {
     const fs = memFsStub({ [CONFIG_PATH]: '[features]\nplugin_hooks = true\n' });
     expect(await new CodexHookInstaller(deps({ fs })).detect()).toBe('not-installed');
   });
 
-  it('enabled는 있고 trusted_hash가 없으면 needs-approval이다', async () => {
+  it('reports needs-approval when enabled is present and trusted_hash is missing', async () => {
     const fs = memFsStub({ [CONFIG_PATH]: configWith({ enabled: true, trusted: false }) });
     expect(await new CodexHookInstaller(deps({ fs })).detect()).toBe('needs-approval');
   });
 
-  it('enabled와 trusted_hash가 모두 있으면 installed다', async () => {
+  it('reports installed when both enabled and trusted_hash are present', async () => {
     const fs = memFsStub({ [CONFIG_PATH]: configWith({ enabled: true, trusted: true }) });
     expect(await new CodexHookInstaller(deps({ fs })).detect()).toBe('installed');
   });
 
-  it('config를 못 읽으면 fail-open으로 installed를 보고한다', async () => {
-    // memFsStub 기본값: config.toml이 없으면 readFile이 throw한다.
+  it('reports installed fail-open when the config cannot be read', async () => {
+    // memFsStub default: readFile throws when config.toml is missing.
     expect(await new CodexHookInstaller(deps()).detect()).toBe('installed');
   });
 });
 
 describe('CodexHookInstaller.install', () => {
-  it('스냅샷 복사 → marketplace add → plugin add 순서로 실행', async () => {
+  it('runs snapshot copy, marketplace add, then plugin add in order', async () => {
     const copied: [string, string][] = [];
     const { calls, run } = recorder();
     const d = deps({ run, fs: { ...memFsStub(), copyDir: (f: string, t: string) => { copied.push([f, t]); } } });
@@ -139,7 +139,7 @@ describe('CodexHookInstaller.install', () => {
     ]);
   });
 
-  it('이미 설치돼 있으면 alreadyInstalled로 조기 반환하고 아무것도 실행하지 않는다', async () => {
+  it('returns alreadyInstalled early and runs nothing when it is already installed', async () => {
     const { calls, run } = recorder(listJson);
     let copies = 0;
     const d = deps({ run, fs: { ...memFsStub(), copyDir: () => { copies += 1; } } });
@@ -149,18 +149,18 @@ describe('CodexHookInstaller.install', () => {
     expect(calls.filter((a) => !a.includes('list'))).toEqual([]);
   });
 
-  it('바이너리가 없으면 client-missing', async () => {
+  it('reports client-missing when the binary is absent', async () => {
     expect(await new CodexHookInstaller(deps({ findBinary: () => null })).install()).toEqual({ kind: 'client-missing' });
   });
 
-  it('복사가 실패하면 step=copy로 failed', async () => {
+  it('reports failed with step=copy when the copy fails', async () => {
     const { run } = recorder();
     const fs = { copyDir: () => { throw new Error('EACCES'); }, exists: () => false, readDir: () => [] };
     expect(await new CodexHookInstaller(deps({ run, fs })).install())
       .toEqual({ kind: 'failed', step: 'copy', stderr: 'EACCES' });
   });
 
-  it('marketplace add가 실패하면 step=marketplace-add로 failed하고 plugin add는 실행하지 않는다', async () => {
+  it('reports failed with step=marketplace-add and skips plugin add when marketplace add fails', async () => {
     const calls: string[][] = [];
     const run = async (_b: string, a: string[]): Promise<RunResult> => {
       calls.push(a);
@@ -172,7 +172,7 @@ describe('CodexHookInstaller.install', () => {
     expect(calls.some((a) => a.includes('add') && a.includes(PLUGIN_ID))).toBe(false);
   });
 
-  it('plugin add가 실패하면 step=install로 failed', async () => {
+  it('reports failed with step=install when plugin add fails', async () => {
     const run = async (_b: string, a: string[]): Promise<RunResult> => {
       if (a.includes('list')) return { stdout: emptyJson, stderr: '', code: 0 };
       if (a.includes('marketplace')) return { stdout: '', stderr: '', code: 0 };
@@ -182,7 +182,7 @@ describe('CodexHookInstaller.install', () => {
       .toEqual({ kind: 'failed', step: 'install', stderr: 'no such plugin' });
   });
 
-  it('이미 추가됨 메시지는 실패로 보지 않는다', async () => {
+  it('does not treat an already-added message as a failure', async () => {
     const run = async (_b: string, a: string[]): Promise<RunResult> => {
       if (a.includes('list')) return { stdout: emptyJson, stderr: '', code: 0 };
       return { stdout: '', stderr: 'Marketplace `mcplens` is already added', code: 1 };
@@ -190,7 +190,7 @@ describe('CodexHookInstaller.install', () => {
     expect(await new CodexHookInstaller(deps({ run })).install()).toEqual({ kind: 'ok', alreadyInstalled: false });
   });
 
-  it('run이 throw해도 전파하지 않고 failed를 돌려준다', async () => {
+  it('returns failed without propagating when run throws', async () => {
     const run = async (_b: string, a: string[]): Promise<RunResult> => {
       if (a.includes('list')) return { stdout: emptyJson, stderr: '', code: 0 };
       throw new Error('spawn ENOENT');
@@ -199,7 +199,7 @@ describe('CodexHookInstaller.install', () => {
     expect(res).toEqual({ kind: 'failed', step: 'marketplace-add', stderr: 'spawn ENOENT' });
   });
 
-  it('install이 config.toml에 enabled = true를 쓰고 백업을 남긴다', async () => {
+  it('writes enabled = true into config.toml on install and leaves a backup', async () => {
     const { run } = recorder(emptyJson);
     const before = '[features]\nplugin_hooks = true\n';
     const fs = memFsStub({ [CONFIG_PATH]: before });
@@ -216,7 +216,7 @@ describe('CodexHookInstaller.install', () => {
     expect(written[CONFIG_PATH]).toContain('[features]');
   });
 
-  it('needs-approval이면 install은 alreadyInstalled로 조기 반환한다', async () => {
+  it('returns alreadyInstalled early from install when it is needs-approval', async () => {
     const fs = memFsStub({ [CONFIG_PATH]: configWith({ enabled: true, trusted: false }) });
     const { calls, run } = recorder(listJson);
     const res = await new CodexHookInstaller(deps({ run, fs })).install();
@@ -227,7 +227,7 @@ describe('CodexHookInstaller.install', () => {
 });
 
 describe('CodexHookInstaller.uninstall', () => {
-  it('plugin remove → marketplace remove 순서로 실행', async () => {
+  it('runs plugin remove then marketplace remove in order', async () => {
     const { calls, run } = recorder();
     expect(await new CodexHookInstaller(deps({ run })).uninstall()).toEqual({ kind: 'ok', alreadyInstalled: false });
     expect(calls).toEqual([
@@ -236,11 +236,11 @@ describe('CodexHookInstaller.uninstall', () => {
     ]);
   });
 
-  it('바이너리가 없으면 client-missing', async () => {
+  it('reports client-missing when the binary is absent', async () => {
     expect(await new CodexHookInstaller(deps({ findBinary: () => null })).uninstall()).toEqual({ kind: 'client-missing' });
   });
 
-  it('plugin remove가 실패하면 step=uninstall로 failed하고 marketplace remove는 건너뛴다', async () => {
+  it('reports failed with step=uninstall and skips marketplace remove when plugin remove fails', async () => {
     const calls: string[][] = [];
     const run = async (_b: string, a: string[]): Promise<RunResult> => {
       calls.push(a);
@@ -251,41 +251,41 @@ describe('CodexHookInstaller.uninstall', () => {
     expect(calls.some((a) => a.includes('marketplace'))).toBe(false);
   });
 
-  it('설치돼 있지 않다는 메시지는 실패로 보지 않는다', async () => {
+  it('does not treat a not-installed message as a failure', async () => {
     const run = async (): Promise<RunResult> => ({ stdout: '', stderr: 'plugin is not installed', code: 1 });
     expect(await new CodexHookInstaller(deps({ run })).uninstall()).toEqual({ kind: 'ok', alreadyInstalled: false });
   });
 
-  it('marketplace remove 실패는 무시한다 (실측상 미설정이면 exit 1)', async () => {
+  it('ignores a marketplace remove failure (measured: exit 1 when it is unset)', async () => {
     const run = async (_b: string, a: string[]): Promise<RunResult> => a.includes('marketplace')
       ? { stdout: '', stderr: 'marketplace `mcplens` is not configured or installed', code: 1 }
       : { stdout: '', stderr: '', code: 0 };
     expect(await new CodexHookInstaller(deps({ run })).uninstall()).toEqual({ kind: 'ok', alreadyInstalled: false });
   });
 
-  it('run이 throw해도 전파하지 않는다', async () => {
+  it('does not propagate when run throws', async () => {
     const run = async (): Promise<RunResult> => { throw new Error('spawn ENOENT'); };
     expect(await new CodexHookInstaller(deps({ run })).uninstall())
       .toEqual({ kind: 'failed', step: 'uninstall', stderr: 'spawn ENOENT' });
   });
 
-  it('"not found" 메시지도 실패로 보지 않는다', async () => {
+  it('does not treat a "not found" message as a failure either', async () => {
     const run = async (): Promise<RunResult> => ({ stdout: '', stderr: 'plugin not found', code: 1 });
     expect(await new CodexHookInstaller(deps({ run })).uninstall()).toEqual({ kind: 'ok', alreadyInstalled: false });
   });
 });
 
-describe('codex-marketplace.json 에셋', () => {
+describe('the codex-marketplace.json asset', () => {
   const manifest = JSON.parse(
     readFileSync(join(here, '../../assets/codex-marketplace.json'), 'utf8'),
   ) as { name: string; plugins: { name: string; source: { source: string; path: string } }[] };
 
-  it('마켓플레이스 이름과 플러그인 이름이 PLUGIN_ID를 만들어낸다', () => {
+  it('composes PLUGIN_ID from the marketplace name and the plugin name', () => {
     expect(manifest.name).toBe(MARKETPLACE_NAME);
     expect(`${manifest.plugins[0].name}@${manifest.name}`).toBe(PLUGIN_ID);
   });
 
-  it('플러그인 소스는 스냅샷 상대 경로 ./plugins/mcp-lens', () => {
+  it('points the plugin source at the snapshot-relative ./plugins/mcp-lens', () => {
     expect(manifest.plugins[0].source).toEqual({ source: 'local', path: './plugins/mcp-lens' });
   });
 });

@@ -26,7 +26,7 @@ export default function App() {
           fetch('/api/matrix?days=30'),
           fetch('/api/sessions?days=7'),
         ]);
-        if (!matrixRes.ok || !sessionsRes.ok) throw new Error('요청 실패');
+        if (!matrixRes.ok || !sessionsRes.ok) throw new Error('request failed');
         const matrixBody: MatrixResponse = await matrixRes.json();
         const sessionsBody: SessionMeta[] = await sessionsRes.json();
         if (cancelled) return;
@@ -56,7 +56,7 @@ export default function App() {
     async function fetchTimeline() {
       try {
         const res = await fetch(`/api/timeline/${encodeURIComponent(selectedSessionId!)}`);
-        if (!res.ok) throw new Error('타임라인 요청 실패');
+        if (!res.ok) throw new Error('timeline request failed');
         const body: ToolCallEvent[] = await res.json();
         if (!cancelled) setCalls(body);
       } catch (e) {
@@ -74,29 +74,29 @@ export default function App() {
 
   return (
     <main className="app">
-      <h1>MCP Lens 대시보드</h1>
-      {error && <p className="error">에러: {error}</p>}
+      <h1>MCP Lens dashboard</h1>
+      {error && <p className="error">Error: {error}</p>}
 
       <section>
-        <h2>토큰 절약 요약</h2>
+        <h2>Token savings summary</h2>
         {matrix ? (
           <p>
-            잠재 {matrix.savings.potentialTokens.toLocaleString()} 토큰 · 실사용{' '}
-            {matrix.savings.actualTokens.toLocaleString()} 토큰 · 절약{' '}
-            {matrix.savings.savedTokens.toLocaleString()} 토큰
+            potential {matrix.savings.potentialTokens.toLocaleString()} tokens · actual{' '}
+            {matrix.savings.actualTokens.toLocaleString()} tokens · saved{' '}
+            {matrix.savings.savedTokens.toLocaleString()} tokens
           </p>
         ) : (
-          <p>불러오는 중…</p>
+          <p>Loading…</p>
         )}
       </section>
 
       <section>
-        <h2>매트릭스</h2>
+        <h2>Matrix</h2>
         <MatrixTable rows={matrix?.rows ?? []} />
       </section>
 
       <section>
-        <h2>타임라인</h2>
+        <h2>Timeline</h2>
         <Timeline
           sessions={sessions}
           selectedSessionId={selectedSessionId}

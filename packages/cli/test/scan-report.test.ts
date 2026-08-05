@@ -2,24 +2,24 @@ import { describe, it, expect } from 'vitest';
 import { scanFailureLine, formatSourceCounts } from '../src/scan-report.js';
 
 describe('scanFailureLine', () => {
-  it('auth-required 오류는 인증 필요 안내로 표기한다', () => {
+  it('formats auth-required errors as authentication guidance', () => {
     const line = scanFailureLine('remote-http', new Error('auth-required: 401 from server'));
-    expect(line).toBe('- remote-http: 인증 필요 — 스킵 (npx mcp-lens auth remote-http 로 로그인)');
+    expect(line).toBe('- remote-http: authentication required, skipped (log in with npx mcp-lens auth remote-http)');
   });
 
-  it('그 외 오류는 일반 실패 메시지를 표기한다', () => {
+  it('formats other errors as a plain failure line', () => {
     const line = scanFailureLine('flaky', new Error('spawn ENOENT'));
-    expect(line).toBe('- flaky: 스캔 실패 — spawn ENOENT');
+    expect(line).toBe('- flaky: scan failed: spawn ENOENT');
   });
 });
 
 describe('formatSourceCounts', () => {
-  it('발견 수 0인 소스는 생략하고 · 로 연결한다', () => {
+  it('omits sources with 0 finds and joins the rest with ·', () => {
     expect(formatSourceCounts({ 'claude-user': 2, 'claude-project': 0, codex: 1 }))
-      .toBe('claude-user 2개 · codex 1개');
+      .toBe('claude-user 2 · codex 1');
   });
 
-  it('전부 0이면 빈 문자열을 반환한다', () => {
+  it('returns an empty string when everything is 0', () => {
     expect(formatSourceCounts({ codex: 0 })).toBe('');
   });
 });

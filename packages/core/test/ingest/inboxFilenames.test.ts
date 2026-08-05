@@ -38,16 +38,16 @@ function envelope(overrides: Partial<HookEnvelope> = {}): HookEnvelope {
 }
 
 /**
- * 훅 러너는 툴 이벤트의 deliveryId를 `native:<hash>` 형태로 만든다(identity.ts).
- * 그 문자열을 그대로 파일명에 쓰면 Windows에서 깨진다 — `:` 는 파일명 예약
- * 문자이고 NTFS에서는 대체 데이터 스트림 문법으로 해석돼, `pending\native:x.json`
- * 이 `native` 라는 빈 파일의 숨은 스트림이 된다. 목록에는 `native` 만 보이고
- * `.json` 으로 끝나지 않으므로 claimPending이 영원히 건너뛴다 = 툴 호출 훅 유실.
+ * The hook runner builds the deliveryId of a tool event as `native:<hash>` (identity.ts).
+ * Using that string as a file name breaks on Windows: `:` is a reserved file-name character and
+ * NTFS reads it as alternate-data-stream syntax, so `pending\native:x.json` becomes a hidden
+ * stream of an empty file called `native`. The listing shows only `native`, which does not end in
+ * `.json`, so claimPending skips it forever and the tool-call hook is lost.
  */
 const WINDOWS_RESERVED = /[<>:"/\\|?*]/;
 
-describe('inbox 파일명 — Windows 예약 문자', () => {
-  it('deliveryId에 콜론이 있어도 파일명에는 예약 문자가 없다', () => {
+describe('inbox file names and Windows reserved characters', () => {
+  it('keeps reserved characters out of the file name even when the deliveryId has a colon', () => {
     const root = temporaryRoot();
     enqueueEnvelope(envelope({ deliveryId: 'native:770a4bef' }), { root });
 
@@ -56,7 +56,7 @@ describe('inbox 파일명 — Windows 예약 문자', () => {
     expect(names[0]).not.toMatch(WINDOWS_RESERVED);
   });
 
-  it('잠금·커밋 보조 파일에도 예약 문자가 없다', () => {
+  it('keeps reserved characters out of the lock and commit helper files too', () => {
     const root = temporaryRoot();
     enqueueEnvelope(envelope({ deliveryId: 'native:770a4bef' }), { root });
 
@@ -65,7 +65,7 @@ describe('inbox 파일명 — Windows 예약 문자', () => {
     }
   });
 
-  it('인코딩해도 원래 deliveryId 그대로 claim된다 (왕복 보존)', () => {
+  it('claims the original deliveryId back after encoding (round trip preserved)', () => {
     const root = temporaryRoot();
     enqueueEnvelope(envelope({ deliveryId: 'native:770a4bef' }), { root });
 
@@ -74,7 +74,7 @@ describe('inbox 파일명 — Windows 예약 문자', () => {
     expect(claims[0].envelope.deliveryId).toBe('native:770a4bef');
   });
 
-  it('claim 후 markProcessed까지 예약 문자 없이 완주한다', () => {
+  it('runs from claim through markProcessed with no reserved character', () => {
     const root = temporaryRoot();
     enqueueEnvelope(envelope({ deliveryId: 'native:770a4bef' }), { root });
     const [claim] = claimPending({ root });
@@ -87,13 +87,13 @@ describe('inbox 파일명 — Windows 예약 문자', () => {
     expect(readdirSync(join(root, 'pending'))).toEqual([]);
   });
 
-  it('중복 enqueue는 여전히 duplicate로 걸러진다', () => {
+  it('still filters a duplicate enqueue as duplicate', () => {
     const root = temporaryRoot();
     expect(enqueueEnvelope(envelope({ deliveryId: 'native:dup' }), { root })).toBe('queued');
     expect(enqueueEnvelope(envelope({ deliveryId: 'native:dup' }), { root })).toBe('duplicate');
   });
 
-  it('구버전 콜론 파일이 pending에 남아 있으면 같은 봉투를 다시 큐에 넣지 않는다', () => {
+  it('does not requeue the same envelope when an old colon file remains in pending', () => {
     const root = temporaryRoot();
     const paths = inboxPaths({ root });
     const legacy = envelope({ deliveryId: 'native:legacy' });
@@ -103,7 +103,7 @@ describe('inbox 파일명 — Windows 예약 문자', () => {
     expect(readdirSync(paths.pending)).toEqual(['native:legacy.json']);
   });
 
-  it('구버전 콜론 파일을 claim한 뒤 markProcessed까지 완주한다', () => {
+  it('claims an old colon file and runs it through to markProcessed', () => {
     const root = temporaryRoot();
     const paths = inboxPaths({ root });
     const legacy = envelope({ deliveryId: 'native:legacy' });
@@ -116,8 +116,8 @@ describe('inbox 파일명 — Windows 예약 문자', () => {
     expect(readdirSync(join(root, 'processed'))).toHaveLength(1);
   });
 
-  // macOS/Linux에 이미 쌓여 있는 콜론 파일명은 업그레이드 후에도 읽혀야 한다.
-  it('구버전이 남긴 콜론 파일명도 그대로 claim된다', () => {
+  // Colon file names already piled up on macOS/Linux must stay readable after an upgrade.
+  it('claims a colon file name left by an older version as it is', () => {
     const root = temporaryRoot();
     const paths = inboxPaths({ root });
     const legacy = envelope({ deliveryId: 'native:legacy' });

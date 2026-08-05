@@ -11,7 +11,7 @@ export function dbPath(): string {
 export function inboxPath(): string {
   return path.join(lensHome(), 'inbox');
 }
-/** OAuth 토큰·클라이언트 등록 정보 저장 디렉토리 (파일 모드 0600). */
+/** Directory storing OAuth tokens and client registrations (file mode 0600). */
 export function oauthDir(): string {
   return path.join(lensHome(), 'oauth');
 }

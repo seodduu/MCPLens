@@ -20,15 +20,15 @@ export function actionAllowedByRollout(
   const value = rollout ?? DEFAULT_DEPENDENCY_ANALYSIS_ROLLOUT;
   if (client === 'claude-code') return value === 'claude' || value === 'all';
   if (client === 'codex') return value === 'codex' || value === 'all';
-  return false; // gemini-cli는 어떤 값에서도 허용하지 않는다.
+  return false; // gemini-cli is never allowed, at any value.
 }
 
 /**
- * 구 값(shadow/codex-beta/stable)을 새 값으로 옮긴다. 모르는 값은 undefined.
+ * Migrates old values (shadow/codex-beta/stable) to the new ones. Unknown values give undefined.
  *
- * 구 codex-beta와 stable은 둘 다 claude-code와 codex를 함께 허용했다. 따라서
- * 그 두 값을 그대로 codex로 옮기면 사용자가 이미 부여했던 claude-code 권한을
- * 조용히 빼앗는 셈이 된다. all로 옮기는 것만이 권한을 유지하는 유일한 매핑이다.
+ * The old codex-beta and stable both allowed claude-code together with codex. Migrating those two
+ * to codex would therefore silently strip a claude-code permission the user had already granted.
+ * Migrating to all is the only mapping that preserves the permission.
  */
 export function migrateDependencyAnalysisRollout(value: unknown): DependencyAnalysisRollout | undefined {
   if (value === 'shadow') return 'off';

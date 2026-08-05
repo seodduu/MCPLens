@@ -1,36 +1,36 @@
 // packages/cli/src/help.ts
 
-export const HELP_TEXT = `mcp-lens — MCP 컨텍스트 회계 도구
+export const HELP_TEXT = `mcp-lens: MCP context accounting tool
 
-사용법: mcp-lens <command> [options]
+Usage: mcp-lens <command> [options]
 
-커맨드
-  report                    수집된 관측으로 비용×사용 매트릭스를 출력한다 (기본 커맨드)
-      --days <n>            최근 n일만 집계한다 (기본 30, 0보다 큰 숫자)
-      --format <f>          출력 형식: table | ai | json (기본 table)
-  scan                      설정된 MCP 서버에 접속해 툴 정의와 토큰 수를 스캔·저장한다
-      --config <path>       이 설정 파일 하나만 읽는다 (기본: 감지된 모든 클라이언트 설정)
-  auth <serverName>         http 서버에 OAuth 로그인한 뒤 그 서버만 재스캔한다
-      --clear               저장된 인증 정보를 지운다
-  hooks status              클라이언트별 훅 설치 상태를 본다
-      --json                JSON으로 출력한다
-  hooks doctor [client]     훅 설정을 진단한다 (client: claude-code | codex | gemini-cli)
-  hook capture --client <c> 훅 런타임 진입점. stdin으로 페이로드를 받는다 (사람이 직접 쓰지 않는다)
+Commands
+  report                    print the cost x usage matrix from collected observations (default)
+      --days <n>            aggregate only the last n days (default 30, must be > 0)
+      --format <f>          output format: table | ai | json (default table)
+  scan                      connect to configured MCP servers, scan tool definitions and token counts
+      --config <path>       read only this one config file (default: every detected client config)
+  auth <serverName>         OAuth login to an http server, then rescan just that server
+      --clear               delete the stored credentials
+  hooks status              show hook installation state per client
+      --json                print JSON
+  hooks doctor [client]     diagnose the hook setup (client: claude-code | codex | gemini-cli)
+  hook capture --client <c> hook runtime entry point, reads its payload from stdin (not for humans)
 
-  -h, --help                이 도움말을 출력한다
+  -h, --help                print this help
 
-메모
-  scan과 auth는 DB에 쓰므로 writer lease를 잡는다. VS Code 확장이 실행 중이면
-  실행되지 않으니 확장을 닫고 다시 시도하라. report는 리스를 잡으면 백필까지 저장하고,
-  못 잡으면 읽기 전용으로 진행한다(출력 내용은 같다).
+Notes
+  scan and auth write to the DB, so they take the writer lease. They will not run while the
+  VS Code extension holds it; close the extension window and try again. report saves its
+  backfill when it can take the lease and runs read-only when it cannot (same output either way).
 `;
 
 /**
- * 도움말 요청인지 판정한다.
+ * Decides whether this invocation is a help request.
  *
- * `hook`은 절대 여기서 가로채지 않는다. `mcp-lens hook capture`는 클라이언트 세션이
- * 깨지지 않도록 어떤 인자에도 stdout으로 `{}`를 내고 exit 0 해야 하는 fail-open 계약이라,
- * 도움말이 그 경로를 대신 처리하면 훅 호스트가 깨진다.
+ * `hook` is never intercepted here. `mcp-lens hook capture` has a fail-open contract: whatever
+ * the arguments, it must print `{}` on stdout and exit 0 so the client session does not break.
+ * If help handled that path instead, the hook host would break.
  */
 export function isHelpRequest(args: string[]): boolean {
   if (args[0] === 'hook') return false;

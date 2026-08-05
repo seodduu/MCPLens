@@ -114,7 +114,7 @@ export class LogWatcher extends EventEmitter {
 
   async stop(): Promise<void> { await this.watcher?.close(); this.watcher = null; }
 
-  /** 반환: 실제로 파싱·적재했는가 (mtime 커서 일치 시 null) — 적재 시 parseErrors 동반 반환 */
+  /** Returns whether anything was actually parsed and ingested (null when the mtime cursor matches); ingestion also returns parseErrors */
   private ingestFile(
     adapter: LogAdapter,
     filePath: string,
@@ -127,10 +127,10 @@ export class LogWatcher extends EventEmitter {
       if (cursor && cursor.mtimeMs === mtimeMs) return null;
       content = readFileSync(filePath, 'utf8');
     } catch {
-      // 파일이 이벤트 발생 후 사라지거나 읽을 수 없는 경우 — 스킵
+      // The file vanished after the event, or cannot be read: skip
       return null;
     }
-    // MVP: 전체 재파싱 (ingest가 세션 단위 멱등이므로 안전) — 커서는 스킵 판정용
+    // MVP: full re-parse (safe because ingest is idempotent per session); the cursor only decides skips
     try {
       const result = adapter.parseFile(filePath, content);
       this.store.ingest(result);
@@ -328,7 +328,7 @@ function walk(dir: string, depth = 0): string[] {
   try {
     entries = readdirSync(dir, { withFileTypes: true });
   } catch {
-    // 읽을 수 없는 디렉터리 — 스킵하고 나머지 백필은 계속
+    // Unreadable directory: skip it and continue the rest of the backfill
     return out;
   }
   for (const e of entries) {

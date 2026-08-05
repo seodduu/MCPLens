@@ -65,28 +65,28 @@ describe('LensStore', () => {
     expect(s.hasRestoredActionSince('claude-code', 'github', 'search', 'definition-a', '2026-08-02T00:00:00.000Z')).toBe(false);
   });
 
-  it('ingest 후 조회된다', async () => {
+  it('can be queried after ingest', async () => {
     const s = await LensStore.open(':memory:');
     s.ingest(fakeResult('s1'));
     expect(s.callsSince('2026-01-01')).toHaveLength(2);
     expect(s.sessionsSince('2026-01-01')).toHaveLength(1);
   });
 
-  it('같은 세션 재적재는 멱등 (이중계상 없음)', async () => {
+  it('makes re-ingesting the same session idempotent (no double counting)', async () => {
     const s = await LensStore.open(':memory:');
     s.ingest(fakeResult('s1'));
-    s.ingest(fakeResult('s1', 3)); // 재파싱: 3콜로 갱신
-    expect(s.callsSince('2026-01-01')).toHaveLength(3); // 2+3=5가 아니라 3
+    s.ingest(fakeResult('s1', 3)); // re-parse: updated to 3 calls
+    expect(s.callsSince('2026-01-01')).toHaveLength(3); // 3, not 2+3=5
   });
 
-  it('커서 get/set 왕복', async () => {
+  it('round-trips the cursor through get/set', async () => {
     const s = await LensStore.open(':memory:');
     expect(s.getCursor('/a')).toBeNull();
     s.setCursor('/a', 1024, 999);
     expect(s.getCursor('/a')).toEqual({ byteOffset: 1024, mtimeMs: 999 });
   });
 
-  it('save는 파일로 영속화되고 재open 시 데이터가 남는다', async () => {
+  it('persists save to the file and keeps the data on reopen', async () => {
     const tmp = `${process.env.TMPDIR ?? '/tmp'}/lens-test-${Date.now()}.db`;
     const s = await LensStore.open(tmp);
     s.ingest(fakeResult('s1'));
@@ -96,7 +96,7 @@ describe('LensStore', () => {
     s2.close();
   });
 
-  it('loadsSince는 세션 시작일로 기간 필터한다 (M6)', async () => {
+  it('filters loadsSince by the session start date (M6)', async () => {
     const s = await LensStore.open(':memory:');
     const old = fakeResult('old'); old.session.startedAt = '2026-01-01T00:00:00Z';
     old.toolLoads = [{ sessionId: 'old', serverName: 'github', toolName: 'a', loadedTokens: 10 }];
@@ -104,10 +104,10 @@ describe('LensStore', () => {
     recent.toolLoads = [{ sessionId: 'recent', serverName: 'github', toolName: 'b', loadedTokens: 20 }];
     s.ingest(old); s.ingest(recent);
     const loads = s.loadsSince('2026-06-01');
-    expect(loads.map((l) => l.toolName)).toEqual(['b']); // old는 제외
+    expect(loads.map((l) => l.toolName)).toEqual(['b']); // old is excluded
   });
 
-  it('startedAt이 null인 세션의 로드는 보수적으로 포함한다', async () => {
+  it('conservatively includes loads of sessions with a null startedAt', async () => {
     const s = await LensStore.open(':memory:');
     const r = fakeResult('x'); r.session.startedAt = null;
     r.toolLoads = [{ sessionId: 'x', serverName: 'g', toolName: 't', loadedTokens: 5 }];
@@ -115,7 +115,7 @@ describe('LensStore', () => {
     expect(s.loadsSince('2026-06-01')).toHaveLength(1);
   });
 
-  it('upsert를 2회 해도 first_scanned_at은 최초값을 보존한다', async () => {
+  it('preserves the original first_scanned_at across two upserts', async () => {
     const s = await LensStore.open(':memory:');
     s.upsertDefinitions([{ serverName: 'github', toolName: 'a',
       definitionTokens: 100, scannedAt: '2026-01-01T00:00:00Z',
@@ -124,14 +124,14 @@ describe('LensStore', () => {
       definitionTokens: 120, scannedAt: '2026-07-01T00:00:00Z',
       firstScannedAt: '2026-07-01T00:00:00Z' }]);
     const [d] = s.allDefinitions();
-    expect(d.definitionTokens).toBe(120);              // 최신값으로 갱신
-    expect(d.scannedAt).toBe('2026-07-01T00:00:00Z');  // 최신값으로 갱신
-    expect(d.firstScannedAt).toBe('2026-01-01T00:00:00Z'); // 최초값 보존
+    expect(d.definitionTokens).toBe(120);              // updated to the newest value
+    expect(d.scannedAt).toBe('2026-07-01T00:00:00Z');  // updated to the newest value
+    expect(d.firstScannedAt).toBe('2026-01-01T00:00:00Z'); // the original is preserved
   });
 
-  it('first_scanned_at 없는 구스키마 DB를 열면 컬럼이 추가되고 scanned_at으로 백필된다', async () => {
+  it('adds the column and backfills it from scanned_at when opening an old-schema DB without first_scanned_at', async () => {
     const tmp = `${process.env.TMPDIR ?? '/tmp'}/lens-migrate-${Date.now()}.db`;
-    // 구스키마 DB를 손으로 만든다 (first_scanned_at 컬럼 없음)
+    // Hand-build an old-schema DB (no first_scanned_at column)
     const SQL = await initSqlJs();
     const legacy = new SQL.Database();
     legacy.exec(`CREATE TABLE tool_definitions (
@@ -145,13 +145,13 @@ describe('LensStore', () => {
     const s = await LensStore.open(tmp);
     const [d] = s.allDefinitions();
     expect(d.toolName).toBe('old');
-    expect(d.firstScannedAt).toBe('2026-02-02T00:00:00Z'); // scanned_at으로 백필
+    expect(d.firstScannedAt).toBe('2026-02-02T00:00:00Z'); // backfilled from scanned_at
     s.close();
   });
 
-  it('body가 적재된 서버명만 돌려준다', async () => {
+  it('returns only the server names whose bodies were ingested', async () => {
     const s = await LensStore.open(':memory:');
-    // upsertScanResult로 a만 body까지 적재하고, b는 upsertDefinitions로 definition만 넣는다
+    // upsertScanResult ingests a with its bodies; b gets only definitions through upsertDefinitions
     s.upsertScanResult(
       [{ serverName: 'a', toolName: 'tool', definitionTokens: 10,
         scannedAt: '2026-08-01T00:00:00Z', firstScannedAt: '2026-08-01T00:00:00Z' }],
@@ -164,12 +164,12 @@ describe('LensStore', () => {
     expect([...s.serversWithDefinitionBodies()]).toEqual(['a']);
   });
 
-  it('body 테이블이 비면 빈 집합을 돌려준다', async () => {
+  it('returns an empty set when the body table is empty', async () => {
     const s = await LensStore.open(':memory:');
     expect(s.serversWithDefinitionBodies().size).toBe(0);
   });
 
-  it('lastCallByTool은 전 기간 기준 툴별 마지막 호출 시각을 준다', async () => {
+  it('gives the all-time last call timestamp per tool through lastCallByTool', async () => {
     const s = await LensStore.open(':memory:');
     const old = fakeResult('old', 0);
     old.session.startedAt = '2026-01-01T00:00:00Z';

@@ -25,25 +25,25 @@ const batch: InferenceBatch = {
 };
 
 describe('validateInferenceOutput', () => {
-  it('입력 batch와 결과 서버/툴이 완전히 일치하면 정규화 결과를 반환한다', () => {
+  it('returns the normalized result when the input batch and the result servers/tools match exactly', () => {
     expect(validateInferenceOutput(batch, fixture('valid-independent.json')).results).toHaveLength(1);
   });
 
-  it('입력 batch에 없는 extra tool을 거부한다', () => {
+  it('rejects an extra tool that is absent from the input batch', () => {
     expect(() => validateInferenceOutput(batch, fixture('invalid-extra-tool.json'))).toThrow(/unexpected result tool/);
   });
 
-  it('status enum 밖의 값을 거부한다', () => {
+  it('rejects a value outside the status enum', () => {
     expect(() => validateInferenceOutput(batch, {
       results: [{ ...(fixture('valid-independent.json') as { results: object[] }).results[0], status: 'Maybe' }],
     })).toThrow(/status is invalid/);
   });
 
-  it('Independent에서만 English display fields를 허용한다', () => {
+  it('allows the English display fields only on Independent', () => {
     expect(() => validateInferenceOutput(batch, fixture('invalid-summary-language.json'))).toThrow(/English/);
   });
 
-  it('Independent가 아닌 상태에서는 display fields를 null로 강제한다', () => {
+  it('forces the display fields to null in any state other than Independent', () => {
     const result = validateInferenceOutput(batch, {
       results: [{
         serverName: 'github',

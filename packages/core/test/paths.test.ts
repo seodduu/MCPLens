@@ -4,13 +4,13 @@ import os from 'node:os';
 import path from 'node:path';
 
 describe('paths', () => {
-  it('lensHome은 홈 밑 .mcplens', () => {
+  it('puts lensHome at .mcplens under home', () => {
     expect(lensHome()).toBe(path.join(os.homedir(), '.mcplens'));
   });
-  it('dbPath는 lens.db', () => {
+  it('names the database lens.db', () => {
     expect(dbPath()).toBe(path.join(os.homedir(), '.mcplens', 'lens.db'));
   });
-  it('클라이언트 로그 루트는 ~ 하드코딩 없이 절대경로', () => {
+  it('returns absolute client log roots with no hardcoded ~', () => {
     const roots = clientLogRoots('claude-code');
     expect(roots[0]).toBe(path.join(os.homedir(), '.claude', 'projects'));
     expect(roots.every((r) => path.isAbsolute(r))).toBe(true);
@@ -18,10 +18,10 @@ describe('paths', () => {
 });
 
 describe('dbWriterLockPath', () => {
-  it('home 하위 .mcplens/db-writer.lock', () => {
+  it('puts the lock at .mcplens/db-writer.lock under home', () => {
     expect(dbWriterLockPath('/home/u')).toBe('/home/u/.mcplens/db-writer.lock');
   });
-  it('인자 없으면 os.homedir() 기준', () => {
+  it('falls back to os.homedir() without an argument', () => {
     expect(dbWriterLockPath()).toBe(path.join(os.homedir(), '.mcplens', 'db-writer.lock'));
   });
 });

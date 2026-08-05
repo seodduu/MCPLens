@@ -24,8 +24,8 @@ function envelope(deliveryId: string): HookEnvelope {
   };
 }
 
-// 주입식 가짜 워처: add 리스너를 수동으로 발화, ready는 실 chokidar처럼
-// 비동기(마이크로태스크)로 자동 발화, close 여부 노출.
+// Injected fake watcher: add listeners fire manually, ready fires automatically on a microtask like
+// the real chokidar, and whether it was closed is exposed.
 function fakeWatch() {
   const listeners: Array<(p: string) => void> = [];
   let closed = false;
@@ -42,7 +42,7 @@ function fakeWatch() {
   return handle;
 }
 
-// 수동 타이머: setTimer 콜백을 모았다가 flush로 동기 발화 → debounce 결정론화.
+// Manual timer: setTimer callbacks are collected and fired synchronously by flush, making debounce deterministic.
 function manualTimer() {
   let queue: Array<() => void> = [];
   return {
@@ -53,7 +53,7 @@ function manualTimer() {
 }
 
 describe('IngestionCoordinator pending watcher', () => {
-  it('startDraining이 즉시 밀린 봉투를 drain한 뒤 감시를 시작한다', async () => {
+  it('drains the backlog immediately and then starts watching on startDraining', async () => {
     const root = temporaryRoot();
     enqueueEnvelope(envelope('backlog-1'), { root });
     const upsert = vi.fn().mockResolvedValue(undefined);
@@ -68,14 +68,14 @@ describe('IngestionCoordinator pending watcher', () => {
 
     await coord.startDraining();
 
-    expect(upsert).toHaveBeenCalledTimes(1);       // 밀린 봉투 흡수
-    expect(watch.closed).toBe(false);               // 감시 개시
+    expect(upsert).toHaveBeenCalledTimes(1);       // the backlog is absorbed
+    expect(watch.closed).toBe(false);               // watching started
     await coord.stopDraining();
   });
 
-  it('ready 시점에 존재하는 봉투를 add 이벤트 없이 초기 drain으로 흡수한다(레이스 차단)', async () => {
+  it('absorbs envelopes present at ready through the initial drain, with no add event (race guard)', async () => {
     const root = temporaryRoot();
-    // ready 이전부터 pending에 존재하는 파일(초기 스캔에서 ignoreInitial로 억제됨).
+    // A file present in pending before ready (suppressed in the initial scan by ignoreInitial).
     enqueueEnvelope(envelope('present-at-ready'), { root });
     const upsert = vi.fn().mockResolvedValue(undefined);
     const watch = fakeWatch();
@@ -85,15 +85,15 @@ describe('IngestionCoordinator pending watcher', () => {
       watchFactory: () => watch, setTimer: timer.setTimer,
     });
 
-    await coord.startDraining();       // ready(마이크로태스크) 후 초기 drain 실행
+    await coord.startDraining();       // the initial drain runs after ready (a microtask)
 
-    // add 이벤트를 전혀 발화하지 않았음에도 봉투가 흡수됨.
+    // The envelope is absorbed even though no add event ever fired.
     expect(upsert).toHaveBeenCalledTimes(1);
-    expect(timer.count).toBe(0);       // scheduleDrain(=add 경로) 미사용
+    expect(timer.count).toBe(0);       // scheduleDrain (the add path) is unused
     await coord.stopDraining();
   });
 
-  it('add 이벤트가 debounce 후 정확히 1회 drain을 유발한다', async () => {
+  it('makes an add event trigger exactly one drain after the debounce', async () => {
     const root = temporaryRoot();
     const upsert = vi.fn().mockResolvedValue(undefined);
     const watch = fakeWatch();
@@ -102,20 +102,20 @@ describe('IngestionCoordinator pending watcher', () => {
       store: { upsertObservation: upsert }, inbox: { root },
       watchFactory: () => watch, setTimer: timer.setTimer,
     });
-    await coord.startDraining();       // backlog 비어 있음(upsert 0)
+    await coord.startDraining();       // the backlog is empty (upsert 0)
     upsert.mockClear();
 
     enqueueEnvelope(envelope('live-1'), { root });
     watch.emitAdd(join(root, 'pending', 'live-1.json'));
     timer.flush();
-    await Promise.resolve();           // runDrain의 마이크로태스크 소진
+    await Promise.resolve();           // drain the microtask of runDrain
     await Promise.resolve();
 
     expect(upsert).toHaveBeenCalledTimes(1);
     await coord.stopDraining();
   });
 
-  it('버스트(연속 add 3회)를 단일 drain으로 코얼레싱한다', async () => {
+  it('coalesces a burst (three consecutive adds) into a single drain', async () => {
     const root = temporaryRoot();
     const upsert = vi.fn().mockResolvedValue(undefined);
     const watch = fakeWatch();
@@ -131,7 +131,7 @@ describe('IngestionCoordinator pending watcher', () => {
     watch.emitAdd(join(root, 'pending', 'b-1.json'));
     watch.emitAdd(join(root, 'pending', 'b-1.json'));
     watch.emitAdd(join(root, 'pending', 'b-1.json'));
-    expect(timer.count).toBe(1);       // 창 하나만 열림
+    expect(timer.count).toBe(1);       // only one window opened
     timer.flush();
     await Promise.resolve(); await Promise.resolve();
 
@@ -139,12 +139,12 @@ describe('IngestionCoordinator pending watcher', () => {
     await coord.stopDraining();
   });
 
-  it('drain 인플라이트 중 도착한 add를 완료 후 정확히 1회 트레일링 drain한다', async () => {
+  it('runs exactly one trailing drain for adds that arrive while a drain is in flight', async () => {
     const root = temporaryRoot();
     let release!: () => void;
     const gate = new Promise<void>((r) => { release = r; });
     let calls = 0;
-    // 첫 drain의 upsert를 gate로 붙잡아 인플라이트 상태를 결정론적으로 만든다.
+    // The upsert of the first drain is held at a gate to make the in-flight state deterministic.
     const upsert = vi.fn().mockImplementation(async () => {
       calls += 1;
       if (calls === 1) await gate;
@@ -155,32 +155,32 @@ describe('IngestionCoordinator pending watcher', () => {
       store: { upsertObservation: upsert }, inbox: { root },
       watchFactory: () => watch, setTimer: timer.setTimer,
     });
-    await coord.startDraining();       // backlog 비어 있음(upsert 0)
+    await coord.startDraining();       // the backlog is empty (upsert 0)
 
-    // 1) 첫 봉투 → drain 착수, upsert가 gate에서 블록(drainInFlight=true).
+    // 1) first envelope: the drain starts and upsert blocks at the gate (drainInFlight=true).
     enqueueEnvelope(envelope('flight-1'), { root });
     watch.emitAdd(join(root, 'pending', 'flight-1.json'));
     timer.flush();
-    await Promise.resolve();           // runDrain이 drainInbox까지 진입
+    await Promise.resolve();           // runDrain reaches drainInbox
 
-    // 2) 인플라이트 중 두 번째 봉투 도착 → drainQueued만 세워짐(즉시 drain 없음).
+    // 2) a second envelope arrives in flight: only drainQueued is set (no immediate drain).
     enqueueEnvelope(envelope('flight-2'), { root });
     watch.emitAdd(join(root, 'pending', 'flight-2.json'));
     timer.flush();
     await Promise.resolve();
-    expect(calls).toBe(1);             // 아직 첫 drain 하나만 진행 중
+    expect(calls).toBe(1);             // still only the first drain in progress
 
-    // 3) gate 해제 → 첫 drain 완료 → 트레일링으로 정확히 한 번 더 스케줄.
+    // 3) release the gate: the first drain finishes and exactly one trailing drain is scheduled.
     release();
     while (timer.count === 0) await new Promise((r) => setTimeout(r, 0));
     timer.flush();
     while (upsert.mock.calls.length < 2) await new Promise((r) => setTimeout(r, 0));
 
-    expect(upsert).toHaveBeenCalledTimes(2); // flight-1 + 트레일링 flight-2, 코얼레싱 초과 없음
+    expect(upsert).toHaveBeenCalledTimes(2); // flight-1 plus trailing flight-2, no more than the coalescing allows
     await coord.stopDraining();
   });
 
-  it('stopDraining 후의 add는 무시되고 워처가 닫힌다', async () => {
+  it('ignores adds after stopDraining and closes the watcher', async () => {
     const root = temporaryRoot();
     const upsert = vi.fn().mockResolvedValue(undefined);
     const watch = fakeWatch();
@@ -202,7 +202,7 @@ describe('IngestionCoordinator pending watcher', () => {
     expect(upsert).not.toHaveBeenCalled();
   });
 
-  it('start/stop이 멱등하다', async () => {
+  it('keeps start/stop idempotent', async () => {
     const root = temporaryRoot();
     const watches = [fakeWatch(), fakeWatch()];
     let made = 0;
@@ -211,15 +211,15 @@ describe('IngestionCoordinator pending watcher', () => {
       watchFactory: () => watches[made++]!, setTimer: manualTimer().setTimer,
     });
     await coord.startDraining();
-    await coord.startDraining();        // 두 번째는 no-op
-    expect(made).toBe(1);               // 워처 한 번만 생성
+    await coord.startDraining();        // the second call is a no-op
+    expect(made).toBe(1);               // the watcher is created only once
     await coord.stopDraining();
-    await coord.stopDraining();          // 두 번째는 no-op(예외 없음)
+    await coord.stopDraining();          // the second call is a no-op (no exception)
   });
 });
 
 describe('IngestionCoordinator pause/resume', () => {
-  it('pause() 후 isPaused가 true이고 주입된 워처의 close()가 호출된다', async () => {
+  it('reports isPaused true after pause() and calls close() on the injected watcher', async () => {
     const root = temporaryRoot();
     const watch = fakeWatch();
     const timer = manualTimer();
@@ -235,7 +235,7 @@ describe('IngestionCoordinator pause/resume', () => {
     expect(watch.closed).toBe(true);
   });
 
-  it('중지 중 startDraining()은 워처를 만들지 않는다', async () => {
+  it('creates no watcher when startDraining() runs while paused', async () => {
     const root = temporaryRoot();
     let made = 0;
     const timer = manualTimer();
@@ -244,15 +244,15 @@ describe('IngestionCoordinator pause/resume', () => {
       watchFactory: () => { made += 1; return fakeWatch(); }, setTimer: timer.setTimer,
     });
     await coord.startDraining();
-    made = 0; // 초기 시작분 제외
+    made = 0; // exclude the initial start
     await coord.pause();
 
-    await coord.startDraining(); // failover 재승격 등으로 재호출되어도
+    await coord.startDraining(); // even when re-called by a failover promotion
 
-    expect(made).toBe(0);        // 워처는 새로 만들어지지 않는다
+    expect(made).toBe(0);        // no new watcher is created
   });
 
-  it('pause() → resume() → startDraining()이면 워처가 다시 생성된다', async () => {
+  it('creates the watcher again on pause() then resume() then startDraining()', async () => {
     const root = temporaryRoot();
     const watches = [fakeWatch(), fakeWatch()];
     let made = 0;
@@ -267,11 +267,11 @@ describe('IngestionCoordinator pause/resume', () => {
     coord.resume();
     await coord.startDraining();
 
-    expect(made).toBe(2);                 // 재개 후 새 워처 생성
+    expect(made).toBe(2);                 // a new watcher after resuming
     expect(coord.isPaused).toBe(false);
   });
 
-  it('pause() 2회 연속 호출이 안전하다(멱등)', async () => {
+  it('makes two consecutive pause() calls safe (idempotent)', async () => {
     const root = temporaryRoot();
     const watch = fakeWatch();
     const timer = manualTimer();
@@ -282,12 +282,12 @@ describe('IngestionCoordinator pause/resume', () => {
     await coord.startDraining();
 
     await coord.pause();
-    await coord.pause(); // 두 번째 호출도 예외 없이 안전
+    await coord.pause(); // the second call is safe too, with no exception
 
     expect(coord.isPaused).toBe(true);
   });
 
-  it('중지 중 pending에 쌓인 봉투가 resume+startDraining 후 drain된다', async () => {
+  it('drains envelopes queued in pending while paused after resume plus startDraining', async () => {
     const root = temporaryRoot();
     const watches = [fakeWatch(), fakeWatch()];
     let made = 0;
@@ -301,10 +301,10 @@ describe('IngestionCoordinator pause/resume', () => {
     await coord.pause();
     upsert.mockClear();
 
-    enqueueEnvelope(envelope('paused-1'), { root }); // 중지 중 발화한 훅 봉투
+    enqueueEnvelope(envelope('paused-1'), { root }); // a hook envelope fired while paused
 
     coord.resume();
-    await coord.startDraining(); // ready-후 1회 drain이 밀린 봉투를 흡수
+    await coord.startDraining(); // the post-ready drain absorbs the backlog
 
     expect(upsert).toHaveBeenCalledTimes(1);
     await coord.stopDraining();

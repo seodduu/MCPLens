@@ -77,8 +77,8 @@ describe('maybeAutoScan', () => {
 
   it('activation scan persists definitions, bodies, and identities in one scan result', async () => {
     const { maybeAutoScan } = await import('../src/autoScan.js');
-    // 첫 실행(정의 0건)에는 자동 스캔이 돌지 않으므로, 이미 쓰던 DB에 새 서버가
-    // 붙은 상황으로 둔다.
+    // Automatic scanning does not run on the first run (0 definitions), so this sets up a DB
+    // already in use that just gained a new server.
     await maybeAutoScan({
       upsertClientServers,
       allDefinitions: () => [{ serverName: 'already', toolName: 'tool', definitionTokens: 5,
@@ -95,10 +95,10 @@ describe('maybeAutoScan', () => {
     expect(upsertClientServers).toHaveBeenCalledOnce();
   });
 
-  it('definition만 있고 body가 없으면 활성화 시 재스캔한다', async () => {
+  it('rescans on activation when definitions exist but bodies do not', async () => {
     const { maybeAutoScan } = await import('../src/autoScan.js');
-    // definition은 이미 있지만(레거시 DB) body가 없는 상황을 재현한다.
-    // serversWithDefinitionBodies가 빈 집합을 돌려주면 판정이 재스캔 대상으로 봐야 한다.
+    // Reproduces a legacy DB where definitions already exist but bodies do not.
+    // With serversWithDefinitionBodies returning an empty set, the verdict must treat it as a rescan target.
     await maybeAutoScan({
       upsertClientServers,
       allDefinitions: () => [{ serverName: 'srv', toolName: 'tool', definitionTokens: 7,
@@ -114,13 +114,13 @@ describe('maybeAutoScan', () => {
   });
 });
 
-describe('runScan의 서버별 스캔 상태 기록', () => {
+describe('per-server scan status recording in runScan', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  // 첫 실행(정의 0건)에는 자동 스캔이 돌지 않는다. 여기서 보려는 것은 그 다음 단계,
-  // 즉 "이미 쓰던 사용자에게 새 서버가 붙었을 때"의 동작이므로 기존 정의를 하나 둔다.
+  // Automatic scanning does not run on the first run (0 definitions). What matters here is the next
+  // stage, "an existing user gains a new server", so one existing definition is seeded.
   const store = () => ({
     upsertClientServers,
     allDefinitions: () => [{ serverName: 'already', toolName: 'tool', definitionTokens: 5,
@@ -132,14 +132,14 @@ describe('runScan의 서버별 스캔 상태 기록', () => {
     save,
   } as any);
 
-  it('스캔에 성공한 서버는 ok로 기록된다', async () => {
+  it('records a successfully scanned server as ok', async () => {
     const { maybeAutoScan } = await import('../src/autoScan.js');
     await maybeAutoScan(store(), vi.fn());
 
     expect(recordServerScanStatus).toHaveBeenCalledWith('srv', 'ok', expect.any(String));
   });
 
-  it('auth-required 예외는 auth-required로 기록되고 errorCode가 없다', async () => {
+  it('records an auth-required exception as auth-required with no errorCode', async () => {
     const { scanServer } = await import('@mcp-lens/core');
     (scanServer as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('auth-required'));
 
@@ -149,9 +149,9 @@ describe('runScan의 서버별 스캔 상태 기록', () => {
     expect(recordServerScanStatus).toHaveBeenCalledWith('srv', 'auth-required', expect.any(String), undefined);
   });
 
-  it('그 외 예외는 failed로 기록되고 errorCode가 120자 이하다', async () => {
+  it('records other exceptions as failed with an errorCode of at most 120 characters', async () => {
     const { scanServer } = await import('@mcp-lens/core');
-    const longMessage = 'boom'.repeat(50); // 200자
+    const longMessage = 'boom'.repeat(50); // 200 characters
     (scanServer as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error(longMessage));
 
     const { maybeAutoScan } = await import('../src/autoScan.js');
@@ -163,14 +163,14 @@ describe('runScan의 서버별 스캔 상태 기록', () => {
   });
 });
 
-describe('maybeAuthPrompt의 로그인 후 재스캔 상태 기록', () => {
+describe('post-login rescan status recording in maybeAuthPrompt', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   const spec = { name: 'srv', command: 'cmd', args: [] };
-  // 첫 실행(정의 0건)에는 자동 스캔이 돌지 않는다. 여기서 보려는 것은 그 다음 단계,
-  // 즉 "이미 쓰던 사용자에게 새 서버가 붙었을 때"의 동작이므로 기존 정의를 하나 둔다.
+  // Automatic scanning does not run on the first run (0 definitions). What matters here is the next
+  // stage, "an existing user gains a new server", so one existing definition is seeded.
   const store = () => ({
     upsertClientServers,
     allDefinitions: () => [{ serverName: 'already', toolName: 'tool', definitionTokens: 5,
@@ -182,7 +182,7 @@ describe('maybeAuthPrompt의 로그인 후 재스캔 상태 기록', () => {
     save,
   } as any);
 
-  it('로그인에 성공해 재스캔이 끝나면 서버 상태를 ok로 기록한다', async () => {
+  it('records the server as ok once the login succeeds and the rescan finishes', async () => {
     showInformationMessage.mockResolvedValueOnce('Sign in');
     const { authenticateServer, scanServer } = await import('@mcp-lens/core');
     (authenticateServer as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
@@ -194,7 +194,7 @@ describe('maybeAuthPrompt의 로그인 후 재스캔 상태 기록', () => {
     expect(recordServerScanStatus).toHaveBeenCalledWith('srv', 'ok', expect.any(String));
   });
 
-  it('재스캔이 auth-required로 다시 실패하면 auth-required로 기록되고 errorCode가 없다', async () => {
+  it('records auth-required with no errorCode when the rescan fails with auth-required again', async () => {
     showInformationMessage.mockResolvedValueOnce('Sign in');
     const { authenticateServer, scanServer } = await import('@mcp-lens/core');
     (authenticateServer as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
@@ -207,11 +207,11 @@ describe('maybeAuthPrompt의 로그인 후 재스캔 상태 기록', () => {
       'srv', 'auth-required', expect.any(String), undefined);
   });
 
-  it('재스캔이 그 외 이유로 실패하면 failed로 기록되고 errorCode가 120자 이하다', async () => {
+  it('records failed with an errorCode of at most 120 characters when the rescan fails otherwise', async () => {
     showInformationMessage.mockResolvedValueOnce('Sign in');
     const { authenticateServer, scanServer } = await import('@mcp-lens/core');
     (authenticateServer as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
-    const longMessage = 'boom'.repeat(50); // 200자
+    const longMessage = 'boom'.repeat(50); // 200 characters
     (scanServer as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error(longMessage));
 
     const { maybeAuthPrompt } = await import('../src/autoScan.js');

@@ -2,7 +2,7 @@ import type { CollectionHealthSnapshot } from '../health/collectionHealth.js';
 import type { Recommendation } from '../types.js';
 import { joinReason } from './engine.js';
 
-const COLLECTION_HEALTH_CAVEAT = '수집 건강도 낮음, 확정 권고 아님';
+const COLLECTION_HEALTH_CAVEAT = 'collection health is low, not a confirmed recommendation';
 
 /** Applies collection-quality safeguards without changing recommendation actions. */
 export function gateRecommendation(
@@ -25,7 +25,7 @@ export function gateRecommendation(
       ...recommendation,
       reasonParts,
       reason: joinReason(reasonParts),
-      evidenceLabel: '측정 불가',
+      evidenceLabel: 'not measurable',
       evidence: {
         ...recommendation.evidence,
         costPerSession: null,
@@ -61,7 +61,7 @@ function redactTokenClaims(text: string | null): string | null;
 function redactTokenClaims(text: string | null): string | null {
   if (text === null) return null;
   return text
-    .replace(/절약은 작지만\s*/gu, '')
-    .replace(/(?:약\s*)?[\d,]+\s*토큰(?:\s*(?:낭비|절약))?/gu, '토큰 측정 불가')
-    .replace(/토큰\s*(?:낭비|절약)/gu, '토큰 측정 불가');
+    .replace(/small savings, but\s*/gu, '')
+    .replace(/(?:about\s*)?\d[\d,]*\s*tokens?(?:\s+(?:wasted|saved))?/gu, 'token count unavailable')
+    .replace(/tokens?\s+(?:wasted|saved)/gu, 'token count unavailable');
 }

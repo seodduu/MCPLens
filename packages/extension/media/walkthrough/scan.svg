@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
-  <!-- 서버 랙을 돋보기로 훑는다: 스캔 = 정의 토큰을 재는 행위 -->
+  <!-- Sweeping a server rack with a magnifier: scanning means measuring definition tokens -->
   <g fill="none" stroke="#8b8b8b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
     <rect x="290" y="104" width="180" height="52" rx="8" />
     <rect x="290" y="168" width="180" height="52" rx="8" />
@@ -10,7 +10,7 @@
     <line x1="386" y1="194" x2="446" y2="194" />
     <circle cx="316" cy="258" r="5" fill="#8b8b8b" stroke="none" />
     <line x1="386" y1="258" x2="446" y2="258" />
-    <!-- 돋보기 -->
+    <!-- magnifier -->
     <circle cx="478" cy="250" r="56" stroke-width="4" />
     <line x1="518" y1="290" x2="562" y2="334" stroke-width="7" />
   </g>

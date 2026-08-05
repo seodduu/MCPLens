@@ -8,20 +8,20 @@ import {
 import { decideScanAction, type AutoScanSetting } from './scanDecision.js';
 import { decideAuthPrompt, friendlyAuthError, isDcrRejected } from './authDecision.js';
 
-/** Lens가 지원하지 않는다고 판정한 서버명(설정에 영구 저장). DCR 거부 서버 등. */
+/** Names of servers judged unsupported by Lens (stored permanently in settings). DCR-refusing servers and the like. */
 const unsupportedServers = (config: vscode.WorkspaceConfiguration): string[] =>
   config.get<string[]>('unsupportedServers', []);
 
 /**
- * '나중에'로 이번 세션 동안 로그인 알림을 억제한 서버 이름.
- * 모듈 스코프라 확장 활성화(=VSCode 창) 수명과 함께 살고 재시작 시 초기화된다 —
- * '나중에 → VSCode 재시작 전까지 알림 없음' 요구를 만족한다. (영구 무시는 authIgnore 설정)
+ * Servers whose login notification was suppressed for this session with 'Later'.
+ * Module scope, so it lives as long as the extension activation (= the VS Code window) and resets on
+ * restart, satisfying "Later means no notification until VS Code restarts". (Permanent ignore is the authIgnore setting.)
  */
 const sessionAuthSnooze = new Set<string>();
 
 /**
- * 스캔이 새 정의를 적재한 뒤 이어서 돌 작업. 의존성 분석을 잇는 자리다.
- * 스캔이 한 서버도 성공하지 못하면 부르지 않는다.
+ * Work that follows once a scan ingests new definitions. This is where the dependency analysis chains on.
+ * It is not called when the scan succeeded for no server at all.
  */
 export type AfterScan = () => void | Promise<void>;
 
@@ -45,7 +45,7 @@ async function runScan(store: LensStore, targets: McpServerSpec[],
       failed.push(spec.name);
       const msg = err instanceof Error ? err.message : String(err);
       const needsAuth = msg.includes('auth-required') || msg.includes('token-expired');
-      // errorCode를 120자로 자르는 이유는 트리 행 description에 들어가는 값이라서다.
+      // errorCode is truncated to 120 characters because it lands in a tree row description.
       store.recordServerScanStatus(
         spec.name, needsAuth ? 'auth-required' : 'failed', observedAt,
         needsAuth ? undefined : msg.slice(0, 120));
@@ -53,18 +53,18 @@ async function runScan(store: LensStore, targets: McpServerSpec[],
     }
   }
   store.save();
-  onDone(); // refresh() — 상태바·사이드바 ?tok 갱신
+  onDone(); // refresh(): update the ?tok figures in the status bar and sidebar
   const failNote = failed.length ? ` (failed: ${failed.join(', ')})` : '';
   vscode.window.setStatusBarMessage(
     `$(check) Lens: scanned ${targets.length - failed.length} servers, ${tools} tools, ${tokens}tok${failNote}`, 8000);
   if (authFailed.length) await maybeAuthPrompt(store, authFailed, onDone);
-  // 한 서버도 못 쟀으면 분석할 새 정의가 없다.
+  // If not one server could be measured, there are no new definitions to analyze.
   if (afterScan && failed.length < targets.length) await afterScan();
 }
 
 /**
- * 사용자가 명시적으로 요청한 스캔. autoScan 설정이 'never'여도 실행한다 —
- * 설정은 '자동으로 하지 말라'는 뜻이지 '눌러도 하지 말라'가 아니다.
+ * A scan the user explicitly requested. It runs even when the autoScan setting is 'never':
+ * the setting means "do not do it automatically", not "do not do it when I press the button".
  */
 export async function scanNow(store: LensStore, onDone: () => void, afterScan?: AfterScan): Promise<void> {
   const { specs, attribution, replaceable, identities } = collectAllSpecs();
@@ -79,7 +79,7 @@ export async function scanNow(store: LensStore, onDone: () => void, afterScan?: 
   await runScan(store, targets, onDone, identities, afterScan);
 }
 
-/** 스캔 후 auth-required/token-expired 실패 서버에 대해 로그인 동의창 1개를 띄운다. */
+/** After a scan, raises one login consent dialog for the servers that failed with auth-required/token-expired. */
 export async function maybeAuthPrompt(
   store: LensStore, failedServers: McpServerSpec[], onDone: () => void,
 ): Promise<void> {
@@ -107,17 +107,17 @@ export async function maybeAuthPrompt(
         });
         const result = await scanServer(spec);
         store.upsertScanResult(result.definitions, result.bodies, []);
-        // runScan과 같은 분류를 여기서도 적용한다. 안 그러면 로그인에 성공해도
-        // Setup Status가 계속 'sign in to scan'을 보여주고, 재시작 후에도 그 상태가 남는다.
+        // Apply the same classification as runScan here. Otherwise a successful login still leaves
+        // Setup Status showing 'sign in to scan', and that state survives a restart.
         store.recordServerScanStatus(spec.name, 'ok', observedAt);
       } catch (err) {
-        // DCR 거부 서버(예: Figma)는 브라우저가 열리기도 전에 실패한다. Lens가 지원할 수 없으므로
-        // '지원하지 않는 서버'로 영구 등록해 트리에서 숨기고 다시는 로그인을 묻지 않는다.
+        // A DCR-refusing server (Figma, say) fails before the browser even opens. Lens cannot support
+        // it, so it is permanently recorded as an unsupported server, hidden from the tree and never asked about again.
         if (isDcrRejected(err)) {
           unsupported.push(spec.name);
         } else {
-          errors.push(`${spec.name}: ${friendlyAuthError(err)}`); // 그 외 실패는 원인 표면화
-          // runScan과 같은 분류: auth-required/token-expired면 로그인 필요 상태로, 아니면 실패로 기록한다.
+          errors.push(`${spec.name}: ${friendlyAuthError(err)}`); // surface the cause of any other failure
+          // Same classification as runScan: auth-required/token-expired records a login-needed state, anything else records a failure.
           const msg = err instanceof Error ? err.message : String(err);
           const needsAuth = msg.includes('auth-required') || msg.includes('token-expired');
           store.recordServerScanStatus(
@@ -133,24 +133,24 @@ export async function maybeAuthPrompt(
       void vscode.window.showWarningMessage(
         `MCP Lens does not support the following MCP server(s): ${unsupported.join(', ')}`);
     }
-    onDone(); // 트리 새로고침 — unsupported 반영해 숨긴다
+    onDone(); // refresh the tree so the unsupported entry is hidden
     if (errors.length) void vscode.window.showErrorMessage(errors.join('\n'));
   } else if (pick === "Don't ask for this server") {
     const names2 = action.targets.map((t) => t.name);
     await config.update('authIgnore', [...ignoreList, ...names2], vscode.ConfigurationTarget.Global);
   } else if (pick === 'Later') {
-    // 이번 VSCode 세션 동안만 억제 — 재시작하면 다시 묻는다.
+    // Suppressed only for this VS Code session: a restart asks again.
     for (const t of action.targets) sessionAuthSnooze.add(t.name);
-  } // 닫기(undefined) → 아무것도 저장 안 함 → 다음 스캔 때 다시 묻는다
+  } // dismissed (undefined): nothing is stored, so the next scan asks again
 }
 
 export async function maybeAutoScan(store: LensStore, onDone: () => void, afterScan?: AfterScan): Promise<void> {
   const { specs, attribution, replaceable, identities } = collectAllSpecs();
-  // 귀속은 설정 파일만 읽으면 되므로 서버 스캔 성공 여부와 무관하게 저장한다.
-  // 자동 스캔을 건너뛰는 경우(action.kind === 'skip')에도 매핑은 최신이어야 한다.
+  // Attribution only needs the config files, so it is stored regardless of whether any server scan succeeded.
+  // The mapping must be current even when the automatic scan is skipped (action.kind === 'skip').
   store.upsertClientServers(attribution, replaceable);
-  store.save(); // run()은 자동 저장하지 않는다 — 여기서 저장 안 하면 skip 경로(정상 정착 상태의 기본값)에서
-                // 매핑이 디스크에 반영되지 않고 다음 활성화 때 다시 빈 매핑으로 보인다.
+  store.save(); // run() does not save on its own. Without this save, the skip path (the default in a
+                // settled state) never writes the mapping to disk and the next activation sees an empty mapping again.
   const config = vscode.workspace.getConfiguration('mcpLens');
   const setting = config.get<AutoScanSetting>('autoScan', 'never');
   const scannedServers = store.serversWithDefinitionBodies();
@@ -161,7 +161,7 @@ export async function maybeAutoScan(store: LensStore, onDone: () => void, afterS
   if (action.kind === 'skip') return;
   if (action.kind === 'scan') return runScan(store, action.targets, onDone, identities, afterScan);
 
-  // kind === 'prompt' — 합의된 동의창
+  // kind === 'prompt': the agreed consent dialog
   const names = action.targets.map((t) => t.name).join(', ');
   const pick = await vscode.window.showInformationMessage(
     `MCP Lens: scan ${action.targets.length} MCP server(s) (${names}) for tool definitions? ` +
@@ -172,16 +172,16 @@ export async function maybeAutoScan(store: LensStore, onDone: () => void, afterS
     await runScan(store, action.targets, onDone, identities, afterScan);
   } else if (pick === "Don't ask again") {
     await config.update('autoScan', 'never', vscode.ConfigurationTarget.Global);
-  } // '나중에'/닫기 → 아무것도 저장 안 함 → 다음 시작 때 재질문
+  } // 'Later' or dismissed: nothing is stored, so it asks again at the next startup
 }
 
-/** 전 소스(claude-user/project, codex, gemini) 설정 파일 변경 감시 → 디바운스 후 재판정. dispose 반환. */
+/** Watches every source config file (claude-user/project, codex, gemini) and re-decides after a debounce. Returns a dispose. */
 export function watchConfigSources(store: LensStore, onDone: () => void, afterScan?: AfterScan): vscode.Disposable {
   const paths = configSources().map((s) => s.filePath);
   let timer: ReturnType<typeof setTimeout> | undefined;
   const listener = () => {
     clearTimeout(timer);
-    timer = setTimeout(() => void maybeAutoScan(store, onDone, afterScan), 2000); // 저장 연타 흡수
+    timer = setTimeout(() => void maybeAutoScan(store, onDone, afterScan), 2000); // absorbs rapid saves
   };
   for (const p of paths) watchFile(p, { interval: 5000 }, listener);
   return {

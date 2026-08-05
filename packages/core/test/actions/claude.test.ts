@@ -115,7 +115,7 @@ describe('applyClaudeGlobalDeny', () => {
     expect(fs.files.has(activeBackup)).toBe(true);
     expect(fs.files.has(pendingBackup)).toBe(true);
     expect(fs.files.has(conflictBackup)).toBe(true);
-    expect(fs.files.size).toBeLessThanOrEqual(6); // settings + 최근 5개 또는 보호 backup
+    expect(fs.files.size).toBeLessThanOrEqual(6); // settings + the 5 most recent, or a protected backup
   });
 });
 

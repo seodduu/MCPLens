@@ -89,11 +89,11 @@ export async function activate(ctx: vscode.ExtensionContext) {
   const lensHomeDir = (): string => require('node:os').homedir() as string;
 
   /**
-   * 설치된 훅 런타임이 번들과 다르면 조용히 재설치한다.
+   * Silently reinstalls the hook runtime when the installed copy differs from the bundled one.
    *
-   * 확장은 자동 업데이트되지만 런타임 사본은 훅 설치 시점에 고정된다. 둘이
-   * 어긋나면 수집이 아무 표시 없이 망가진다(실측: 툴 호출 봉투 전량 유실).
-   * 사용자가 스스로 알아낼 방법이 없으므로 확장이 감지해 되돌린다.
+   * The extension auto-updates, but the runtime copy is frozen at hook-installation time. When the
+   * two diverge, collection breaks with no visible sign (measured: every tool-call envelope lost).
+   * Users have no way to work that out themselves, so the extension detects it and reverts it.
    */
   async function refreshStaleRuntimes(inputs: ClientRowInput[]): Promise<boolean> {
     const home = lensHomeDir();
@@ -103,7 +103,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
       if (!needsRuntimeRefresh(input.install, bundled, installedStamp(nodeFs, home, input.client))) continue;
 
       const installer = installerFor(input.client);
-      await installer.uninstall();          // 실패해도 install이 멱등하게 덮는다
+      await installer.uninstall();          // a failure is fine: install overwrites idempotently
       const result = await installer.install();
       if (result.kind === 'ok') {
         recordInstalledStamp(nodeFs, home, input.client, bundled!);
@@ -155,8 +155,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
       else if (r.kind === 'failed') void vscode.window.showErrorMessage(`MCP Lens ${client} hook removal failed: ${r.stderr.slice(0, 300)}`);
       await computeCollection();
     }),
-    // 온보딩 워크스루의 "Install hooks" 버튼: 감지된 클라이언트 전부에 한 번에 설치한다.
-    // 개별 클라이언트마다 알림을 띄우지 않는 이유는 워크스루 버튼 한 번에 최대 3개가 뜨기 때문이다.
+    // The "Install hooks" button of the onboarding walkthrough installs to every detected client at once.
+    // No per-client notification: one walkthrough button press would otherwise raise up to three.
     vscode.commands.registerCommand('mcp-lens.installHooksAll', async () => {
       const inputs = await computeCollection();
       const targets = inputs.filter((input) => input.install === 'not-installed');
@@ -180,7 +180,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
       await computeCollection();
     }));
 
-  // 전역 제약 2: 공유 경로. 손상된 DB 하나 때문에 활성화 전체가 죽지 않도록 복구 경로를 거친다.
+  // Global constraint 2: shared path. One corrupted DB must not kill the whole activation, so it goes through a recovery path.
   const opened = await openStoreWithRecovery(dbPath(), {
     open: (filePath) => LensStore.open(filePath),
     exists: (filePath) => fs.existsSync(filePath),
@@ -188,8 +188,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
     now: () => new Date(),
   });
   if (opened.kind === 'failed') {
-    // 여기서 멈춰도 activate 자체는 성공으로 끝난다. 앞서 등록한 커맨드는 살아 있고,
-    // 데이터가 필요한 기능은 store 가드가 안내 문구를 낸다.
+    // Stopping here still ends activate successfully. The commands registered earlier stay alive,
+    // and features that need data get guidance from the store guard.
     item.text = 'Lens: DB error';
     item.tooltip = opened.message;
     void vscode.window.showErrorMessage(opened.message);
@@ -210,18 +210,18 @@ export async function activate(ctx: vscode.ExtensionContext) {
   const dependencyRollout = (): DependencyAnalysisRollout => {
     const configured = vscode.workspace.getConfiguration('mcplens')
       .get<unknown>('dependencyAnalysis.rollout');
-    // 구 값(shadow/codex-beta/stable)을 저장된 그대로 두고 읽을 때만 새 값으로 옮긴다.
+    // Old values (shadow/codex-beta/stable) are left stored as they are and migrated only on read.
     return migrateDependencyAnalysisRollout(configured) ?? DEFAULT_DEPENDENCY_ANALYSIS_ROLLOUT;
   };
   const sinceIso = () => new Date(Date.now() - reportDays() * 86_400_000).toISOString();
 
   const readDeniedSafe = (): Set<string> => {
     try { return readDeniedMcpTools(claudeSettingsPath()); }
-    catch { return new Set(); } // 깨진 settings.json — 표시는 계속, 쓰기 시점에 에러 안내
+    catch { return new Set(); } // broken settings.json: keep displaying, report the error at write time
   };
-  // 표 전체가 비어 있으면(스캔 전) undefined를 넘겨 필터링을 끈다.
-  // 표에 행이 있는데 특정 클라이언트 키만 없는 경우(예: gemini-cli 서버 0개)는
-  // 그대로 넘겨 splitByClient가 그 클라이언트를 정의 0개로 걸러내게 한다.
+  // When the whole table is empty (before a scan), pass undefined to turn filtering off.
+  // When the table has rows but a client key is missing (gemini-cli with 0 servers, say),
+  // pass it through so splitByClient filters that client down to zero definitions.
   const serversByClientOrUndefined = () => {
     const m = store!.serversByClient();
     return m.size > 0 ? m : undefined;
@@ -229,15 +229,15 @@ export async function activate(ctx: vscode.ExtensionContext) {
   const configPaths = defaultClaudeConfigPaths();
   const listManagedSafe = (): ManagedServer[] => {
     try { return listManagedServers(configPaths); }
-    catch { return []; } // 수집 실패 — 표시는 계속
+    catch { return []; } // collection failed: keep displaying
   };
-  // Lens가 지원하지 않는 서버(DCR 거부 등) — 트리에서 숨긴다.
+  // Servers Lens does not support (DCR refusal and friends) are hidden from the tree.
   const unsupportedServers = (): Set<string> => new Set(
     vscode.workspace.getConfiguration('mcpLens').get<string[]>('unsupportedServers', []));
 
   let lastSetupKeys: SetupKeys | undefined;
 
-  /** 정의가 있는 서버 중 findDependencyAnalysis가 결과를 주는 서버 이름 집합. */
+  /** Names of servers that have definitions and for which findDependencyAnalysis returns a result. */
   function analyzedServerNames(s: LensStore): Set<string> {
     const serverNames = new Set(s.allDefinitions().map((definition) => definition.serverName));
     const analyzed = new Set<string>();
@@ -249,8 +249,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
   }
   const analyzedServerCount = (s: LensStore): number => analyzedServerNames(s).size;
 
-  /** Setup Status 뷰 갱신 — computeCollection()이 매 refresh 사이클마다 함께 부른다.
-   * 수집 상태(Collection 그룹)도 같은 뷰의 첫 그룹이라 여기서 한 번에 채운다. */
+  /** Refreshes the Setup Status view; computeCollection() calls it on every refresh cycle.
+   * Collection state (the Collection group) is the first group of the same view, so it is filled here too. */
   function refreshSetupRows(inputs: ClientRowInput[]): void {
     const s = store!;
     const config = vscode.workspace.getConfiguration('mcpLens');
@@ -281,22 +281,22 @@ export async function activate(ctx: vscode.ExtensionContext) {
       void vscode.commands.executeCommand('setContext', `mcpLens.${key}`, value);
     }
     for (const stepId of stepsToUncheck(lastSetupKeys, next)) {
-      // 내부 커맨드다. 사라져도(또는 끝나지 않아도) 나머지 동작을 막지 않는다.
-      // 진실은 Setup Status 뷰다. await하면 이 호출이 collection-refresh 임계 구역 안에 있어서
-      // 응답 없는 커맨드가 세션 내내 모든 사이드바 refresh를 멈출 수 있으므로 fire-and-forget한다.
-      void vscode.commands.executeCommand('welcome.markStepIncomplete', stepId).then(undefined, () => { /* 무시 */ });
+      // An internal command. Its disappearance (or never finishing) must not block anything else.
+      // The Setup Status view is the source of truth. Awaiting it would put this call inside the
+      // collection-refresh critical section, where an unresponsive command could stall every
+      void vscode.commands.executeCommand('welcome.markStepIncomplete', stepId).then(undefined, () => { /* ignored */ });
     }
     for (const stepId of stepsToComplete(lastSetupKeys, next)) {
-      // 해제(markStepIncomplete)로 소진된 onContext 이벤트는 재점등을 못 하므로 직접 켠다.
-      // 같은 이유로 fire-and-forget한다: 내부 커맨드 실패가 refresh를 막으면 안 된다.
-      void vscode.commands.executeCommand('welcome.markStepComplete', stepId).then(undefined, () => { /* 무시 */ });
+      // The onContext event consumed by clearing (markStepIncomplete) cannot relight it, so it is set directly.
+      // Fire-and-forget for the same reason: an internal command failure must not block refresh.
+      void vscode.commands.executeCommand('welcome.markStepComplete', stepId).then(undefined, () => { /* ignored */ });
     }
     lastSetupKeys = next;
   }
 
   async function computeCollection(): Promise<ClientRowInput[]> {
-    // installHooks 커맨드는 store 준비보다 먼저 등록된다. 활성화 극초반이나 DB 열기
-    // 실패 뒤에 불려도 죽지 않고 안내만 낸다.
+    // The installHooks command is registered before the store is ready. Called very early in
+    // activation, or after the DB failed to open, it must not die; it only reports guidance.
     if (!store) {
       void vscode.window.showInformationMessage(
         'MCP Lens: the database is still starting up. Try again in a moment.');
@@ -316,18 +316,18 @@ export async function activate(ctx: vscode.ExtensionContext) {
       refreshSetupRows: (i) => refreshSetupRows(i),
     });
     if (!runtimeChecked) {
-      runtimeChecked = true;               // 세션당 1회 — 매 refresh마다 CLI를 돌리지 않는다
+      runtimeChecked = true;               // once per session: do not run the CLI on every refresh
       if (await refreshStaleRuntimes(inputs)) void computeCollection();
     }
     return inputs;
   }
 
-  // 이벤트 유발 refresh는 고빈도(코디네이터/워처/설정/파일워처)로 몰려 들어올 수 있는데,
-  // computeCollection()은 클라이언트마다 CLI 서브프로세스를 스폰한다(installerFor(...).detect()).
-  // 가드 없이 각 이벤트가 computeCollection()을 직접 부르면 CLI 프로세스 폭주와
-  // lastCollectionInputs/Setup Status 행에 대한 경쟁이 발생한다.
-  // 인플라이트 가드 + 트레일링 코얼레싱: 실행 중이면 대기만 표시하고,
-  // 끝난 뒤 대기가 있었으면 정확히 한 번 더 실행한다(N개 큐잉 아님, 유실 없는 debounce도 아님).
+  // Event-driven refreshes arrive at high frequency (coordinator, watcher, settings, file watcher),
+  // while computeCollection() spawns a CLI subprocess per client (installerFor(...).detect()).
+  // Without a guard, each event calling computeCollection() directly would flood the machine with
+  // CLI processes and race over lastCollectionInputs and the Setup Status rows.
+  // In-flight guard + trailing coalescing: while one runs, later requests only mark a pending flag,
+  // and exactly one more run happens afterwards (not N queued runs, and not a lossless debounce).
   let collectionRefreshInFlight = false;
   let collectionRefreshPending = false;
   async function scheduleCollectionRefresh(): Promise<void> {
@@ -350,7 +350,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
       loads: store!.loadsSince(since), sessions: store!.sessionsSince(since),
       lastCallByTool: store!.lastCallByTool(),
       serversByClient: serversByClientOrUndefined() };
-    // totals는 detail(툴 목록 절단)에 영향받지 않으므로 최소 opts로 충분.
+    // totals are unaffected by detail (tool list truncation), so minimal opts suffice.
     const totals = buildReport(input, { days: reportDays(), detail: 'summary' }).totals;
     const wasteToolCount = totals.actToolCount + totals.candidateToolCount;
     const wasteTokens = totals.actPerSessionTokens + totals.candidatePerSessionTokens;
@@ -439,20 +439,20 @@ export async function activate(ctx: vscode.ExtensionContext) {
     },
     onRefresh: refresh,
   });
-  // 전역 제약: DB 파일은 여러 확장 인스턴스(창)가 공유할 수 있으므로,
-  // 리스를 획득한 하나만 writer(백필/워처/코디네이터 구동)로 동작하고 나머지는
-  // read-only(폴링 reload)로 대기하다 홀더가 죽으면 승격한다. §6.2.
-  // LensStore.open()은 최초 save() 전까지 ~/.mcplens를 만들지 않으므로,
-  // 리스 파일을 그보다 먼저 놓을 수 있게 디렉터리를 미리 보장한다.
+  // Global constraint: the DB file can be shared by several extension instances (windows), so only
+  // the one holding the lease acts as the writer (backfill, watcher, coordinator) and the rest wait
+  // read-only (polling reload), promoting when the holder dies. §6.2.
+  // LensStore.open() does not create ~/.mcplens until the first save(), so the directory is ensured
+  // up front to let the lease file land before that.
   fs.mkdirSync(path.dirname(dbWriterLockPath()), { recursive: true });
   lease = new WriterLeaseManager(dbWriterLockPath());
   let mode = chooseMode(lease.tryAcquire());
   let roPoll: ReturnType<typeof setInterval> | undefined;
-  let watcherStarted = false; // 워처는 오직 enterWriter를 통해서만, 홀더당 한 번만 시작한다.
-  let stopping: Promise<void> | undefined; // enterReadOnly가 시작한 watcher.stop()이 아직 안 끝났으면 보관
+  let watcherStarted = false; // the watcher starts only through enterWriter, once per holder.
+  let stopping: Promise<void> | undefined; // holds a watcher.stop() started by enterReadOnly that has not finished
 
-  // 모드와 무관하게 최후 방어선으로 가드를 걸어 둔다: 비홀더가 어떤 경로로든
-  // save()를 시도하면(예: 강등 경합 중 남은 콜백) StaleWriterError로 즉시 차단된다.
+  // The guard is installed as a last line of defence regardless of mode: if a non-holder attempts
+  // save() through any path (a stray callback during a demotion race), StaleWriterError blocks it at once.
   store.setWriteGuard(() => lease!.isHolder());
 
   const isStaleWriterError = (e: unknown): boolean =>
@@ -461,31 +461,31 @@ export async function activate(ctx: vscode.ExtensionContext) {
     if (!isStaleWriterError(e)) console.error('MCP Lens: drain failed', e);
   };
 
-  // writer/read-only 전환과 무관하게 refresh 리스너는 activation당 한 번만 등록한다.
-  // 반복되는 failover(enterWriter 재호출)마다 등록하면 중복 리스너가 누적된다.
-  // refresh는 읽기 전용이고, 이 이미터들은 writer 경로가 살아있을 때만 이벤트를 낸다.
+  // Refresh listeners are registered once per activation, independent of writer/read-only switches.
+  // Registering on every failover (each enterWriter call) would accumulate duplicate listeners.
+  // refresh is read-only, and these emitters only fire while the writer path is alive.
   coordinator?.on('ingested', refresh);
   coordinator?.on('receipt', refresh);
-  coordinator?.on('drain-error', ignoreStaleWriterError); // 강등 경합 중 stray drain 흡수
+  coordinator?.on('drain-error', ignoreStaleWriterError); // absorbs stray drains during a demotion race
   watcher!.on('ingested', refresh);
 
   function enterWriter() {
     mode = 'writer';
     if (roPoll) { clearInterval(roPoll); roPoll = undefined; }
-    if (watcherStarted) return; // 이미 이 홀더로 writer 경로가 구동 중 — 중복 시작 방지
+    if (watcherStarted) return; // the writer path is already running for this holder: no double start
     const hookStep = collectAction(hooksPaused, 'writer') === 'start'
-      ? (coordinator?.startDraining() ?? Promise.resolve())  // 즉시 1회 drain + pending 상시 감시
-      : Promise.resolve();                                   // 중지 중이면 훅 감시는 건너뛴다
+      ? (coordinator?.startDraining() ?? Promise.resolve())  // drain once immediately and keep watching pending
+      : Promise.resolve();                                   // while paused, skip hook watching
     void hookStep
-      .then(() => watcher!.backfill()) // 시작 시 밀린 세션 따라잡기 (기능 2), 중지 중에도 로그 백필은 돈다
+      .then(() => watcher!.backfill()) // catch up on the session backlog at start (feature 2); log backfill runs even while paused
       .then(() => { refresh(); })
       .catch(ignoreStaleWriterError);
-    // 직전 강등에서 시작한 watcher.stop()이 아직 닫히는 중이면, 새 start() 전에 끝나길 기다린다
-    // (LogWatcher.start()가 비멱등이라 stop 도중 재시작하면 경합이 생긴다).
+    // If a watcher.stop() from the previous demotion is still closing, wait for it before start()
+    // (LogWatcher.start() is not idempotent, so restarting mid-stop races).
     const pending = stopping;
     stopping = undefined;
-    // 상태 재확인은 여기서만: 지연 실행 시점엔 이미 재강등되어 있을 수 있고,
-    // watcherStarted 설정도 sync/deferred 두 경로가 공유하는 단일 지점이어야 한다.
+    // State is re-checked only here: by the deferred run we may have been demoted again, and
+    // setting watcherStarted must have a single point shared by the sync and deferred paths.
     const startWatcher = () => {
       if (mode !== 'writer' || watcherStarted) return;
       watcherStarted = true;
@@ -495,25 +495,25 @@ export async function activate(ctx: vscode.ExtensionContext) {
       void pending.catch(() => {}).then(startWatcher)
         .catch((e) => console.error('MCP Lens: watcher restart failed', e));
     } else startWatcher();
-    lease!.startHeartbeat(() => enterReadOnly()); // renew 실패 → 강등
+    lease!.startHeartbeat(() => enterReadOnly()); // a failed renew demotes
   }
 
   function enterReadOnly() {
     mode = 'read-only';
     watcherStarted = false;
-    stopping = watcher?.stop(); // 쓰기 경로 정지: 워처를 멈춘다. 코디네이터 drain은 호출하지 않는다.
-    void coordinator?.stopDraining().catch(() => {}); // pending 감시 중지(인플라이트 drain은 자연 종료)
+    stopping = watcher?.stop(); // stop the write path by stopping the watcher. The coordinator drain is not called.
+    void coordinator?.stopDraining().catch(() => {}); // stop watching pending (an in-flight drain finishes on its own)
     let lastMtime = 0;
     if (!roPoll) roPoll = setInterval(() => {
       let acquired = false;
       try {
         const m = fs.statSync(dbPath()).mtimeMs;
         if (m !== lastMtime) { lastMtime = m; store!.reload(); refresh(); }
-        // 락 파일 권한 문제 등으로 acquire가 throw할 수 있다. 4초마다 미처리 예외를
-        // 내지 않도록 같은 try 안에 둔다. 승격 자체는 catch 밖에서 한다.
+        // acquire can throw on a lock-file permission problem and the like. It stays inside this try
+        // so no unhandled exception fires every 4 seconds. The promotion itself happens outside the catch.
         acquired = lease!.tryAcquire();
-      } catch { /* 파일 없음/일시 오류 무시 */ }
-      if (acquired) enterWriter(); // 홀더가 죽었으면 승격
+      } catch { /* missing file or transient error, ignored */ }
+      if (acquired) enterWriter(); // the holder died, so promote
     }, 4_000);
   }
 
@@ -522,45 +522,45 @@ export async function activate(ctx: vscode.ExtensionContext) {
   ctx.subscriptions.push({ dispose: () => { if (roPoll) clearInterval(roPoll); lease?.stop(); } });
 
   if (await claimFirstRun(ctx.globalState)) {
-    // 실패해도 활성화를 막지 않는다 — 진실은 Setup Status 뷰다.
+    // A failure here must not block activation: the Setup Status view is the source of truth.
     void vscode.commands.executeCommand('workbench.action.openWalkthrough', WALKTHROUGH_CATEGORY_ID)
       .then(undefined, () => {});
   }
 
-  // 훅 설치·승인 권유는 알림 팝업으로 띄우지 않는다. 설치 직후 아무것도 안 한
-  // 사용자에게 팝업이 연달아 뜨는 것이 첫인상을 해쳤다. 같은 내용을 Setup Status 뷰가
-  // 행으로 항상 보여주고(미설치·승인 대기 상태와 실행 버튼), 워크스루 2단계가 안내한다.
-  // 로그인 필요 알림(maybeAuthPrompt)은 그대로 둔다. 그건 사용자가 스캔을 눌러 시작한
-  // 작업의 결과이고, 지금 답하지 않으면 그 서버를 잴 수 없어 시점이 중요하다.
+  // Hook installation and approval prompts are never raised as notification popups. Back-to-back
+  // popups right after install, before the user did anything, hurt the first impression. The Setup
+  // Status view always shows the same content as rows (not-installed and awaiting-approval states
+  // with run buttons), and step 2 of the walkthrough explains it.
+  // The login-required notification (maybeAuthPrompt) stays: it is the result of a scan the user
   void computeCollection();
 
   ctx.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
     if (e.affectsConfiguration('mcpLens.reportDays') ||
         e.affectsConfiguration('mcpLens.unsupportedServers') ||
-        // 스텝 4의 globalActionsReady를 켜고/끄는 설정. refresh()가 scheduleCollectionRefresh()를
-        // 거쳐 computeCollection() → refreshSetupKeys()까지 이어진다.
+        // Setting that turns globalActionsReady of step 4 on and off. refresh() flows through
+        // scheduleCollectionRefresh() to computeCollection() and refreshSetupKeys().
         e.affectsConfiguration('mcplens.dependencyAnalysis.rollout')) refresh();
   }));
 
   /**
-   * 스캔이 새 정의를 적재하면 이어서 독립성 판정까지 돌린다. 스캔만으로는 "얼마인가"까지고,
-   * "꺼도 되는가"는 분석이 답한다. 두 답이 같이 있어야 사용자가 조치할 수 있다.
+   * Once a scan ingests new definitions, the independence analysis follows. A scan alone answers
+   * "how much"; the analysis answers "can it be turned off". The user needs both to act.
    *
-   * 자동 경로라 동의창을 띄우지 않는다. 대신 제공자 CLI 토큰을 쓰는 동작이므로
-   * mcpLens.autoAnalyze로 끌 수 있고, 이미 분석한 툴은 다시 보내지 않는다.
+   * This is the automatic path, so no consent dialog is shown. It does use the provider CLI's
+   * tokens, so mcpLens.autoAnalyze can turn it off, and already-analyzed tools are never resent.
    */
   const analyzeAfterScan = async (): Promise<void> => {
     if (!vscode.workspace.getConfiguration('mcpLens').get<boolean>('autoAnalyze', false)) return;
     await analysisCoordinator.analyze([], { auto: true });
   };
 
-  void maybeAutoScan(store, refresh, analyzeAfterScan);                     // 시작 시 1회 판정
-  ctx.subscriptions.push(watchConfigSources(store, refresh, analyzeAfterScan)); // 이후 설정 파일 감시
+  void maybeAutoScan(store, refresh, analyzeAfterScan);                     // decide once at startup
+  ctx.subscriptions.push(watchConfigSources(store, refresh, analyzeAfterScan)); // then watch the config files
   ctx.subscriptions.push(
-    // 수동 스캔에는 분석을 잇지 않는다. 이 커맨드는 워크스루 1단계 버튼이고, 누르면
-    // 3단계(분석)가 소리 없이 끝나면서 사용자 토큰까지 나간다. 4단계를 차례로 보여주는
-    // 화면에서 1단계가 3단계를 대신 해버리면 남은 단계가 무엇을 뜻하는지 알 수 없다.
-    // 자동 분석은 새 서버를 감지해 스스로 스캔한 경로에서만 이어진다.
+    // A manual scan never chains into analysis. This command is the step 1 button of the
+    // walkthrough, and pressing it would silently finish step 3 (analysis) and spend the user's
+    // tokens. On a screen that shows four steps in order, a step 1 that also does step 3 leaves the
+    // remaining steps meaningless. Automatic analysis follows only on the path that detected a new server and scanned it itself.
     registerScanNow(() => store!, refresh),
     registerOpenRolloutSetting(), registerAuthenticateServer(refresh));
 
@@ -597,7 +597,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
     if (!node?.canDisableGlobally || !node.serverName || !node.toolName) return;
     const client = actionClient(node); const body = store!.definitionBodiesForServer(node.serverName).find((row) => row.toolName === node.toolName);
     if (!client || !body) return;
-    // 무엇을 잃는지 먼저 보여주고 사람의 확인을 받는다. 복원 경로에는 이 단계가 없다.
+    // Show what will be lost first and get a human confirmation. The restore path has no such step.
     const analysisResult = store!.findDependencyAnalysis(body.definitionSetHash, ANALYSIS_RULES_VERSION)?.results
       .find((row) => row.serverName === node.serverName && row.toolName === node.toolName);
     if (!analysisResult) { void vscode.window.showInformationMessage('This tool has not been analyzed yet.'); return; }
@@ -734,11 +734,11 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
 export async function deactivate() {
   await watcher?.stop();
-  // pending 감시 인터벌을 남기지 않는다. 프로세스 종료 경로지만 정리 순서를 명시한다.
+  // Leave no pending-watch interval behind. This is the process shutdown path, but the cleanup order is explicit.
   await coordinator?.stopDraining().catch(() => {});
   try { store?.save(); }
   catch (e) {
-    // read-only(비홀더)는 정상적으로 save()가 차단된다(StaleWriterError) — 무시.
+    // read-only (non-holder) instances are correctly blocked from save() (StaleWriterError): ignored.
     if (!(e instanceof Error) || e.name !== 'StaleWriterError') throw e;
   }
   store?.close();

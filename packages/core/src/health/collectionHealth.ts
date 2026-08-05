@@ -25,9 +25,9 @@ export interface CollectionHealthSnapshot {
   hookObserved: boolean;
   logObserved: boolean;
   /**
-   * 툴 단계(tool-before/tool-after/tool-failure) hook이 한 번이라도 관측됐는가.
-   * 라이프사이클 hook(session-start/turn-stop)은 포함하지 않는다 — 그것은 툴 상관
-   * 커버리지를 증명하지 못한다. degraded 승격의 전제 조건이다.
+   * Whether a tool-phase hook (tool-before/tool-after/tool-failure) was ever observed.
+   * Lifecycle hooks (session-start/turn-stop) do not count: they do not prove tool correlation
+   * coverage. This is the precondition for promoting to degraded.
    */
   toolHookCoverageObserved: boolean;
   consecutiveMisses: number;
@@ -42,16 +42,16 @@ interface TimedObservation extends CollectionHealthObservation {
 
 type CorrelationOutcome = { kind: 'match' | 'miss'; time: number };
 
-/** log 쪽에서 상관 성사 여부를 따지는 대상. 완료된 호출만 센다. */
+/** What the log side checks for a successful correlation. Only completed calls are counted. */
 const COMPLETED_CALL_PHASES = new Set<HookPhase>(['tool-after', 'tool-failure']);
 
 /**
- * hook 쪽에서 커버리지 증거로 인정하는 단계.
- * 클라이언트는 이벤트별로 hook을 따로 켤 수 있고(codex의 `hooks.state.*.enabled`),
- * 시작 단계만 켜고 완료 단계는 꺼 둔 구성이 실기기에서 관측됐다. 완료 단계만 인정하면
- * 그런 구성에서 상관키가 일치하는데도 전부 miss가 되어 건강도가 degraded로 굳고,
- * 회복 조건인 2연속 match가 영원히 성립하지 않는다.
- * 건강도는 수집기 생존을 재는 지표이므로 시작 단계 관측도 커버리지로 인정한다.
+ * Phases the hook side accepts as evidence of coverage.
+ * A client can enable hooks per event (codex's `hooks.state.*.enabled`), and configurations with
+ * only the start phase enabled and the completion phase off have been observed on real devices.
+ * Accepting only the completion phase would turn every correlation into a miss in such a setup,
+ * freezing health at degraded, and the recovery condition of two consecutive matches would never be met.
+ * Health measures whether the collector is alive, so a start-phase observation counts as coverage.
  */
 const HOOK_COVERAGE_PHASES = new Set<HookPhase>(['tool-before', 'tool-after', 'tool-failure']);
 
@@ -103,9 +103,9 @@ export function deriveCollectionHealth(input: CollectionHealthInput): Collection
     hookTimesByKey.set(observation.correlationKey, times);
   }
 
-  // 툴 단계 hook 커버리지가 성립한 시점. hookTimesByKey는 HOOK_COVERAGE_PHASES만 담으므로
-  // 이 맵이 비어 있다는 것은 툴 단계 hook을 한 번도 못 봤다는 뜻이다.
-  // 최솟값을 쓰는 이유: 그 시각부터가 "hook이 이 호출을 봤어야 하는" 구간이다.
+  // When tool-phase hook coverage began. hookTimesByKey holds only HOOK_COVERAGE_PHASES, so an
+  // empty map means no tool-phase hook was ever seen.
+  // The minimum is used because that is when "a hook should have seen this call" starts.
   const toolHookTimes = [...hookTimesByKey.values()].flat();
   const coverageSince = toolHookTimes.length === 0 ? null : Math.min(...toolHookTimes);
   const toolHookCoverageObserved = coverageSince !== null;
@@ -140,14 +140,14 @@ export function deriveCollectionHealth(input: CollectionHealthInput): Collection
     if (outcome.kind === 'miss') {
       consecutiveMisses++;
       consecutiveMatches = 0;
-      // 툴 단계 hook을 한 번도 못 본 클라이언트에서 miss는 수집기 장애의 증거가 아니다.
-      // hook 없이 로그만으로 운용하는 정상 형태이며, 그것은 log-only로 표기된다.
+      // On a client that never saw a tool-phase hook, a miss is not evidence of collector failure.
+      // Running on logs alone without hooks is a normal setup, and it is reported as log-only.
       //
-      // 커버리지가 성립하기 이전의 log 완료도 마찬가지다. 그때는 수집기가 붙어 있지
-      // 않았으므로 짝이 없는 것이 당연하고, "돌던 수집기가 멈췄다"는 회귀의 증거가 될 수
-      // 없다. 이 시점 조건이 없으면 훅을 새로 켠 사용자가 과거 이력만큼의 miss를 안고
-      // degraded로 시작하고, 매치를 만들어 빠져나올 때까지 전역 액션이 막힌다.
-      // (실측: 훅 설치 직후 codex의 miss 116건이 전부 커버리지 성립 이전이었다.)
+      // The same goes for log completions from before coverage began. The collector was not
+      // attached then, so having no counterpart is expected and cannot be evidence of the
+      // regression "a running collector stopped". Without this time condition, a user who has just
+      // enabled hooks starts out degraded carrying a miss for every past record, and global
+      // actions stay blocked until they produce a match.
       if (coverageSince !== null
         && outcome.time >= coverageSince
         && consecutiveMisses >= MISSES_TO_DEGRADE) degraded = true;
@@ -161,8 +161,8 @@ export function deriveCollectionHealth(input: CollectionHealthInput): Collection
   let health: CollectionHealth;
   if (unavailable) health = 'unavailable';
   else if (degraded) health = 'degraded';
-  // 툴 단계 hook이 성립한 적 없으면 라이프사이클 hook이 있어도 툴 상관은 log 단독 운용이다.
-  // healthy로 표기하면 "hook+로그 양쪽 정상"이라는 거짓 정보가 된다.
+  // If a tool-phase hook never held, tool correlation runs on logs alone even with lifecycle hooks.
+  // Reporting healthy would be the false claim that "both hooks and logs are fine".
   else if (logObserved && !toolHookCoverageObserved) health = 'log-only';
   else if (hookObserved && logObserved) health = 'healthy';
   else if (hookObserved) health = 'hook-only';

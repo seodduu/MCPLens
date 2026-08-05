@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# MCP Lens 격리 샌드박스 — 로컬 개인 데이터 없이 확장을 실사용처럼 테스트한다.
+# MCP Lens isolated sandbox: test the extension like real use, with no local personal data.
 #
-#   ./scripts/sandbox.sh            # 마켓플레이스판(seodduu.mcp-context-lens) 설치 후 실행
-#   ./scripts/sandbox.sh --no-install  # 확장 미설치 — 마켓플레이스에서 직접 설치해볼 때
-#   ./scripts/sandbox.sh --vsix p   # 로컬 VSIX 설치 후 실행
-#   ./scripts/sandbox.sh --reset    # 샌드박스 전체 삭제 후 재생성
+#   ./scripts/sandbox.sh            # install the marketplace build (seodduu.mcp-context-lens), then run
+#   ./scripts/sandbox.sh --no-install  # no extension installed, for installing from the marketplace by hand
+#   ./scripts/sandbox.sh --vsix p   # install a local VSIX, then run
+#   ./scripts/sandbox.sh --reset    # delete the whole sandbox and recreate it
 #   SANDBOX=~/other ./scripts/sandbox.sh
 #
-# 격리 원리: Node의 os.homedir()는 $HOME을 그대로 따르므로, VS Code를
-# HOME=<샌드박스>/home 으로 띄우면 확장이 보는 ~/.mcplens, ~/.claude,
-# ~/.codex, ~/.gemini 가 전부 샌드박스 안이다. 실 홈은 읽지도 쓰지도 않는다.
+# How the isolation works: Node's os.homedir() follows $HOME exactly, so launching VS Code with
+# HOME=<sandbox>/home puts the ~/.mcplens, ~/.claude, ~/.codex and ~/.gemini the extension sees
+# entirely inside the sandbox. The real home is neither read nor written.
 set -euo pipefail
 
 SANDBOX="${SANDBOX:-$HOME/mcplens-sandbox}"
@@ -17,8 +17,8 @@ EXT_ID="seodduu.mcp-context-lens"
 VSIX=""
 INSTALL=1
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# 실행 바이너리 이름은 VS Code 버전에 따라 다르다. 요즘 빌드는 Code이고 예전 빌드는
-# Electron이었다. 낡은 이름을 박아 두면 env가 "No such file or directory"로 죽는다.
+# The executable name differs by VS Code version: recent builds use Code, older ones used Electron.
+# Hardcoding the old name makes env die with "No such file or directory".
 CODE_MACOS="/Applications/Visual Studio Code.app/Contents/MacOS"
 if [ -n "${CODE_APP:-}" ]; then
   :
@@ -27,8 +27,8 @@ elif [ -x "$CODE_MACOS/Code" ]; then
 elif [ -x "$CODE_MACOS/Electron" ]; then
   CODE_APP="$CODE_MACOS/Electron"
 else
-  echo "VS Code 실행 바이너리를 찾지 못했습니다: $CODE_MACOS" >&2
-  echo "다른 위치에 설치했다면 CODE_APP=<바이너리 경로> $0 로 지정하세요." >&2
+  echo "VS Code executable not found: $CODE_MACOS" >&2
+  echo "If it is installed elsewhere, pass CODE_APP=<binary path> $0." >&2
   exit 2
 fi
 
@@ -46,20 +46,20 @@ USER_DATA="$SANDBOX/vscode-user-data"
 EXT_DIR="$SANDBOX/vscode-extensions"
 WORKSPACE="$SANDBOX/workspace"
 
-# Electron IPC 소켓 경로가 103자를 넘으면 창이 뜨지 않는다 — 짧은 경로만 허용.
+# The window never appears if the Electron IPC socket path exceeds 103 characters, so only short paths are allowed.
 if [ ${#USER_DATA} -gt 60 ]; then
-  echo "SANDBOX 경로가 너무 깁니다(${#USER_DATA}자). 더 짧은 경로를 쓰세요: SANDBOX=/tmp/mlsb $0" >&2
+  echo "The SANDBOX path is too long (${#USER_DATA} characters). Use a shorter one: SANDBOX=/tmp/mlsb $0" >&2
   exit 2
 fi
 
 mkdir -p "$FAKE_HOME" "$USER_DATA/User" "$EXT_DIR" "$WORKSPACE" \
          "$FAKE_HOME/.claude/projects" "$FAKE_HOME/.codex/sessions" "$FAKE_HOME/.gemini/tmp"
-# 로그 루트는 clientLogRoots()와 정확히 일치해야 한다(packages/core/src/paths.ts):
+# The log roots must match clientLogRoots() exactly (packages/core/src/paths.ts):
 # claude-code=.claude/projects, codex=.codex/sessions, gemini-cli=.gemini/tmp.
-# 부모 디렉터리(.codex, .gemini)만 만들면 detectClients()가 미설치로 걸러
-# 매트릭스·수집 상태에서 해당 클라이언트가 통째로 사라진다.
+# Creating only the parent directories (.codex, .gemini) makes detectClients() filter them out as
+# not installed, and that client disappears entirely from the matrix and the collection state.
 
-# 워크스페이스 신뢰 프롬프트를 끄지 않으면 확장이 활성화되지 않은 채 대기한다.
+# Without disabling the workspace trust prompt, the extension waits without ever activating.
 if [ ! -f "$USER_DATA/User/settings.json" ]; then
   cat > "$USER_DATA/User/settings.json" <<'EOF'
 {
@@ -69,9 +69,9 @@ if [ ! -f "$USER_DATA/User/settings.json" ]; then
 EOF
 fi
 
-# ── 샌드박스 홈 시드 ────────────────────────────────────────────────
-# 데모 MCP 서버(툴 12개, 토큰만 먹고 대부분 안 쓰이는 시연용)를 Claude Code에 등록.
-# 실 계정/키는 일절 넣지 않는다.
+# -- Seed the sandbox home ------------------------------------------
+# Register the demo MCP server (12 tools, mostly unused, eating tokens for the demo) with Claude Code.
+# No real account or key is ever put in.
 if [ ! -f "$FAKE_HOME/.claude.json" ]; then
   cat > "$FAKE_HOME/.claude.json" <<EOF
 {
@@ -83,10 +83,10 @@ if [ ! -f "$FAKE_HOME/.claude.json" ]; then
 EOF
 fi
 
-# 3사 대칭 시드. claude만 등록하면 codex·gemini 경로는 호출할 서버가 0개라
-# 애초에 검증이 불가능한 샌드박스가 된다 — 세 클라이언트에 같은 데모 서버를 건다.
-# 기존 파일은 파괴하지 않는다(로그인 자격증명·훅 설치 흔적 보존): 없으면 만들고,
-# 있으면 mcpServers 항목만 병합한다.
+# Symmetric seeding across all three. Registering only claude leaves the codex and gemini paths with
+# zero servers to call, making the sandbox unverifiable, so the same demo server goes to all three.
+# Existing files are never destroyed (preserving login credentials and hook installation traces):
+# create when absent, merge only the mcpServers entries when present.
 if [ ! -f "$FAKE_HOME/.gemini/settings.json" ]; then
   cat > "$FAKE_HOME/.gemini/settings.json" <<EOF
 {
@@ -107,7 +107,7 @@ else
   '
 fi
 
-# codex는 TOML — 이미 [mcp_servers.lenstest] 가 있으면 건드리지 않는다.
+# codex uses TOML, so leave it alone when [mcp_servers.lenstest] already exists.
 if ! grep -q '^\[mcp_servers\.lenstest\]' "$FAKE_HOME/.codex/config.toml" 2>/dev/null; then
   cat >> "$FAKE_HOME/.codex/config.toml" <<EOF
 
@@ -119,7 +119,7 @@ fi
 
 [ -f "$WORKSPACE/README.md" ] || echo "# MCP Lens sandbox" > "$WORKSPACE/README.md"
 
-# ── 확장 설치 ───────────────────────────────────────────────────────
+# -- Install the extension ------------------------------------------
 code_cli() {
   HOME="$FAKE_HOME" code --user-data-dir "$USER_DATA" --extensions-dir "$EXT_DIR" "$@"
 }
@@ -131,15 +131,15 @@ if [ "$INSTALL" = 1 ]; then
   fi
   code_cli --list-extensions --show-versions
 else
-  echo "확장 미설치 — 창의 Extensions에서 '$EXT_ID'를 직접 설치하세요."
+  echo "Extension not installed. Install '$EXT_ID' yourself from Extensions in the window."
 fi
 
 echo
-echo "샌드박스: $SANDBOX"
+echo "sandbox: $SANDBOX"
 
-# ── 실행 ────────────────────────────────────────────────────────────
-# `code` 래퍼 대신 Electron 바이너리를 직접 띄워야 HOME 오버라이드가
-# 확실히 확장 호스트까지 전달된다.
+# -- Run ------------------------------------------------------------
+# The Electron binary must be launched directly rather than through the `code` wrapper so the HOME
+# override definitely reaches the extension host.
 exec env HOME="$FAKE_HOME" "$CODE_APP" \
   --user-data-dir "$USER_DATA" \
   --extensions-dir "$EXT_DIR" \

@@ -7,29 +7,29 @@ import type { Recommendation } from '../../src/types.js';
 function recommendation(action: Recommendation['action']): Recommendation {
   const reasonParts: Recommendation['reasonParts'] = action === 'inspect'
     ? {
-        basis: '4회 중 3회 실패(75%), 실패 응답 120토큰 낭비',
+        basis: '3 of 4 calls failed (75%), 120 tokens wasted on failed responses',
         serverBasis: null,
-        effect: '점검·대체 권장',
+        effect: 'inspect or replace',
         caveat: null,
       }
     : action === 'filter-server'
       ? {
           basis: '',
-          serverBasis: '서버 github의 10툴 중 1개만 사용. 툴 필터링 권장.',
-          effect: '제거 시 매 세션 약 900토큰 절약',
+          serverBasis: 'Only 1 of 10 tools used on server github. Tool filtering recommended.',
+          effect: 'about 900 tokens saved per session when removed',
           caveat: null,
         }
       : action === 'remove'
         ? {
-            basis: '정의 900토큰, 호출 0회',
+            basis: 'definition 900 tokens, 0 calls',
             serverBasis: null,
-            effect: '제거 시 매 세션 약 900토큰 절약',
+            effect: 'about 900 tokens saved per session when removed',
             caveat: null,
           }
         : action === 'keep'
-          ? { basis: '7회 호출됨', serverBasis: null, effect: null, caveat: null }
+          ? { basis: 'called 7 times', serverBasis: null, effect: null, caveat: null }
           : {
-              basis: '정의 토큰 미확보 (스캐너 미커버)',
+              basis: 'definition tokens unavailable (not covered by the scanner)',
               serverBasis: null,
               effect: null,
               caveat: null,
@@ -39,7 +39,7 @@ function recommendation(action: Recommendation['action']): Recommendation {
     confidence: 'high',
     reason: joinReason(reasonParts),
     reasonParts,
-    evidenceLabel: '실측',
+    evidenceLabel: 'measured',
     evidence: {
       observedSessions: 12,
       datedObservedSessions: 12,
@@ -69,7 +69,7 @@ describe('gateRecommendation', () => {
 
       expect(gated.action).toBe(action);
       expect(gated.confidence).toBe('low');
-      expect(gated.reasonParts.caveat).toContain('수집 건강도');
+      expect(gated.reasonParts.caveat).toContain('collection health is low');
     },
   );
 
@@ -93,7 +93,7 @@ describe('gateRecommendation', () => {
     const gated = gateRecommendation(recommendation('inspect'), health('hook-only'));
 
     expect(gated.action).toBe('inspect');
-    expect(gated.evidenceLabel).toBe('측정 불가');
+    expect(gated.evidenceLabel).toBe('not measurable');
     expect(gated.evidence.costPerSession).toBeNull();
     expect(gated.evidence.totalObservedCost).toBeNull();
   });
@@ -108,11 +108,11 @@ describe('gateRecommendation', () => {
         gated.reasonParts.effect,
       ].filter((part): part is string => part !== null).join(' ');
 
-      expect(gated.evidenceLabel).toBe('측정 불가');
+      expect(gated.evidenceLabel).toBe('not measurable');
       expect(gated.evidence.costPerSession).toBeNull();
       expect(gated.evidence.totalObservedCost).toBeNull();
-      expect(renderedParts).not.toMatch(/(?:약\s*)?[\d,]+\s*토큰(?:\s*(?:낭비|절약))?/u);
-      expect(renderedParts).not.toContain('절약은 작지만');
+      expect(renderedParts).not.toMatch(/(?:about\s*)?\d[\d,]*\s*tokens?(?:\s+(?:wasted|saved))?/u);
+      expect(renderedParts).not.toContain('small savings, but');
       expect(gated.reason).toBe(joinReason(gated.reasonParts));
     },
   );
@@ -121,15 +121,15 @@ describe('gateRecommendation', () => {
     const original = recommendation('filter-server');
     original.reasonParts = {
       ...original.reasonParts,
-      serverBasis: '서버 github 정의 1,200토큰, 10툴 중 1개만 사용',
-      effect: '절약은 작지만 검색 공간 정리 효과',
+      serverBasis: 'server github definition 1,200 tokens, only 1 of 10 tools used',
+      effect: 'small savings, but cleans up the search space',
     };
     original.reason = joinReason(original.reasonParts);
 
     const gated = gateRecommendation(original, health('hook-only'));
 
-    expect(gated.reasonParts.serverBasis).toBe('서버 github 정의 토큰 측정 불가, 10툴 중 1개만 사용');
-    expect(gated.reasonParts.effect).toBe('검색 공간 정리 효과');
+    expect(gated.reasonParts.serverBasis).toBe('server github definition token count unavailable, only 1 of 10 tools used');
+    expect(gated.reasonParts.effect).toBe('cleans up the search space');
     expect(gated.reason).toBe(joinReason(gated.reasonParts));
   });
 

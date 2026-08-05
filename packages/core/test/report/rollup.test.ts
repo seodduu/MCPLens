@@ -1,6 +1,6 @@
 // packages/core/test/report/rollup.test.ts
-// rollupClient/assembleModel을 손으로 만든 MatrixRow[]/SessionMeta[]로 직접 검증한다.
-// buildMatrix()는 절대 호출하지 않는다 (Task 34가 engine.ts의 reasonParts를 병행 수정 중).
+// Verifies rollupClient/assembleModel directly with hand-written MatrixRow[]/SessionMeta[].
+// buildMatrix() is never called (Task 34 was editing reasonParts in engine.ts in parallel).
 import { describe, it, expect } from 'vitest';
 import { rollupClient, assembleModel } from '../../src/report/rollup.js';
 import type { ClientRollup } from '../../src/report/rollup.js';
@@ -45,7 +45,7 @@ function mkRow(p: {
         effect: null,
         caveat: p.caveat ?? null,
       },
-      evidenceLabel: '실측',
+      evidenceLabel: 'measured',
       evidence: {
         observedSessions: 0,
         datedObservedSessions: 0,
@@ -68,8 +68,8 @@ function mkSession(mode: AccountingMode, id = 's1'): SessionMeta {
   return { sessionId: id, client: 'claude-code', filePath: `/f/${id}`, startedAt: '2026-07-10T00:00:00Z', mode };
 }
 
-describe('rollupClient — 그룹핑', () => {
-  it('같은 서버·action·confidence 툴을 한 그룹으로 묶고 perSessionTokens 합산', () => {
+describe('rollupClient grouping', () => {
+  it('groups tools sharing a server, action and confidence and sums perSessionTokens', () => {
     const rows = [
       mkRow({ serverName: 'notion', toolName: 'a', definitionTokens: 100, action: 'remove', confidence: 'medium' }),
       mkRow({ serverName: 'notion', toolName: 'b', definitionTokens: 200, action: 'remove', confidence: 'medium' }),
@@ -80,7 +80,7 @@ describe('rollupClient — 그룹핑', () => {
     expect(report.buckets.act[0].tools).toHaveLength(2);
   });
 
-  it('다른 서버는 별도 그룹', () => {
+  it('puts a different server in its own group', () => {
     const rows = [
       mkRow({ serverName: 'a', toolName: 't', action: 'remove', confidence: 'high' }),
       mkRow({ serverName: 'b', toolName: 't', action: 'remove', confidence: 'high' }),
@@ -90,8 +90,8 @@ describe('rollupClient — 그룹핑', () => {
   });
 });
 
-describe('rollupClient — 버킷 배정', () => {
-  it('confidence low인 remove/filter-server는 candidate 버킷', () => {
+describe('rollupClient bucket assignment', () => {
+  it('puts low-confidence remove/filter-server in the candidate bucket', () => {
     const rows = [
       mkRow({ serverName: 's', toolName: 'a', action: 'remove', confidence: 'low' }),
       mkRow({ serverName: 's', toolName: 'b', action: 'filter-server', confidence: 'low' }),
@@ -101,7 +101,7 @@ describe('rollupClient — 버킷 배정', () => {
     expect(report.buckets.candidate).toHaveLength(2);
   });
 
-  it('confidence high/medium인 remove/filter-server는 act 버킷', () => {
+  it('puts high/medium-confidence remove/filter-server in the act bucket', () => {
     const rows = [
       mkRow({ serverName: 's', toolName: 'a', action: 'remove', confidence: 'high' }),
       mkRow({ serverName: 't', toolName: 'b', action: 'filter-server', confidence: 'medium' }),
@@ -111,7 +111,7 @@ describe('rollupClient — 버킷 배정', () => {
     expect(report.buckets.candidate).toHaveLength(0);
   });
 
-  it('inspect는 confidence 무관하게 inspect 버킷', () => {
+  it('puts inspect in the inspect bucket regardless of confidence', () => {
     const rows = [
       mkRow({ serverName: 's', toolName: 'a', action: 'inspect', confidence: 'low' }),
       mkRow({ serverName: 't', toolName: 'b', action: 'inspect', confidence: 'high' }),
@@ -120,13 +120,13 @@ describe('rollupClient — 버킷 배정', () => {
     expect(report.buckets.inspect).toHaveLength(2);
   });
 
-  it('keep은 healthy 버킷', () => {
+  it('puts keep in the healthy bucket', () => {
     const rows = [mkRow({ serverName: 's', toolName: 'a', action: 'keep', confidence: 'high', callCount: 5 })];
     const { report } = rollupClient('claude-code', [mkSession('UPFRONT')], rows);
     expect(report.buckets.healthy).toHaveLength(1);
   });
 
-  it('unknown은 어느 버킷에도 안 들어가고 unmeasuredToolCount로만 셈', () => {
+  it('keeps unknown out of every bucket and counts it only in unmeasuredToolCount', () => {
     const rows = [
       mkRow({ serverName: 's', toolName: 'a', action: 'unknown', confidence: 'low', definitionTokens: null }),
       mkRow({ serverName: 's', toolName: 'b', action: 'keep', confidence: 'high', callCount: 2 }),
@@ -140,8 +140,8 @@ describe('rollupClient — 버킷 배정', () => {
   });
 });
 
-describe('rollupClient — 클라이언트 접기', () => {
-  it('act·inspect 비고 candidate만 있으면 collapsed=true, collapsedSummary 채워짐', () => {
+describe('rollupClient client collapsing', () => {
+  it('sets collapsed=true with a filled collapsedSummary when act and inspect are empty and only candidates remain', () => {
     const rows = [
       mkRow({ serverName: 's', toolName: 'a', action: 'remove', confidence: 'low', definitionTokens: 50 }),
       mkRow({ serverName: 's', toolName: 'b', action: 'filter-server', confidence: 'low', definitionTokens: 70 }),
@@ -151,7 +151,7 @@ describe('rollupClient — 클라이언트 접기', () => {
     expect(report.collapsedSummary).toEqual({ toolCount: 2, perSessionTokens: 120 });
   });
 
-  it('act가 하나라도 있으면 collapsed=false, collapsedSummary=null', () => {
+  it('sets collapsed=false with a null collapsedSummary when there is any act', () => {
     const rows = [
       mkRow({ serverName: 's', toolName: 'a', action: 'remove', confidence: 'high' }),
       mkRow({ serverName: 't', toolName: 'b', action: 'remove', confidence: 'low' }),
@@ -161,7 +161,7 @@ describe('rollupClient — 클라이언트 접기', () => {
     expect(report.collapsedSummary).toBeNull();
   });
 
-  it('아무 버킷도 안 채워지면 collapsed=false (candidate가 비어있으므로)', () => {
+  it('sets collapsed=false when no bucket is filled at all (candidate is empty)', () => {
     const rows = [mkRow({ serverName: 's', toolName: 'a', action: 'keep', confidence: 'high', callCount: 1 })];
     const { report } = rollupClient('claude-code', [mkSession('UPFRONT')], rows);
     expect(report.collapsed).toBe(false);
@@ -169,8 +169,8 @@ describe('rollupClient — 클라이언트 접기', () => {
   });
 });
 
-describe('rollupClient — 정렬', () => {
-  it('그룹은 perSessionTokens 내림차순', () => {
+describe('rollupClient ordering', () => {
+  it('orders groups by perSessionTokens descending', () => {
     const rows = [
       mkRow({ serverName: 'small', toolName: 'a', action: 'remove', confidence: 'high', definitionTokens: 10 }),
       mkRow({ serverName: 'big', toolName: 'b', action: 'remove', confidence: 'high', definitionTokens: 900 }),
@@ -180,7 +180,7 @@ describe('rollupClient — 정렬', () => {
     expect(report.buckets.act.map((g) => g.serverName)).toEqual(['big', 'mid', 'small']);
   });
 
-  it('그룹 내 tools는 perSessionTokens 내림차순, null은 맨 뒤', () => {
+  it('orders tools inside a group by perSessionTokens descending, with null last', () => {
     const rows = [
       mkRow({ serverName: 's', toolName: 'low', action: 'remove', confidence: 'high', definitionTokens: 10 }),
       mkRow({ serverName: 's', toolName: 'null', action: 'remove', confidence: 'high', definitionTokens: null }),
@@ -191,8 +191,8 @@ describe('rollupClient — 정렬', () => {
   });
 });
 
-describe('rollupClient — hiddenToolCount / visibleMatrixRows 연동', () => {
-  it('DEFERRED 세션에서 callCount0·loadedSessionCount0 툴은 숨겨져 hiddenToolCount에 반영', () => {
+describe('rollupClient hiddenToolCount / visibleMatrixRows interplay', () => {
+  it('hides tools with callCount 0 and loadedSessionCount 0 in a DEFERRED session and counts them in hiddenToolCount', () => {
     const rows = [
       mkRow({ serverName: 's', toolName: 'hidden', action: 'unknown', confidence: 'low',
         definitionTokens: null, callCount: 0, loadedSessionCount: 0 }),
@@ -203,7 +203,7 @@ describe('rollupClient — hiddenToolCount / visibleMatrixRows 연동', () => {
     expect(report.buckets.healthy).toHaveLength(1);
   });
 
-  it('UPFRONT 세션에서는 숨김 없음', () => {
+  it('hides nothing in an UPFRONT session', () => {
     const rows = [
       mkRow({ serverName: 's', toolName: 'a', action: 'remove', confidence: 'high', callCount: 0, loadedSessionCount: 0 }),
     ];
@@ -213,11 +213,11 @@ describe('rollupClient — hiddenToolCount / visibleMatrixRows 연동', () => {
 });
 
 describe('rollupClient — headline/caveat/hasUnmeasured', () => {
-  it('headline = serverBasis (단일/없으면 null)', () => {
+  it('sets headline = serverBasis (null when there is none)', () => {
     const withBasis = rollupClient('claude-code', [mkSession('UPFRONT')], [
-      mkRow({ serverName: 's', toolName: 'a', action: 'filter-server', confidence: 'high', serverBasis: '서버 s의 20툴 중 2개만 사용' }),
+      mkRow({ serverName: 's', toolName: 'a', action: 'filter-server', confidence: 'high', serverBasis: 'Only 2 of 20 tools used on server s' }),
     ]).report;
-    expect(withBasis.buckets.act[0].headline).toBe('서버 s의 20툴 중 2개만 사용');
+    expect(withBasis.buckets.act[0].headline).toBe('Only 2 of 20 tools used on server s');
 
     const noBasis = rollupClient('claude-code', [mkSession('UPFRONT')], [
       mkRow({ serverName: 's', toolName: 'a', action: 'remove', confidence: 'high', serverBasis: null }),
@@ -225,7 +225,7 @@ describe('rollupClient — headline/caveat/hasUnmeasured', () => {
     expect(noBasis.buckets.act[0].headline).toBeNull();
   });
 
-  it('caveat = 그룹 내 최빈값 (동률이면 첫 등장 우선)', () => {
+  it('sets caveat to the most common value in the group (ties go to the first occurrence)', () => {
     const rows = [
       mkRow({ serverName: 's', toolName: 'a', action: 'remove', confidence: 'low', caveat: 'x' }),
       mkRow({ serverName: 's', toolName: 'b', action: 'remove', confidence: 'low', caveat: 'y' }),
@@ -242,7 +242,7 @@ describe('rollupClient — headline/caveat/hasUnmeasured', () => {
     expect(tie.buckets.candidate[0].caveat).toBe('first');
   });
 
-  it('hasUnmeasured = definitionTokens null 툴 존재 시 true', () => {
+  it('sets hasUnmeasured true when a tool has null definitionTokens', () => {
     const rows = [
       mkRow({ serverName: 's', toolName: 'a', action: 'remove', confidence: 'high', definitionTokens: 100 }),
       mkRow({ serverName: 's', toolName: 'b', action: 'remove', confidence: 'high', definitionTokens: null }),
@@ -251,7 +251,7 @@ describe('rollupClient — headline/caveat/hasUnmeasured', () => {
     expect(report.buckets.act[0].hasUnmeasured).toBe(true);
   });
 
-  it('hasUnmeasured = false면 전부 측정됨', () => {
+  it('sets hasUnmeasured false when everything is measured', () => {
     const rows = [mkRow({ serverName: 's', toolName: 'a', action: 'remove', confidence: 'high', definitionTokens: 100 })];
     const { report } = rollupClient('claude-code', [mkSession('UPFRONT')], rows);
     expect(report.buckets.act[0].hasUnmeasured).toBe(false);
@@ -259,7 +259,7 @@ describe('rollupClient — headline/caveat/hasUnmeasured', () => {
 });
 
 describe('rollupClient — totals', () => {
-  it('totals가 버킷별 합계와 일치', () => {
+  it('makes totals match the per-bucket sums', () => {
     const rows = [
       mkRow({ serverName: 's1', toolName: 'a', action: 'remove', confidence: 'high', definitionTokens: 100 }),
       mkRow({ serverName: 's2', toolName: 'b', action: 'remove', confidence: 'low', definitionTokens: 50 }),
@@ -302,7 +302,7 @@ describe('assembleModel', () => {
     healthyToolCount: 0, healthyResponseTokens: 0,
   };
 
-  it('클라이언트 정렬: collapsed=false 먼저, 그다음 sessionCount 내림차순', () => {
+  it('orders clients with collapsed=false first, then by sessionCount descending', () => {
     const rollups: ClientRollup[] = [
       { report: mkClientReport({ client: 'codex', collapsed: false, sessionCount: 3 }), totals: zeroTotals },
       { report: mkClientReport({ client: 'claude-code', collapsed: true, sessionCount: 100 }), totals: zeroTotals },
@@ -318,7 +318,7 @@ describe('assembleModel', () => {
     expect(model.days).toBe(7);
   });
 
-  it('totals는 클라이언트별 totals의 합', () => {
+  it('makes totals the sum of the per-client totals', () => {
     const t1: ReportTotals = { ...zeroTotals, actPerSessionTokens: 100, actToolCount: 1 };
     const t2: ReportTotals = { ...zeroTotals, actPerSessionTokens: 50, actToolCount: 1 };
     const model = assembleModel([

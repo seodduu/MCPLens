@@ -13,19 +13,19 @@ function fakeDeps(over: any = {}) {
 }
 
 describe('WriterLeaseManager', () => {
-  it('acquire 성공 시 holder', () => {
+  it('is the holder when acquire succeeds', () => {
     const m = new WriterLeaseManager('/lock', { deps: fakeDeps() } as any);
     expect(m.tryAcquire()).toBe(true);
     expect(m.isHolder()).toBe(true);
   });
 
-  it('acquire 실패 시 non-holder', () => {
+  it('is a non-holder when acquire fails', () => {
     const m = new WriterLeaseManager('/lock', { deps: fakeDeps({ acquire: vi.fn(() => null) }) } as any);
     expect(m.tryAcquire()).toBe(false);
     expect(m.isHolder()).toBe(false);
   });
 
-  it('renew가 null이면 holder 해제 + onLost 호출', () => {
+  it('drops holder status and calls onLost when renew returns null', () => {
     let tick: () => void = () => {};
     const deps = fakeDeps({
       renew: vi.fn(() => null),
@@ -35,12 +35,12 @@ describe('WriterLeaseManager', () => {
     m.tryAcquire();
     const onLost = vi.fn();
     m.startHeartbeat(onLost);
-    tick(); // 하트비트 1회 — renew=null
+    tick(); // one heartbeat, renew=null
     expect(m.isHolder()).toBe(false);
     expect(onLost).toHaveBeenCalledOnce();
   });
 
-  it('renew가 throw해도 holder 해제 + onLost 호출 (스플릿 브레인 방지)', () => {
+  it('drops holder status and calls onLost even when renew throws (split-brain guard)', () => {
     let tick: () => void = () => {};
     const deps = fakeDeps({
       renew: vi.fn(() => { const e: any = new Error('EACCES'); e.code = 'EACCES'; throw e; }),
@@ -50,7 +50,7 @@ describe('WriterLeaseManager', () => {
     m.tryAcquire();
     const onLost = vi.fn();
     m.startHeartbeat(onLost);
-    expect(() => tick()).not.toThrow(); // 인터벌 콜백 밖으로 예외가 새면 안 된다
+    expect(() => tick()).not.toThrow(); // no exception may escape the interval callback
     expect(m.isHolder()).toBe(false);
     expect(onLost).toHaveBeenCalledOnce();
     expect(deps.clearInterval).toHaveBeenCalled();

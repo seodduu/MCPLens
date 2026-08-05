@@ -5,73 +5,73 @@ import type { McpServerSpec } from '@mcp-lens/core';
 const spec = (name: string): McpServerSpec => ({ name, command: 'node', args: [] });
 
 describe('decideScanAction', () => {
-  it('stdio 서버가 없으면 무조건 skip', () => {
+  it('always skips when there is no stdio server', () => {
     expect(decideScanAction({ setting: 'prompt', specs: [], scannedServers: new Set() }))
       .toEqual({ kind: 'skip' });
   });
-  it('never면 skip', () => {
+  it('skips on never', () => {
     expect(decideScanAction({ setting: 'never', specs: [spec('a')], scannedServers: new Set() }))
       .toEqual({ kind: 'skip' });
   });
-  it('always면 미스캔 서버만 담아 scan', () => {
+  it('scans only the unscanned servers on always', () => {
     const d = decideScanAction({
       setting: 'always', specs: [spec('a'), spec('b')], scannedServers: new Set(['a']) });
     expect(d).toEqual({ kind: 'scan', targets: [spec('b')] });
   });
-  it('always여도 전부 스캔돼 있으면 skip', () => {
+  it('skips on always when everything is already scanned', () => {
     expect(decideScanAction({ setting: 'always', specs: [spec('a')], scannedServers: new Set(['a']) }))
       .toEqual({ kind: 'skip' });
   });
-  it('prompt + 미스캔 서버 있음 → prompt (대상 포함)', () => {
+  it('prompts (with targets) on prompt when unscanned servers exist', () => {
     const d = decideScanAction({ setting: 'prompt', specs: [spec('a')], scannedServers: new Set() });
     expect(d).toEqual({ kind: 'prompt', targets: [spec('a')] });
   });
-  it('prompt여도 전부 스캔돼 있으면 skip (알림 스팸 방지)', () => {
+  it('skips on prompt when everything is already scanned (no notification spam)', () => {
     expect(decideScanAction({ setting: 'prompt', specs: [spec('a')], scannedServers: new Set(['a']) }))
       .toEqual({ kind: 'skip' });
   });
-  it('지원하지 않는(unsupported) 서버는 스캔 대상에서 제외한다', () => {
+  it('excludes unsupported servers from the scan targets', () => {
     const d = decideScanAction({
       setting: 'always', specs: [spec('a'), spec('figma')], scannedServers: new Set(),
       unsupported: new Set(['figma']) });
     expect(d).toEqual({ kind: 'scan', targets: [spec('a')] });
   });
-  it('미스캔 서버가 전부 unsupported면 skip', () => {
+  it('skips when every unscanned server is unsupported', () => {
     const d = decideScanAction({
       setting: 'always', specs: [spec('figma')], scannedServers: new Set(),
       unsupported: new Set(['figma']) });
     expect(d).toEqual({ kind: 'skip' });
   });
-  it('definition만 있고 body가 없는 서버는 미스캔으로 보고 대상에 넣는다', () => {
-    // 레거시 DB 재현: 호출부가 body 기준 집합을 넘기므로 여기서는 비어 있다
+  it('treats a server with definitions but no bodies as unscanned and includes it', () => {
+    // Reproduces a legacy DB: the caller passes a body-based set, so it is empty here
     const d = decideScanAction({
       setting: 'always', specs: [spec('a')], scannedServers: new Set() });
     expect(d).toEqual({ kind: 'scan', targets: [spec('a')] });
   });
-  it('body가 적재된 서버는 재스캔하지 않는다', () => {
+  it('does not rescan a server whose bodies are ingested', () => {
     expect(decideScanAction({
       setting: 'always', specs: [spec('a')], scannedServers: new Set(['a']) }))
       .toEqual({ kind: 'skip' });
   });
 
-  // 첫 실행은 온보딩 워크스루의 몫이다. 확장이 먼저 스캔하면 분석에 쓸 LLM 제공자
-  // 선택까지 대신 해버린다. 자동 스캔은 사용자가 한 번 스캔한 뒤부터 적용한다.
-  it('첫 실행(정의 0건)에는 always여도 스캔하지 않는다', () => {
+  // The first run belongs to the onboarding walkthrough. Scanning first would also make the LLM
+  // provider choice for the analysis. Automatic scanning applies only after the user has scanned once.
+  it('does not scan on the first run (0 definitions) even on always', () => {
     expect(decideScanAction({
       setting: 'always', specs: [spec('a')], scannedServers: new Set(), neverScanned: true }))
       .toEqual({ kind: 'skip' });
   });
 
-  it('한 번이라도 스캔한 뒤에는 새 서버를 자동으로 스캔한다', () => {
+  it('scans new servers automatically once anything has been scanned', () => {
     expect(decideScanAction({
       setting: 'always', specs: [spec('a'), spec('b')],
       scannedServers: new Set(['a']), neverScanned: false }))
       .toEqual({ kind: 'scan', targets: [spec('b')] });
   });
 
-  // 레거시 DB(정의는 있고 body만 없음)는 첫 실행이 아니다. body로 첫 실행을 판정하면
-  // 이 사용자의 재스캔까지 막힌다.
-  it('정의는 있고 body만 없는 DB는 첫 실행으로 보지 않는다', () => {
+  // A legacy DB (definitions but no bodies) is not a first run. Judging the first run by bodies
+  // would block that user's rescan too.
+  it('does not treat a DB with definitions but no bodies as a first run', () => {
     expect(decideScanAction({
       setting: 'always', specs: [spec('a')], scannedServers: new Set(), neverScanned: false }))
       .toEqual({ kind: 'scan', targets: [spec('a')] });
