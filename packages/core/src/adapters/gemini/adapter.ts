@@ -129,8 +129,10 @@ export const geminiAdapter: LogAdapter = {
         const toolCalls = Array.isArray(rec.toolCalls)
           ? (rec.toolCalls as GeminiToolCall[])
           : [];
-        const responseTokens = tokens?.tool ?? null;
-
+        // tokens.tool은 턴 전체의 툴 토큰이다. 엔진이 호출 단위로 합산하므로 그대로
+        // 각 호출에 넣으면 호출 수만큼 곱해진다. 이 레코드에서 실제로 채택할 MCP 호출을
+        // 먼저 확정한 뒤 그 수로 나눠 담는다.
+        const accepted: { split: { server: string; tool: string }; tc: GeminiToolCall; id: string | null }[] = [];
         for (const tc of toolCalls) {
           if (typeof tc.name !== 'string') continue;
           const split = splitFlattenedName(tc.name);
@@ -138,7 +140,20 @@ export const geminiAdapter: LogAdapter = {
           const tcId = nativeId(tc.id);
           // toolCall id 기준 dedup (중복 레코드 방지)
           if (tcId != null && toolCallById.has(tcId)) continue;
+          accepted.push({ split, tc, id: tcId });
+        }
 
+        // 정수 왜곡을 피하려고 몫을 고루 주고 나머지는 앞쪽 호출에 1씩 더한다.
+        // 그 결과 레코드 합계는 정확히 tokens.tool과 같다.
+        const turnToolTokens = tokens?.tool ?? null;
+        const share = turnToolTokens == null || accepted.length === 0
+          ? null
+          : Math.trunc(turnToolTokens / accepted.length);
+        const remainder = turnToolTokens == null || share == null
+          ? 0
+          : turnToolTokens - share * accepted.length;
+
+        accepted.forEach(({ split, tc, id: tcId }, index) => {
           const event: ToolCallEvent = {
             sessionId,
             serverName: split.server,
@@ -146,14 +161,14 @@ export const geminiAdapter: LogAdapter = {
             calledAt: typeof tc.timestamp === 'string' ? tc.timestamp : null,
             durationMs: null,
             isError: tc.status !== 'success',
-            responseTokens,
+            responseTokens: share == null ? null : share + (index < remainder ? 1 : 0),
             responseText: null,
             externalCallId: tcId,
           };
           const key = tcId ?? `__noid_${toolCallOrder.length}`;
           toolCallById.set(key, event);
           toolCallOrder.push(key);
-        }
+        });
       } else if (type === 'user') {
         const contentArr = Array.isArray(rec.content)
           ? (rec.content as FunctionResponseItem[])

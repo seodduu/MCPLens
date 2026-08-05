@@ -43,6 +43,32 @@ describe('CodexAdapter', () => {
            r.toolCalls[0].durationMs! >= 0).toBe(true);
   });
 
+  it('실측 응답 토큰이 없으므로 responseText를 tiktoken으로 계상한다', () => {
+    const r = a.parseFile('/fake/r.jsonl', fx);
+    const call = r.toolCalls[0];
+
+    expect(call.responseText).toBeTruthy();
+    expect(call.responseTokens).toBe(countTokens(call.responseText!));
+    expect(call.responseTokens).toBeGreaterThan(0);
+  });
+
+  it('응답 본문이 없으면 responseTokens는 null', () => {
+    const line = JSON.stringify({
+      timestamp: '2026-07-20T00:00:00.000Z',
+      type: 'event_msg',
+      payload: {
+        type: 'mcp_tool_call_end',
+        call_id: 'c1',
+        invocation: { server: 'alpha', tool: 'one' },
+      },
+    });
+
+    const r = a.parseFile('/fake/empty.jsonl', line);
+
+    expect(r.toolCalls[0].responseText).toBeNull();
+    expect(r.toolCalls[0].responseTokens).toBeNull();
+  });
+
   it('session_meta의 native session ID를 externalSessionId로 보존한다', () => {
     const r = a.parseFile('/fake/r.jsonl', fx);
 

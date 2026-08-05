@@ -51,6 +51,7 @@ export class CodexAdapter implements LogAdapter {
       } else if (t === 'mcp_tool_call_end') {
         const inv = p.invocation ?? rec.invocation ?? {};
         const result = p.result ?? rec.result;
+        const responseText = stringifyOrNull(result);
         toolCalls.push({
           sessionId,
           serverName: String(inv.server ?? 'unknown'),
@@ -59,8 +60,9 @@ export class CodexAdapter implements LogAdapter {
           durationMs: durationToMs(p.duration ?? rec.duration),
           // Rust 스타일 Result: 성공 {Ok:...} / 실패 {Err:"..."} → Err 존재 시 에러.
           isError: isRustErr(result),
-          responseTokens: null,
-          responseText: stringifyOrNull(result),
+          // Codex도 툴 응답 토큰을 실측하지 않는다 → 본문 tiktoken 추정 (Claude 어댑터와 동일)
+          responseTokens: responseText ? countTokens(responseText) : null,
+          responseText,
           externalCallId: nativeId(p.call_id ?? rec.call_id),
         });
         toolCallTurnIds.push(activeTurnId);
