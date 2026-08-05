@@ -1,5 +1,5 @@
 // packages/core/test/store/clientServers.test.ts
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { LensStore } from '../../src/store/store.js';
 import { splitByClient } from '../../src/engine/engine.js';
 import type { ClientId } from '../../src/types.js';
@@ -51,6 +51,25 @@ describe('client_servers', () => {
       new Set<ClientId>(['claude-code']));
     // 읽기 오류로 claude-code가 replaceable에서 빠진 상황
     store.upsertClientServers(new Map(), new Set<ClientId>());
+    expect([...store.serversByClient().get('claude-code')!]).toEqual(['notion']);
+  });
+
+  // DELETE 이후·INSERT 완료 이전에 죽으면 그 클라이언트의 귀속이 빈 채로 남는다.
+  // 한 트랜잭션이면 실패해도 직전 상태가 그대로 살아 있어야 한다.
+  it('중간에 실패하면 기존 귀속이 그대로 남는다', async () => {
+    const store = await LensStore.open(':memory:');
+    store.upsertClientServers(
+      attr([['notion', ['claude-code']]]),
+      new Set<ClientId>(['claude-code']));
+
+    // upsert 마지막 단계(코덱스 load 소급 귀속)에서 터지는 상황을 만든다
+    const spy = vi.spyOn(store as never as { reattributePendingCodexLoads: () => void },
+      'reattributePendingCodexLoads').mockImplementation(() => { throw new Error('boom'); });
+    expect(() => store.upsertClientServers(
+      attr([['other', ['claude-code']]]),
+      new Set<ClientId>(['claude-code']))).toThrow('boom');
+    spy.mockRestore();
+
     expect([...store.serversByClient().get('claude-code')!]).toEqual(['notion']);
   });
 
