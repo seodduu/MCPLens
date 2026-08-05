@@ -20,10 +20,33 @@ stdin payload를 읽고 MCP 호출의 클라이언트·세션·서버·툴·시�
 `/lens-audit`은 아래 명령을 실행해 리포트를 컨텍스트에 올린다:
 
 ```bash
-npx mcp-lens report --days 30 --format ai
+npx --no-install mcp-lens report --days 30 --format ai
 ```
 
 출력 계약: 첫 줄이 `# MCP Lens Audit`인 AI 소비용 마크다운 리포트 (Task 10 CLI가 제공).
+
+### CLI 의존성과 `--no-install`
+
+이 플러그인은 CLI를 번들하지 않는다. 훅 수집 런타임만 자급자족이고, `/lens-audit`은
+별도로 설치된 `mcp-lens` 실행 파일을 필요로 한다.
+
+`--no-install`은 보안상 필수다. 이 저장소의 CLI는 미발행 패키지 `@mcp-lens/cli`이고
+bin 이름만 `mcp-lens`인데, npm 레지스트리에는 이 프로젝트와 무관한 동명 패키지가 실존한다.
+`--no-install` 없이 `npx mcp-lens`를 돌리면 로컬에 bin이 없는 환경에서 그 서드파티 코드가
+자동으로 내려받아져 실행된다. `--no-install`은 로컬 확인만 하고 레지스트리 조회를 하지 않는다.
+
+CLI가 없으면 커맨드는 동작하지 않는다. 설치 방법은 다음과 같다.
+
+```bash
+# 저장소를 클론한 경우 (저장소 루트에서)
+npm install && npm run build
+
+# 저장소 밖에서도 쓰려면 전역 bin 연결
+npm link -w @mcp-lens/cli
+```
+
+CLI를 따로 두고 싶지 않다면 VS Code 확장(MCP Context Lens)이 같은 데이터를 사이드바에서
+보여주므로 그쪽을 쓰면 된다.
 리포트를 바탕으로 Claude가 다음을 수행한다:
 
 1. 제거 권장(remove) 툴 표 요약 + 예상 절약 토큰
@@ -34,7 +57,7 @@ npx mcp-lens report --days 30 --format ai
 ## 설치 (로컬)
 
 ```bash
-claude plugin add /path/to/MCPLens/packages/lens-audit-plugin
+claude plugin add /path/to/MCPLens-V2/packages/lens-audit-plugin
 ```
 
 또는 마켓플레이스 등록 없이 `--plugin-dir`로 로드해 테스트할 수 있다.
@@ -53,7 +76,9 @@ packages/lens-audit-plugin/
 
 ## 권한
 
-커맨드 프론트매터의 `allowed-tools: Bash(npx mcp-lens *)` — `npx mcp-lens` 하위 명령만 허용한다.
+커맨드 프론트매터는 `allowed-tools: Bash(npx --no-install mcp-lens:*)`이다. 즉
+`npx --no-install mcp-lens` 하위 명령만 사전 허용하며, 레지스트리 자동 설치를 동반하는
+형태(`npx mcp-lens ...`)는 이 패턴에 걸리지 않는다.
 
 ## 검증 상태
 
