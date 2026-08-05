@@ -66,6 +66,29 @@ export function configSources(opts?: ConfigSourcesOptions): ConfigSource[] {
   return sources;
 }
 
+/**
+ * Headers for a codex remote server. bearer_token_env_var holds the NAME of an environment
+ * variable, not the token. When that variable is unset no Authorization header is produced: sending
+ * an empty Bearer draws a 400 from most servers, which is harder to trace back than the 401 that a
+ * missing header gives. An Authorization written by hand in http_headers wins, because it is the
+ * user's own explicit value.
+ */
+function codexHttpHeaders(s: any): Record<string, string> | undefined {
+  const headers: Record<string, string> = {};
+  const envVar = s?.bearer_token_env_var;
+  if (typeof envVar === 'string') {
+    const token = process.env[envVar];
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
+  const written = s?.http_headers;
+  if (written && typeof written === 'object') {
+    for (const [key, value] of Object.entries(written)) {
+      if (typeof value === 'string') headers[key] = value;
+    }
+  }
+  return Object.keys(headers).length > 0 ? headers : undefined;
+}
+
 /** Parses the mcp_servers table of codex `~/.codex/config.toml`. Servers with enabled=false are reported as skipped. */
 function collectCodex(text: string): CollectResult {
   let toml: any;
@@ -88,9 +111,15 @@ function collectCodex(text: string): CollectResult {
     }
     if (typeof s?.command === 'string') {
       specs.push({ name, command: s.command, args: s.args ?? [], env: s.env });
+      continue;
     }
-    // Entries with neither a command nor enabled=false (transport undeterminable) are ignored on purpose.
-    // Unlike the unknown handling in collectServerSpecs, codex has no http url field, so the skip reason differs and it is dropped with no contract.
+    // codex takes a remote (streamable HTTP) MCP server as `url`. It used to be dropped here, so
+    // servers written that way were never scanned and never even attributed to codex.
+    if (typeof s?.url === 'string') {
+      specs.push({ name, url: s.url, headers: codexHttpHeaders(s) });
+      continue;
+    }
+    // Neither a command nor a url: the transport cannot be determined, so it is dropped.
   }
 
   return { specs, skipped };

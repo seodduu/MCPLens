@@ -1,9 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { configSources, collectFromSource, collectAllSpecs, collectFromSources, type ConfigSource } from '../../src/scanner/sources.js';
 import { computeEndpointHash } from '../../src/scanner/serverIdentity.js';
+import { specTransport, type McpServerSpec } from '../../src/scanner/configs.js';
 
 /** Mimics the shape of a real Node fs error. */
 function fsError(code: string): NodeJS.ErrnoException {
@@ -23,6 +24,34 @@ command = "./SkyComputerUseClient"
 args = ["mcp"]
 cwd = "."
 enabled = false
+`;
+
+/** codex remote (streamable HTTP) servers, written as `url` rather than `command`. */
+const CODEX_HTTP_TOML_FIXTURE = `
+[mcp_servers.node_repl]
+command = "/opt/node_repl"
+
+[mcp_servers.notion]
+url = "https://mcp.notion.com/mcp"
+
+[mcp_servers.hf]
+url = "https://huggingface.co/mcp"
+bearer_token_env_var = "MCPLENS_TEST_HF_TOKEN"
+
+[mcp_servers.headered]
+url = "https://example.test/mcp"
+bearer_token_env_var = "MCPLENS_TEST_HF_TOKEN"
+
+[mcp_servers.headered.http_headers]
+Authorization = "Bearer written-by-hand"
+X-Trace = "on"
+
+[mcp_servers.disabled_one]
+url = "https://example.test/off"
+enabled = false
+
+[mcp_servers.transportless]
+startup_timeout_sec = 30.0
 `;
 
 const GEMINI_JSON_FIXTURE = JSON.stringify({
@@ -54,6 +83,65 @@ describe('collectFromSource(codex)', () => {
 
   it('returns an empty result when the mcp_servers key is absent', () => {
     expect(collectFromSource('codex', '')).toEqual({ specs: [], skipped: [] });
+  });
+});
+
+describe('collectFromSource(codex) with url based servers', () => {
+  const TOKEN_VAR = 'MCPLENS_TEST_HF_TOKEN';
+  let savedToken: string | undefined;
+
+  beforeEach(() => {
+    savedToken = process.env[TOKEN_VAR];
+  });
+
+  afterEach(() => {
+    if (savedToken === undefined) delete process.env[TOKEN_VAR];
+    else process.env[TOKEN_VAR] = savedToken;
+  });
+
+  /** The spec collected under the given name, or undefined when it was not collected at all. */
+  function specNamed(name: string): McpServerSpec | undefined {
+    return collectFromSource('codex', CODEX_HTTP_TOML_FIXTURE).specs.find((s) => s.name === name);
+  }
+
+  it('collects a codex server written as a url', () => {
+    const spec = specNamed('notion');
+    expect(spec?.url).toBe('https://mcp.notion.com/mcp');
+    expect(spec?.command).toBeUndefined();
+    expect(specTransport(spec!)).toBe('http');
+  });
+
+  it('still collects command based codex servers', () => {
+    expect(specNamed('node_repl')?.command).toBe('/opt/node_repl');
+  });
+
+  it('turns bearer_token_env_var into an Authorization header when the variable is set', () => {
+    process.env[TOKEN_VAR] = 'tok';
+    expect(specNamed('hf')?.headers?.Authorization).toBe('Bearer tok');
+  });
+
+  it('omits Authorization when the named variable is unset', () => {
+    delete process.env[TOKEN_VAR];
+    expect(specNamed('hf')?.headers).toBeUndefined();
+  });
+
+  it('lets a hand written Authorization win over bearer_token_env_var', () => {
+    process.env[TOKEN_VAR] = 'tok';
+    const spec = specNamed('headered');
+    expect(spec?.headers?.Authorization).toBe('Bearer written-by-hand');
+    expect(spec?.headers?.['X-Trace']).toBe('on');
+  });
+
+  it('reports a disabled url server as skipped, not as a spec', () => {
+    const r = collectFromSource('codex', CODEX_HTTP_TOML_FIXTURE);
+    expect(r.skipped).toContain('disabled_one');
+    expect(r.specs.map((s) => s.name)).not.toContain('disabled_one');
+  });
+
+  it('drops an entry with neither command nor url', () => {
+    const r = collectFromSource('codex', CODEX_HTTP_TOML_FIXTURE);
+    expect(r.specs.map((s) => s.name)).not.toContain('transportless');
+    expect(r.skipped).not.toContain('transportless');
   });
 });
 
