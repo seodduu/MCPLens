@@ -71,7 +71,7 @@ function removeRecommendation(): Recommendation {
   return {
     action: 'remove',
     confidence: 'high',
-    reason: '정의 900토큰, 호출 0회; 제거 시 매 세션 약 900토큰 절약',
+    reason: '정의 900토큰, 호출 0회. 제거 시 매 세션 약 900토큰 절약',
     reasonParts: {
       basis: '정의 900토큰, 호출 0회',
       serverBasis: null,

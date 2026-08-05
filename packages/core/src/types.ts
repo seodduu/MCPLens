@@ -237,7 +237,7 @@ export interface RecommendationEvidence {
 export interface RecommendationReason {
   /** 이 툴만의 근거. 예: "정의 900토큰, 호출 0회" */
   basis: string;
-  /** 서버 단위 공통 근거 — filter-server에서만 채워진다. 예: "서버 notion의 20툴 중 2개만 사용 — 툴 필터링 권장." */
+  /** 서버 단위 공통 근거. filter-server에서만 채워진다. 예: "서버 notion의 20툴 중 2개만 사용. 툴 필터링 권장." */
   serverBasis: string | null;
   /** 조치 효과. 예: "제거 시 매 세션 약 900토큰 절약" | "절약은 작지만 검색 공간 정리 효과" */
   effect: string | null;

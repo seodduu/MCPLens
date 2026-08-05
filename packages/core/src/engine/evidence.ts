@@ -3,8 +3,9 @@
 // engine.ts는 이 결과를 Recommendation에 조립하기만 한다.
 import type { RecommendationConfidence, RecommendationEvidence, SessionMeta,
   ToolCallEvent, ToolDefinition, ToolLoadEvent } from '../types.js';
+import { formatTokens } from './format.js';
 
-/** high 확신에 필요한 최소 관찰량 — reason 문구의 "N세션 누적 시 확정"에도 쓰인다 */
+/** high 확신에 필요한 최소 관찰량. reason 문구의 "N세션 누적 시 확정"에도 쓰인다 */
 export const HIGH_CONFIDENCE_SESSIONS = 10;
 const HIGH_CONFIDENCE_DAYS = 7;
 const LOW_CONFIDENCE_SESSIONS = 5;
@@ -229,7 +230,7 @@ export function confidenceCaveat(
   if (confidence === 'medium')
     return `${ev.observedSessions}세션${days} 관찰, 추가 관찰 시 확정`;
   return `${ev.observedSessions}세션${days} 관찰, `
-    + `누적 부담 ${ev.totalObservedCost ?? 0}토큰. 설정 한 줄로 복구 가능`;
+    + `누적 부담 ${formatTokens(ev.totalObservedCost ?? 0)}토큰. 설정 한 줄로 복구 가능`;
 }
 
 /** @deprecated 리포트 렌더러는 confidenceCaveat를 쓴다. reason 결합 호환용 */
@@ -237,5 +238,5 @@ export function confidencePhrase(
   confidence: RecommendationConfidence,
   ev: RecommendationEvidence,
 ): string {
-  return ` — ${confidenceCaveat(confidence, ev)}`;
+  return `. ${confidenceCaveat(confidence, ev)}`;
 }

@@ -3,6 +3,7 @@ import type { ClientId, LoadPattern, MatrixRow, Recommendation, RecommendationRe
   SessionMeta, ToolCallEvent, ToolDefinition, ToolLoadEvent } from '../types.js';
 import { buildEvidenceContext, confidenceCaveat, EMPTY_EVIDENCE, inspectConfidence,
   removeConfidence, toolEvidence, type EvidenceContext } from './evidence.js';
+import { formatTokens } from './format.js';
 
 export interface EngineInput {
   definitions: ToolDefinition[];
@@ -171,10 +172,11 @@ function recommend(
     mode === 'UPFRONT' ? '전량 가정' : '측정 불가';
   const sizePhrase = (t: number) =>
     mode === 'UPFRONT'
-      ? `제거 시 매 세션 약 ${t}토큰 절약`
+      ? `제거 시 매 세션 약 ${formatTokens(t)}토큰 절약`
       : `절약은 작지만 검색 공간 정리 효과`;
 
-  const pollutionSuffix = row.loadPattern === 'search-pollution' ? ' (로드는 되나 호출 0회 — 검색 공간 오염)' : '';
+  const pollutionSuffix = row.loadPattern === 'search-pollution'
+    ? ' (로드는 되나 호출이 0회라 검색 공간 오염)' : '';
 
   if (row.callCount === 0 && row.definitionTokens != null) {
     // 확신이 낮아도 판정은 강등하지 않는다 — 표면이 "후보"로 렌더링한다 (스펙 결정사항 2)
@@ -183,7 +185,7 @@ function recommend(
     if (server && server.total >= 10 && server.used > 0 && server.used / server.total < 0.2) {
       const reasonParts: RecommendationReason = {
         basis: '',
-        serverBasis: `서버 ${row.serverName}의 ${server.total}툴 중 ${server.used}개만 사용 — 툴 필터링 권장.`,
+        serverBasis: `서버 ${row.serverName}의 ${server.total}툴 중 ${server.used}개만 사용. 툴 필터링 권장.`,
         effect: `${sizePhrase(row.definitionTokens)}${pollutionSuffix}`,
         caveat,
       };
@@ -191,7 +193,7 @@ function recommend(
         evidenceLabel, evidence };
     }
     const reasonParts: RecommendationReason = {
-      basis: `정의 ${row.definitionTokens}토큰, 호출 0회`,
+      basis: `정의 ${formatTokens(row.definitionTokens)}토큰, 호출 0회`,
       serverBasis: null,
       effect: `${sizePhrase(row.definitionTokens)}${pollutionSuffix}`,
       caveat,
@@ -206,7 +208,8 @@ function recommend(
   ) {
     const rate = Math.round(row.reliability.errorRate * 100);
     const reasonParts: RecommendationReason = {
-      basis: `${row.callCount}회 중 ${row.reliability.errorCount}회 실패(${rate}%), 실패 응답 ${row.reliability.failedResponseTokens}토큰 낭비`,
+      basis: `${row.callCount}회 중 ${row.reliability.errorCount}회 실패(${rate}%), `
+        + `실패 응답 ${formatTokens(row.reliability.failedResponseTokens)}토큰 낭비`,
       serverBasis: null, effect: '점검·대체 권장', caveat: null,
     };
     return { action: 'inspect', confidence: inspectConfidence(row.callCount),
@@ -227,17 +230,14 @@ function recommend(
 
 /** parts → 현행 reason 문자열. 구분자 규칙이 여기 한 곳에만 있다 */
 export function joinReason(p: RecommendationReason): string {
-  // lead: serverBasis가 있으면 그것, 없으면 basis. 그 뒤 effect와의 구분자가 다르다:
-  //   serverBasis 뒤엔 공백(' '), basis 뒤엔 ' — '. 원문 filter-server/remove의 차이 그대로.
+  // lead는 serverBasis가 있으면 그것, 없으면 basis.
+  // 조각끼리는 마침표로 잇는다. 대시로 이으면 문장이 끊기는 느낌이 나기 때문이다.
+  // 조각이 이미 마침표로 끝나면 겹치지 않게 하나만 남긴다.
   const lead = p.serverBasis ?? p.basis;
-  let s = lead;
-  if (p.effect != null) {
-    s += p.serverBasis != null ? ` ${p.effect}` : ` — ${p.effect}`;
-  }
-  if (p.caveat != null) {
-    s += ` — ${p.caveat}`;
-  }
-  return s;
+  return [lead, p.effect, p.caveat]
+    .filter((part): part is string => part != null && part.trim() !== '')
+    .map((part) => part.trim().replace(/\.+$/u, ''))
+    .join('. ');
 }
 
 /**

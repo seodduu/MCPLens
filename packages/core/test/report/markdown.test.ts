@@ -144,7 +144,7 @@ describe('renderReport — 헤드라인·요약표', () => {
 
   it('날짜는 opts.now의 앞 10자리다', () => {
     const out = renderReport(model(), { ...OPTS, now: '2026-07-20T12:34:56.000Z', days: 30 });
-    expect(out).toContain('# MCP Lens — 최근 30일 (2026-07-20 기준)');
+    expect(out).toContain('# MCP Lens · 최근 30일 (2026-07-20 기준)');
   });
 
   it('조치할 것이 전혀 없으면 그렇게 말한다', () => {
@@ -207,7 +207,7 @@ describe('renderReport — act 버킷', () => {
       model({ clients: [client({ buckets: { ...emptyBuckets(), act: [g1, g2] } })] }),
       OPTS,
     );
-    expect(out).toContain('### ✅ 지금 조치 — 세션당 3,500tok');
+    expect(out).toContain('### ✅ 지금 조치: 세션당 3,500tok');
   });
 
   it('summary 모드여도 act 그룹은 절단하지 않는다', () => {
@@ -286,7 +286,7 @@ describe('renderReport — candidate 버킷', () => {
       model({ clients: [client({ buckets: { ...emptyBuckets(), candidate: [group()] } })] }),
       OPTS,
     );
-    expect(out).toContain('### ⏳ 관찰 더 필요 — 아직 조치 권고 아님');
+    expect(out).toContain('### ⏳ 관찰 더 필요: 아직 조치 권고 아님');
     // 확신을 막는 축은 세션 수가 아닐 수 있다 (관찰 일수·과거 호출 이력).
     // 특정 임계값을 주장하면 148세션 클라이언트에 "10세션 필요"를 찍는 모순이 난다.
     expect(out).not.toContain('10세션');
@@ -354,7 +354,7 @@ describe('renderReport — inspect / healthy 버킷', () => {
       model({ clients: [client({ buckets: { ...emptyBuckets(), inspect: [g] } })] }),
       OPTS,
     );
-    expect(out).toContain('### 🔧 점검 필요 — 실패가 잦은 툴');
+    expect(out).toContain('### 🔧 점검 필요: 실패가 잦은 툴');
     expect(out).toContain('| 툴 | 실패 | 낭비 |');
     expect(out).toContain('demo-github/flaky_search');
     expect(out).toContain('15회 중 9회 (60%)');
@@ -370,7 +370,7 @@ describe('renderReport — inspect / healthy 버킷', () => {
       model({ clients: [client({ buckets: { ...emptyBuckets(), healthy: [g] } })] }),
       OPTS,
     );
-    expect(out).toContain('### 👍 정상 사용 중 — 1툴 · 응답 500tok');
+    expect(out).toContain('### 👍 정상 사용 중: 1툴 · 응답 500tok');
     expect(out).toContain('demo-github/get_file 30회');
   });
 
@@ -405,7 +405,7 @@ describe('renderReport — 접힌 클라이언트', () => {
     );
     const section = out.split('## gemini-cli')[1];
     expect(section.trim().split('\n').filter(Boolean).length).toBeLessThanOrEqual(3);
-    expect(section).toContain('관찰 근거 부족');
+    expect(section).toContain('관찰 근거가 부족');
     expect(section).toContain('7개');
     expect(section).toContain('3세션 관찰');
     // 세션 임계값을 주장하지 않는다 — 실제 미충족 조건은 관찰 일수일 수도 있다

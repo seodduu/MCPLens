@@ -135,7 +135,7 @@ describe('reason 꼬리말', () => {
   it('high는 관찰량·누적 부담·복구 용이함을 담는다', () => {
     const s = confidencePhrase('high', ev(12, 20));
     expect(s).toContain('12세션');
-    expect(s).toContain('9600');   // 800 × 12
+    expect(s).toContain('9,600');   // 800 × 12, 천 단위 구분자 포함
     expect(s).toContain('복구');
   });
 

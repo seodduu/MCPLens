@@ -15,7 +15,7 @@ function recommendation(action: Recommendation['action']): Recommendation {
     : action === 'filter-server'
       ? {
           basis: '',
-          serverBasis: '서버 github의 10툴 중 1개만 사용 — 툴 필터링 권장.',
+          serverBasis: '서버 github의 10툴 중 1개만 사용. 툴 필터링 권장.',
           effect: '제거 시 매 세션 약 900토큰 절약',
           caveat: null,
         }
