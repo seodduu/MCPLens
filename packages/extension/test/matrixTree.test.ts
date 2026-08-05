@@ -30,11 +30,18 @@ describe('buildTree', () => {
       .toEqual(['get_file', 'search']);
   });
 
-  it('툴 노드 description에 호출수·응답토큰·권고가 들어간다', () => {
+  it('툴 노드 description에 호출수·응답토큰이 들어간다', () => {
     const tool = buildTree(input)[1].children[0].children[0]; // codex/node_repl/js
     expect(tool.description).toContain('1 call');
     expect(tool.description).toContain('50tok');
-    expect(tool.description).toContain('keep');
+  });
+
+  // keep은 기본값 — 전 행에 반복되면 진짜 봐야 할 remove·inspect가 묻힌다.
+  it('기본값인 keep은 글로 쓰지 않는다 (아이콘으로만 보인다)', () => {
+    const tool = buildTree(input)[1].children[0].children[0]; // codex/node_repl/js
+    expect(tool.action).toBe('keep');
+    expect(tool.description).not.toContain('keep');
+    expect(tool.description).not.toMatch(/·\s*$/);  // 라벨을 뺀 자리에 꼬리 구분자가 남지 않는다
   });
 
   it('클라이언트 노드 description에 세션 수가 들어간다', () => {
@@ -196,10 +203,11 @@ describe('buildTree', () => {
     expect(tool.description).toContain('3,542tok');
   });
 
-  it('정의 토큰 미측정이면 응답분은 남기고 미측정을 표시한다', () => {
+  // 미측정 = 정의 토큰이 빠진 값 = 하한. 긴 괄호 문구 대신 ≥ 한 글자로 같은 사실을 말한다.
+  it('정의 토큰 미측정이면 응답분을 하한값(≥)으로 표시한다', () => {
     const tool = buildTree(input)[1].children[0].children[0]; // codex/node_repl/js
-    expect(tool.description).toContain('50tok');
-    expect(tool.description).toContain('definition not measured');
+    expect(tool.description).toContain('≥50tok');
+    expect(tool.description).not.toContain('not measured');
   });
 
   it('확신이 낮은 권고는 물음표 없이 (후보)로 표시한다', () => {
@@ -256,6 +264,67 @@ describe('buildTree', () => {
   });
 });
 
+describe('비용 내림차순 정렬', () => {
+  const def = (server: string, tool: string, tokens: number) => ({
+    serverName: server, toolName: tool, definitionTokens: tokens,
+    scannedAt: '2026-07-19T00:00:00Z', firstScannedAt: '2026-07-19T00:00:00Z' });
+  const load = (server: string, tool: string) => ({
+    sessionId: 'c1', serverName: server, toolName: tool, loadedTokens: null });
+
+  // 등장 순서(small → big)와 반대로 정렬돼야 한다.
+  const input: EngineInput = {
+    definitions: [def('small', 'a', 100), def('big', 'x', 9000), def('big', 'y', 500)],
+    calls: [],
+    loads: [load('small', 'a'), load('big', 'x'), load('big', 'y')],
+    sessions: [session('c1', 'claude-code')],
+  };
+
+  it('서버를 비용 큰 순으로 놓는다', () => {
+    const [client] = buildTree(input);
+    expect(client.children.map((s) => s.label)).toEqual(['big', 'small']);
+  });
+
+  it('서버 안의 툴도 비용 큰 순으로 놓는다', () => {
+    const big = buildTree(input)[0].children.find((s) => s.label === 'big')!;
+    expect(big.children.map((t) => t.label)).toEqual(['x', 'y']);
+  });
+
+  it('사용 이력 없는 managed 서버는 0tok이므로 뒤로 간다', () => {
+    const [client] = buildTree(input, new Set(), [{ name: 'idle', enabled: true, origins: ['user'] }]);
+    expect(client.children.map((s) => s.label)).toEqual(['big', 'small', 'idle']);
+  });
+
+  it('비용이 같으면 이름 오름차순 — 갱신마다 자리가 흔들리지 않는다', () => {
+    const tie: EngineInput = {
+      definitions: [def('zeta', 'a', 500), def('alpha', 'a', 500)],
+      calls: [], loads: [load('zeta', 'a'), load('alpha', 'a')],
+      sessions: [session('c1', 'claude-code')],
+    };
+    expect(buildTree(tie)[0].children.map((s) => s.label)).toEqual(['alpha', 'zeta']);
+  });
+});
+
+describe('토큰 표기 축약', () => {
+  const oneTool = (tokens: number): EngineInput => ({
+    definitions: [{ serverName: 'notion', toolName: 'big', definitionTokens: tokens,
+      scannedAt: '2026-07-19T00:00:00Z', firstScannedAt: '2026-07-19T00:00:00Z' }],
+    calls: [],
+    loads: [{ sessionId: 'c1', serverName: 'notion', toolName: 'big', loadedTokens: null }],
+    sessions: [session('c1', 'claude-code')],
+  });
+
+  it('1만 이상은 k로 줄인다 — 트리는 비례폭이라 긴 자릿수가 비교에 도움이 안 된다', () => {
+    const tool = buildTree(oneTool(126_604))[0].children[0].children[0];
+    expect(tool.description).toContain('126.6ktok');
+    expect(tool.description).not.toContain('126,604');
+  });
+
+  it('1만 미만은 전체 자릿수를 유지한다', () => {
+    const tool = buildTree(oneTool(9_999))[0].children[0].children[0];
+    expect(tool.description).toContain('9,999tok');
+  });
+});
+
 describe('집계 표시', () => {
   const input: EngineInput = {
     definitions: [],
@@ -276,10 +345,10 @@ describe('집계 표시', () => {
 
   it('미측정 표기는 서버·클라이언트 노드에 나타나지 않는다', () => {
     const roots = buildTree(input);
-    expect(roots[0].description).not.toContain('definition not measured');
-    expect(roots[0].children[0].description).not.toContain('definition not measured');
+    expect(roots[0].description).not.toContain('≥');
+    expect(roots[0].children[0].description).not.toContain('≥');
     // 툴 노드에는 그대로 남는다
-    expect(roots[0].children[0].children[0].description).toContain('definition not measured');
+    expect(roots[0].children[0].children[0].description).toContain('≥');
   });
 });
 
@@ -402,13 +471,13 @@ describe('낭비 개수 표시', () => {
   it('서버 노드 description에 낭비 툴 개수가 붙는다', () => {
     const [client] = buildTree({
       definitions: [def('a', 800), def('b', 800)], calls: [], loads: [], sessions: upfront(12) });
-    expect(client.children[0].description).toContain('2 waste tools');
+    expect(client.children[0].description).toContain('2 waste');
   });
 
   it('클라이언트 노드 description에 낭비 툴 합이 붙는다', () => {
     const [client] = buildTree({
       definitions: [def('a', 800), def('b', 800)], calls: [], loads: [], sessions: upfront(12) });
-    expect(client.description).toContain('2 waste tools');
+    expect(client.description).toContain('2 waste');
   });
 
   it('낭비 0인 서버·클라이언트에는 낭비 문구가 없다', () => {
@@ -416,8 +485,8 @@ describe('낭비 개수 표시', () => {
       definitions: [], calls: [call('c1', 'github', 'search')], loads: [],
       sessions: [session('c1', 'claude-code')] };
     const [client] = buildTree(noWaste);
-    expect(client.description).not.toContain('waste tools');
-    expect(client.children[0].description).not.toContain('waste tools');
+    expect(client.description).not.toContain('waste');
+    expect(client.children[0].description).not.toContain('waste');
   });
 });
 
@@ -479,7 +548,7 @@ describe('업프론트 클라이언트 세션당 정의 부담 표시', () => {
       definitions: [], calls: [upcall('s0', 'a')], loads: [], sessions: upfront(5) });
     const tool = client.children[0].children[0];
     expect(tool.description).toContain('calls 50tok');
-    expect(tool.description).toContain('definition not measured');
+    expect(tool.description).toContain('definition unmeasured');
     expect(tool.description).not.toContain('0tok/session');
     expect(tool.description).not.toContain('definition 0tok');
   });

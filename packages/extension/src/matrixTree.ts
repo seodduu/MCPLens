@@ -49,22 +49,28 @@ function isWaste(r: MatrixRow): boolean {
 /** 낭비 툴 수 꼬리표 — 0이면 빈 문자열(붙이지 않음) */
 function wasteSuffix(rows: MatrixRow[]): string {
   const n = rows.filter(isWaste).length;
-  return n > 0 ? ` · ${n} waste tools` : '';
+  return n > 0 ? ` · ${n} waste` : '';
 }
 
-/** 천단위 구분자 — report/markdown.ts:18과 동일 규칙 */
+/**
+ * 트리 전용 토큰 표기. 1만 이상은 k로 줄인다.
+ * 트리 description은 비례폭 회색 글씨라 자릿수를 세로로 맞출 수 없어서,
+ * 126,604tok 같은 긴 숫자는 비교에 도움이 안 되면서 줄 길이만 먹는다.
+ * 리포트(report/markdown.ts)는 전체 자릿수를 유지한다 — 거기서는 정밀도가 결론이다.
+ */
 function fmtTok(n: number): string {
-  return `${Math.round(n).toLocaleString('en-US')}tok`;
+  const v = Math.round(n);
+  return v >= 10_000
+    ? `${(v / 1000).toFixed(1)}ktok`
+    : `${v.toLocaleString('en-US')}tok`;
 }
 
-/** 지연 로딩 노드의 누적 비용 문구. 정의 미측정이면 응답분만 담겼음을 밝힌다.
+/** 지연 로딩 노드의 누적 비용 문구. 정의 미측정이면 응답분만 담긴 하한값이므로 ≥를 붙인다.
  * 상위(서버·클라이언트) 노드는 fmtTok만 쓴다 — 자식 하나만 미측정이어도 AND-fold로
  * 꼬리표가 붙어, 모든 상위 줄에 같은 문구가 반복되며 잡음이 되기 때문이다.
  * 미측정 여부는 원인이 있는 툴 노드에서 확인한다. */
 function costText(cost: CumulativeCost): string {
-  return cost.definitionMeasured
-    ? fmtTok(cost.tokens)
-    : `${fmtTok(cost.tokens)} (definition not measured)`;
+  return cost.definitionMeasured ? fmtTok(cost.tokens) : `≥${fmtTok(cost.tokens)}`;
 }
 
 /**
@@ -94,13 +100,35 @@ function costSegment(
     const def = sumCosts(rows.map(perSessionCost));
     // 정의 미측정이면 0tok/세션은 거짓 신호 — 토큰·세션 표기 없이 미측정임만 밝힌다.
     const defText = showUnmeasured && !def.definitionMeasured
-      ? 'definition not measured'
+      ? 'definition unmeasured'
       : `definition ${fmtTok(def.tokens)}/session`;
     return `calls ${fmtTok(call)} · ${defText}`;
   }
   const cost = sumCosts(rows.map(
     (r) => cumulativeCost(r, callSessions.get(toolCostKey(r.serverName, r.toolName)) ?? 0)));
   return showUnmeasured ? costText(cost) : fmtTok(cost.tokens);
+}
+
+/**
+ * 정렬 기준값 — 그 노드가 먹는 토큰 총량.
+ * "무엇을 끄면 얼마가 남는가"가 제품의 질문이므로, 등장 순서가 아니라 이 값의
+ * 내림차순으로 서버·툴을 배치해 비용 큰 항목이 항상 위에 오게 한다.
+ * costSegment와 같은 단위 규칙을 쓴다(업프론트는 호출 누적 + 세션당 정의).
+ */
+function sortWeight(
+  rows: MatrixRow[], callSessions: Map<string, number>, perSession: boolean,
+): number {
+  if (perSession) {
+    return rows.reduce((s, r) => s + r.responseTokens, 0)
+      + sumCosts(rows.map(perSessionCost)).tokens;
+  }
+  return sumCosts(rows.map(
+    (r) => cumulativeCost(r, callSessions.get(toolCostKey(r.serverName, r.toolName)) ?? 0))).tokens;
+}
+
+/** 비용 내림차순, 동점이면 이름 오름차순 — 데이터가 같으면 자리도 같아야 눈이 따라간다. */
+function byCostDesc<T>(weight: (item: T) => number, name: (item: T) => string) {
+  return (a: T, b: T): number => weight(b) - weight(a) || name(a).localeCompare(name(b));
 }
 
 /** 누적 비용의 합산 fold — 서버·클라이언트 노드가 공유한다.
@@ -148,7 +176,9 @@ export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set
       if (!byServer.has(r.serverName)) byServer.set(r.serverName, []);
       byServer.get(r.serverName)!.push(r);
     }
-    const servers: LensNode[] = [...byServer.entries()].map(([server, rs]) => {
+    const servers: LensNode[] = [...byServer.entries()].sort(byCostDesc(
+      ([, rs]) => sortWeight(rs, callSessions, perSession), ([server]) => server,
+    )).map(([server, rs]) => {
       const serverEnabled = client === 'claude-code' ? managed.get(server)?.enabled : undefined;
       const desc = `${fmtCalls(
         rs.reduce((s, r) => s + r.callCount, 0),
@@ -160,16 +190,21 @@ export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set
         label: server,
         description: serverEnabled === false ? `${desc} · Disabled` : desc,
         client, serverName: server, enabled: serverEnabled,
-        children: rs.map((r): LensNode => {
+        children: [...rs].sort(byCostDesc(
+          (r) => sortWeight([r], callSessions, perSession), (r) => r.toolName,
+        )).map((r): LensNode => {
           // 서버가 꺼져 있으면 툴 단위 토글은 무의미 — 메뉴 숨김(enabled 미부여)
           const enabled = client === 'claude-code' && serverEnabled !== false
             ? !deniedRules.has(mcpDenyRule(server, r.toolName)) : undefined;
           // 확신 낮은 삭제 권고는 확정이 아니라 후보 — 판정이 아니라 표시만 강등한다
           const { action, confidence } = r.recommendation;
-          const actionLabel =
-            confidence === 'low' && (action === 'remove' || action === 'filter-server')
-              ? `${action} (candidate)` : action;
-          const toolDesc = `${fmtCalls(r.callCount, r.reliability.errorCount)} · ${costSegment([r], callSessions, perSession, true)} · ${actionLabel}`;
+          // keep은 기본값이라 글로 쓰지 않는다 (fmtCalls가 성공을 안 쓰는 것과 같은 원칙).
+          // 다수인 keep이 전 행에 반복되면 진짜 봐야 할 remove·inspect가 묻힌다.
+          // keep 자체는 아이콘(lensTreeProvider의 파란 체크)으로 계속 보인다.
+          const actionLabel = action === 'keep' ? ''
+            : confidence === 'low' && (action === 'remove' || action === 'filter-server')
+              ? ` · ${action} (candidate)` : ` · ${action}`;
+          const toolDesc = `${fmtCalls(r.callCount, r.reliability.errorCount)} · ${costSegment([r], callSessions, perSession, true)}${actionLabel}`;
           const analysis = analysisByTool.get(`${server}\u0000${r.toolName}`);
           const analysisText = analysis
             ? ` · ${analysis.status}${analysis.summary ? ` · ${analysis.summary}` : ''}` : '';
