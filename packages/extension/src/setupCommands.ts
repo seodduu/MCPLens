@@ -3,7 +3,7 @@ import { authenticateServer, collectAllSpecs, type LensStore } from '@mcp-lens/c
 import { scanNow, type AfterScan } from './autoScan.js';
 import {
   AUTOMATION_ACCEPT_LABEL, AUTOMATION_PROMPT_DETAIL, AUTOMATION_PROMPT_TITLE,
-  AUTOMATION_SCAN_ONLY_LABEL, automationChoiceFrom, automationSettings,
+  AUTOMATION_SCAN_ONLY_LABEL, ensureAutomationConsent,
 } from './automationConsent.js';
 
 /** The command the "Scan servers" button of the onboarding walkthrough points at. */
@@ -39,18 +39,20 @@ export function registerOpenRolloutSetting(): vscode.Disposable {
   });
 }
 
-/** Never asks again once answered. The test is whether the setting is explicitly written. */
+/**
+ * Never asks again once answered. Delegates to ensureAutomationConsent, shared with the consent
+ * check that analyzeAfterScan in extension.ts runs, so both callers make the same promise with the
+ * same wording.
+ */
 async function askAutomationConsentOnce(): Promise<void> {
   const config = vscode.workspace.getConfiguration('mcpLens');
-  if (config.inspect<string>('autoScan')?.globalValue !== undefined) return;
-
-  const pick = await vscode.window.showInformationMessage(
-    AUTOMATION_PROMPT_TITLE,
-    { modal: true, detail: AUTOMATION_PROMPT_DETAIL },
-    AUTOMATION_ACCEPT_LABEL, AUTOMATION_SCAN_ONLY_LABEL);
-  const settings = automationSettings(automationChoiceFrom(pick));
-  await config.update('autoScan', settings.autoScan, vscode.ConfigurationTarget.Global);
-  await config.update('autoAnalyze', settings.autoAnalyze, vscode.ConfigurationTarget.Global);
+  await ensureAutomationConsent(
+    config,
+    () => vscode.window.showInformationMessage(
+      AUTOMATION_PROMPT_TITLE,
+      { modal: true, detail: AUTOMATION_PROMPT_DETAIL },
+      AUTOMATION_ACCEPT_LABEL, AUTOMATION_SCAN_ONLY_LABEL),
+    vscode.ConfigurationTarget.Global);
 }
 
 /**

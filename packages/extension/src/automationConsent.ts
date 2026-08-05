@@ -43,3 +43,34 @@ export function automationSettings(choice: AutomationChoice): {
 } {
   return { autoScan: choice.autoScan ? 'always' : 'never', autoAnalyze: choice.autoAnalyze };
 }
+
+/**
+ * Raises the automation consent modal and writes the answer, unless it was already answered.
+ * Returns the value of autoAnalyze afterwards, so the caller can act on the fresh answer without
+ * re-reading the setting (the update is async and a stale read would skip the analysis the user just
+ * approved).
+ *
+ * autoAnalyze is the "already asked" test rather than autoScan, because autoScan is also written by
+ * the unrelated automatic scan prompt in autoScan.ts, which never writes autoAnalyze. autoAnalyze is
+ * written only here, so it is the honest record of whether this question was asked.
+ */
+export async function ensureAutomationConsent(
+  config: {
+    inspect: (key: string) => { globalValue?: unknown } | undefined;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- vscode's WorkspaceConfiguration.update
+    // takes a narrower ConfigurationTarget for its third parameter, which unknown cannot satisfy.
+    update: (key: string, value: unknown, target: any) => Thenable<void> | Promise<void>;
+  },
+  ask: () => Thenable<string | undefined> | Promise<string | undefined>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  globalTarget: any,
+): Promise<boolean> {
+  const existing = config.inspect('autoAnalyze')?.globalValue;
+  if (existing !== undefined) return existing as boolean;
+
+  const pick = await ask();
+  const settings = automationSettings(automationChoiceFrom(pick));
+  await config.update('autoScan', settings.autoScan, globalTarget);
+  await config.update('autoAnalyze', settings.autoAnalyze, globalTarget);
+  return settings.autoAnalyze;
+}

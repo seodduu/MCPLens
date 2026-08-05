@@ -38,6 +38,10 @@ import { runInference } from './inferenceCli.js';
 import { AnalysisCoordinator, ANALYSIS_RULES_VERSION, CONSENT_POLICY_VERSION } from './analysisCoordinator.js';
 import { currentActionEligibility, disableGlobally, restoreGlobally, restoreRecommended } from './globalActionCommand.js';
 import { registerScanNow, registerOpenRolloutSetting, registerAuthenticateServer } from './setupCommands.js';
+import {
+  AUTOMATION_ACCEPT_LABEL, AUTOMATION_PROMPT_DETAIL, AUTOMATION_PROMPT_TITLE,
+  AUTOMATION_SCAN_ONLY_LABEL, ensureAutomationConsent,
+} from './automationConsent.js';
 import { evaluateSetupKeys, stepsToUncheck, stepsToComplete, type SetupKeys } from './setupContextKeys.js';
 import { buildSetupRows } from './setupTree.js';
 import { SetupStatusProvider } from './setupTreeProvider.js';
@@ -546,11 +550,24 @@ export async function activate(ctx: vscode.ExtensionContext) {
    * Once a scan ingests new definitions, the independence analysis follows. A scan alone answers
    * "how much"; the analysis answers "can it be turned off". The user needs both to act.
    *
-   * This is the automatic path, so no consent dialog is shown. It does use the provider CLI's
-   * tokens, so mcpLens.autoAnalyze can turn it off, and already-analyzed tools are never resent.
+   * It does use the provider CLI's tokens, so mcpLens.autoAnalyze can turn it off, and
+   * already-analyzed tools are never resent.
+   *
+   * A user who answered the automatic scan prompt before finishing onboarding never saw the
+   * automation consent modal, so autoAnalyze stays unwritten and analysis would be skipped in
+   * silence. Ask here instead: a new server has just been scanned, which is the moment the tokens
+   * would be spent. An explicit false is respected without asking again.
    */
   const analyzeAfterScan = async (): Promise<void> => {
-    if (!vscode.workspace.getConfiguration('mcpLens').get<boolean>('autoAnalyze', false)) return;
+    const config = vscode.workspace.getConfiguration('mcpLens');
+    const consented = await ensureAutomationConsent(
+      config,
+      () => vscode.window.showInformationMessage(
+        AUTOMATION_PROMPT_TITLE,
+        { modal: true, detail: AUTOMATION_PROMPT_DETAIL },
+        AUTOMATION_ACCEPT_LABEL, AUTOMATION_SCAN_ONLY_LABEL),
+      vscode.ConfigurationTarget.Global);
+    if (!consented) return;
     await analysisCoordinator.analyze([], { auto: true });
   };
 
