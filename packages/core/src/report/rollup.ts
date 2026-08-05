@@ -12,6 +12,12 @@ import type {
 export interface ClientRollup {
   report: ClientReport;
   totals: ReportTotals;
+  /**
+   * Names of this client's servers that were left out of `totals` because of an identity conflict.
+   * Optional so existing hand-written ClientRollup fixtures (predating this field) still type-check;
+   * treated as empty when absent.
+   */
+  excludedServers?: ReadonlySet<string>;
 }
 
 /**
@@ -22,7 +28,7 @@ export function buildReport(input: EngineInput, opts: ReportOptions): ReportMode
   const splits = splitByClient(input);
   const rollups = splits.map(({ client, input: sub }) => {
     const all = buildMatrix(sub);
-    return rollupClient(client, sub.sessions, all);
+    return rollupClient(client, sub.sessions, all, opts.conflictedServers);
   });
   return assembleModel(rollups, opts);
 }
@@ -44,11 +50,13 @@ const ZERO_TOTALS: ReportTotals = {
 export function assembleModel(rollups: ClientRollup[], opts: ReportOptions): ReportModel {
   const clients = rollups.map((r) => r.report).sort(compareClients);
   const totals = rollups.reduce((acc, r) => addTotals(acc, r.totals), { ...ZERO_TOTALS });
+  const conflictedServers = [...new Set(rollups.flatMap((r) => [...(r.excludedServers ?? [])]))].sort();
   return {
     generatedAt: opts.now ?? new Date().toISOString(),
     days: opts.days,
     clients,
     totals,
+    conflictedServers,
   };
 }
 
@@ -77,7 +85,12 @@ function compareClients(a: ClientReport, b: ClientReport): number {
  * One client's MatrixRow[] -> ClientReport + totals. Pure and exported so tests can pass
  * hand-written MatrixRow[]/SessionMeta[] directly (no dependency on buildMatrix).
  */
-export function rollupClient(client: ClientId, sessions: SessionMeta[], rows: MatrixRow[]): ClientRollup {
+export function rollupClient(
+  client: ClientId,
+  sessions: SessionMeta[],
+  rows: MatrixRow[],
+  conflictedServers: ReadonlySet<string> = new Set(),
+): ClientRollup {
   const visible = visibleMatrixRows(rows, sessions);
   const hiddenToolCount = rows.length - visible.length;
   const unmeasuredToolCount = visible.filter((r) => r.recommendation.action === 'unknown').length;
@@ -114,20 +127,36 @@ export function rollupClient(client: ClientId, sessions: SessionMeta[], rows: Ma
     unmeasuredToolCount,
   };
 
+  // A conflicted server's row stays in the buckets/groups above (so the tool list still shows it),
+  // but it is left out of the waste totals: only one client's copy of the name was actually scanned,
+  // so this figure is not evidence about this client's server.
+  const isConflicted = (row: MatrixRow) => conflictedServers.has(row.serverName);
+  const actRowsForTotals = rowsByBucket.act.filter((r) => !isConflicted(r));
+  const candidateRowsForTotals = rowsByBucket.candidate.filter((r) => !isConflicted(r));
+
+  const excludedServers = new Set<string>();
+  for (const r of rowsByBucket.act) if (isConflicted(r)) excludedServers.add(r.serverName);
+  for (const r of rowsByBucket.candidate) if (isConflicted(r)) excludedServers.add(r.serverName);
+
+  // The server counts are excluded on the same basis as the tool counts. Counting the servers but
+  // not their tools would print "2 servers, 0 tools", a line that reads as a bug rather than as an exclusion.
+  const actGroupsForTotals = buckets.act.filter((g) => !conflictedServers.has(g.serverName));
+  const candidateGroupsForTotals = buckets.candidate.filter((g) => !conflictedServers.has(g.serverName));
+
   const totals: ReportTotals = {
-    actPerSessionTokens: sumGroupTokens(buckets.act),
-    candidatePerSessionTokens: sumGroupTokens(buckets.candidate),
-    actServerCount: buckets.act.length,
-    actToolCount: rowsByBucket.act.length,
-    candidateServerCount: buckets.candidate.length,
-    candidateToolCount: rowsByBucket.candidate.length,
+    actPerSessionTokens: sumDefinitionTokens(actRowsForTotals),
+    candidatePerSessionTokens: sumDefinitionTokens(candidateRowsForTotals),
+    actServerCount: actGroupsForTotals.length,
+    actToolCount: actRowsForTotals.length,
+    candidateServerCount: candidateGroupsForTotals.length,
+    candidateToolCount: candidateRowsForTotals.length,
     inspectToolCount: rowsByBucket.inspect.length,
     inspectWastedTokens: rowsByBucket.inspect.reduce((s, r) => s + r.reliability.failedResponseTokens, 0),
     healthyToolCount: rowsByBucket.healthy.length,
     healthyResponseTokens: rowsByBucket.healthy.reduce((s, r) => s + r.responseTokens, 0),
   };
 
-  return { report, totals };
+  return { report, totals, excludedServers };
 }
 
 /** Bucket assignment (design §4-3). action='unknown' is already filtered out by the caller. */
@@ -143,10 +172,6 @@ function assignBucket(row: MatrixRow): ReportBucket | null {
 
 function sumDefinitionTokens(rows: MatrixRow[]): number {
   return rows.reduce((s, r) => s + (r.definitionTokens ?? 0), 0);
-}
-
-function sumGroupTokens(groups: ReportGroup[]): number {
-  return groups.reduce((s, g) => s + g.perSessionTokens, 0);
 }
 
 /** Groups by (serverName, action, confidence) and sorts descending by perSessionTokens. */

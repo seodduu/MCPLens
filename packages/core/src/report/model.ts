@@ -83,6 +83,8 @@ export interface ReportModel {
   /** collapsed=false first, then descending by sessionCount. */
   clients: ClientReport[];
   totals: ReportTotals;
+  /** Servers left out of the waste totals because of an identity conflict. Empty when there are none. */
+  conflictedServers: string[];
 }
 
 export interface ReportOptions {
@@ -92,6 +94,13 @@ export interface ReportOptions {
   days: number;
   /** Generation timestamp (ISO), injected so tests stay deterministic. */
   now?: string;
+  /**
+   * Names of servers whose identity conflicts across clients (two clients define the same name with a
+   * different endpoint). Only one of them is actually scanned, so its token figure does not describe
+   * the other client's server. Counting it as a saving would state a number that is not true, so these
+   * servers are left out of the waste totals and reported separately instead of being dropped in silence.
+   */
+  conflictedServers?: ReadonlySet<string>;
 }
 
 /** Maximum tools shown per group in summary mode. */

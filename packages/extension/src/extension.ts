@@ -348,6 +348,14 @@ export async function activate(ctx: vscode.ExtensionContext) {
     }
   }
 
+  // One scan measures one server per name, so a name claimed by two clients with different endpoints
+  // cannot have both measured. Its tokens are therefore not evidence about either client, and it is
+  // kept out of the waste figure on the status bar and the report.
+  const conflictedServerNames = (): Set<string> => new Set(
+    store!.serverIdentities()
+      .filter((identity) => identity.conflictState !== 'clear')
+      .map((identity) => identity.serverName));
+
   const refresh = () => {
     const since = sinceIso();
     const input = { definitions: store!.allDefinitions(), calls: store!.callsSince(since),
@@ -355,7 +363,9 @@ export async function activate(ctx: vscode.ExtensionContext) {
       lastCallByTool: store!.lastCallByTool(),
       serversByClient: serversByClientOrUndefined() };
     // totals are unaffected by detail (tool list truncation), so minimal opts suffice.
-    const totals = buildReport(input, { days: reportDays(), detail: 'summary' }).totals;
+    const totals = buildReport(input, {
+      days: reportDays(), detail: 'summary', conflictedServers: conflictedServerNames(),
+    }).totals;
     const wasteToolCount = totals.actToolCount + totals.candidateToolCount;
     const wasteTokens = totals.actPerSessionTokens + totals.candidatePerSessionTokens;
     item.text = formatStatus(wasteToolCount, wasteTokens);
@@ -703,7 +713,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
         reportDays: vscode.workspace.getConfiguration('mcpLens').get<number>('reportDays', 30),
         reportDetail: vscode.workspace.getConfiguration('mcpLens').get<'summary' | 'full'>('reportDetail'),
       });
-      const doc = renderReport(buildReport(input, opts), opts);
+      const doc = renderReport(buildReport(input, { ...opts, conflictedServers: conflictedServerNames() }), opts);
       vscode.workspace.openTextDocument({ content: doc, language: 'markdown' })
         .then((d) => vscode.window.showTextDocument(d));
     }),

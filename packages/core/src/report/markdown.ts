@@ -258,6 +258,13 @@ export function renderReport(model: ReportModel, opts: ReportOptions): string {
   lines.push(`| 🔧 Needs inspection | ${plural(t.inspectToolCount, 'tool')} | ${tok(t.inspectWastedTokens)} wasted on failed responses |`);
   lines.push(`| 👍 In healthy use | ${plural(t.healthyToolCount, 'tool')} | — |`);
 
+  if (model.conflictedServers.length > 0) {
+    lines.push(
+      '',
+      `> Excluded from the totals: ${plural(model.conflictedServers.length, 'server')} defined under the same name by more than one client (${model.conflictedServers.join(', ')}).`,
+    );
+  }
+
   if (t.actToolCount === 0 && t.inspectToolCount === 0) {
     lines.push('', 'Nothing needs action right now.');
   }

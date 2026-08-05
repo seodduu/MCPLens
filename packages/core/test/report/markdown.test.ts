@@ -85,6 +85,7 @@ function model(over: Partial<ReportModel> = {}): ReportModel {
     days: 30,
     clients: [],
     totals: totals(),
+    conflictedServers: [],
     ...over,
   };
 }
@@ -506,5 +507,18 @@ describe('renderReport - display policy', () => {
       OPTS,
     );
     expect(out).toContain('1,800tok/session');
+  });
+});
+
+describe('renderReport - conflicted servers excluded from totals', () => {
+  it('says in the markdown which servers were excluded', () => {
+    const out = renderReport(model({ conflictedServers: ['b'] }), OPTS);
+    expect(out).toContain('Excluded from the totals');
+    expect(out).toContain('b');
+  });
+
+  it('says nothing about exclusions when there are none', () => {
+    const out = renderReport(model({ conflictedServers: [] }), OPTS);
+    expect(out).not.toContain('Excluded from the totals');
   });
 });

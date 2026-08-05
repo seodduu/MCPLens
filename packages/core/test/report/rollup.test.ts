@@ -283,6 +283,50 @@ describe('rollupClient — totals', () => {
   });
 });
 
+describe('rollupClient — conflicted servers excluded from totals', () => {
+  function mkRows(): MatrixRow[] {
+    return [
+      mkRow({ serverName: 'a', toolName: 'x', action: 'remove', confidence: 'high', definitionTokens: 100 }),
+      mkRow({ serverName: 'b', toolName: 'y', action: 'remove', confidence: 'low', definitionTokens: 50 }),
+    ];
+  }
+
+  it('leaves a conflicted server out of the waste totals', () => {
+    const baseline = rollupClient('claude-code', [mkSession('UPFRONT')], mkRows()).totals;
+    const excluded = rollupClient('claude-code', [mkSession('UPFRONT')], mkRows(), new Set(['b'])).totals;
+    expect(excluded.candidateToolCount).toBe(baseline.candidateToolCount - 1);
+    expect(excluded.candidatePerSessionTokens).toBe(baseline.candidatePerSessionTokens - 50);
+  });
+
+  it('keeps the conflicted server in the tool list', () => {
+    const { report } = rollupClient('claude-code', [mkSession('UPFRONT')], mkRows(), new Set(['b']));
+    expect(report.buckets.candidate.some((g) => g.serverName === 'b')).toBe(true);
+  });
+
+  it('names the excluded servers in the model', () => {
+    const rollup = rollupClient('claude-code', [mkSession('UPFRONT')], mkRows(), new Set(['b']));
+    const model = assembleModel([rollup], { detail: 'full', days: 14 });
+    expect(model.conflictedServers).toEqual(['b']);
+  });
+
+  /**
+   * The server count is excluded on the same basis as the tool count. Counting the server but not
+   * its tools printed "1 server, 0 tools", which reads as a bug rather than as an exclusion.
+   */
+  it('leaves the conflicted server out of the server count too', () => {
+    const baseline = rollupClient('claude-code', [mkSession('UPFRONT')], mkRows()).totals;
+    const excluded = rollupClient('claude-code', [mkSession('UPFRONT')], mkRows(), new Set(['b'])).totals;
+    expect(excluded.candidateServerCount).toBe(baseline.candidateServerCount - 1);
+  });
+
+  it('reports nothing excluded when no server conflicts', () => {
+    const baselineRollup = rollupClient('claude-code', [mkSession('UPFRONT')], mkRows());
+    const model = assembleModel([baselineRollup], { detail: 'full', days: 14 });
+    expect(model.conflictedServers).toEqual([]);
+    expect(model.totals).toEqual(baselineRollup.totals);
+  });
+});
+
 describe('assembleModel', () => {
   function mkClientReport(overrides: Partial<ClientReport>): ClientReport {
     return {
