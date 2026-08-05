@@ -13,11 +13,18 @@
   합쳐 어떤 툴을 꺼도 다른 툴이 깨지지 않는지 판정합니다. `MCP Lens: Open Analysis
   Details`로 판정 근거를 열어볼 수 있고 `MCP Lens: Reanalyze Server`로 서버 단위 재분석을
   돌립니다.
-- **추론 제공자 설정과 사전 고지 동의.** `mcpLens.inferenceProvider`(auto/claude/codex),
+- **새 서버 자동 스캔과 자동 분석.** 새 MCP 서버를 붙이면 확장이 알림 없이 그 서버를
+  스캔해 툴과 정의 비용을 채우고, 이어서 아직 분석하지 않은 툴만 분석해 독립 여부를
+  판정합니다. 로그인이 필요한 서버는 그때만 로그인 알림이 뜹니다. 자동 분석은 사용자의
+  제공자 CLI를 호출하므로 그 계정의 토큰을 씁니다. `mcpLens.autoScan`과
+  `mcpLens.autoAnalyze`로 각각 끌 수 있습니다.
+- **추론 제공자 설정과 동의 기록.** `mcpLens.inferenceProvider`(auto/claude/codex),
   `mcpLens.claudeModel`, `mcpLens.codexModel`로 분석에 쓸 제공자와 모델을 고릅니다.
-  분석 실행 전에 전송 범위와 예상 비용을 고지하고 동의를 받으며, `MCP Lens: Withdraw
-  Inference Consent`로 동의를 철회할 수 있습니다. 전송되는 것은 툴 정의와 집계된 사용
-  횟수뿐이고 프롬프트, 툴 입력, 툴 출력, 소스 코드는 보내지 않습니다.
+  자동 분석은 묻지 않는 대신 무엇을 어떤 제공자·모델로 보냈는지 기록을 남기고, 수동
+  실행(`MCP Lens: Analyze Dependencies`)은 실행 전에 전송 범위와 예상 비용을 고지하고
+  동의를 받습니다. `MCP Lens: Withdraw Inference Consent`로 철회하면 자동 분석도 멈춥니다.
+  전송되는 것은 툴 정의와 집계된 사용 횟수뿐이고 프롬프트, 툴 입력, 툴 출력, 소스 코드는
+  보내지 않습니다.
 - **전역 비활성화와 복구.** `MCP Lens: Disable Globally` / `MCP Lens: Restore Globally`로
   쓰지 않는 툴을 클라이언트 설정에서 직접 꺼고 되돌립니다. 기본값은 잠김입니다.
   `mcplens.dependencyAnalysis.rollout` 설정으로 어떤 클라이언트에 허용할지 명시해야만

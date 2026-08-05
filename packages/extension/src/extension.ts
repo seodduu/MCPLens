@@ -415,6 +415,10 @@ export async function activate(ctx: vscode.ExtensionContext) {
   const analysisCoordinator = new AnalysisCoordinator({
     store: () => store!, serverNames: () => [...new Set(store!.allDefinitions().map((row) => row.serverName))],
     resolve: providerResolution,
+    modelFor: (provider) => {
+      const config = readProviderConfig(vscode.workspace.getConfiguration('mcpLens'));
+      return provider === 'claude' ? config.claudeModel : config.codexModel;
+    },
     run: async (request) => {
       const result = await runInference({
         provider: request.provider,
@@ -423,6 +427,16 @@ export async function activate(ctx: vscode.ExtensionContext) {
         signal: request.signal,
       });
       return result.ok ? { ok: true, value: result.value } : { ok: false, errorCode: result.errorCode };
+    },
+    recordAutoConsent: ({ provider, model }) => {
+      store!.saveInferenceConsent({
+        policyVersion: CONSENT_POLICY_VERSION,
+        provider, model,
+        status: 'accepted',
+        acceptedAt: new Date().toISOString(),
+        revokedAt: null,
+      });
+      store!.save();
     },
     requestConsent: async ({ provider, model }) => {
       const bodies = store!.allDefinitions().flatMap((definition) => store!.definitionBodiesForServer(definition.serverName));
@@ -542,10 +556,23 @@ export async function activate(ctx: vscode.ExtensionContext) {
         e.affectsConfiguration('mcplens.dependencyAnalysis.rollout')) refresh();
   }));
 
-  void maybeAutoScan(store, refresh);                     // 시작 시 1회 판정
-  ctx.subscriptions.push(watchConfigSources(store, refresh)); // 이후 설정 파일 감시
+  /**
+   * 스캔이 새 정의를 적재하면 이어서 독립성 판정까지 돌린다. 스캔만으로는 "얼마인가"까지고,
+   * "꺼도 되는가"는 분석이 답한다. 두 답이 같이 있어야 사용자가 조치할 수 있다.
+   *
+   * 자동 경로라 동의창을 띄우지 않는다. 대신 제공자 CLI 토큰을 쓰는 동작이므로
+   * mcpLens.autoAnalyze로 끌 수 있고, 이미 분석한 툴은 다시 보내지 않는다.
+   */
+  const analyzeAfterScan = async (): Promise<void> => {
+    if (!vscode.workspace.getConfiguration('mcpLens').get<boolean>('autoAnalyze', true)) return;
+    await analysisCoordinator.analyze([], { auto: true });
+  };
+
+  void maybeAutoScan(store, refresh, analyzeAfterScan);                     // 시작 시 1회 판정
+  ctx.subscriptions.push(watchConfigSources(store, refresh, analyzeAfterScan)); // 이후 설정 파일 감시
   ctx.subscriptions.push(
-    registerScanNow(() => store!, refresh), registerOpenRolloutSetting(), registerAuthenticateServer(refresh));
+    registerScanNow(() => store!, refresh, analyzeAfterScan),
+    registerOpenRolloutSetting(), registerAuthenticateServer(refresh));
 
   const requestAnalysis = async (node?: LensNode, reanalyze = false) => {
     selectedProvider = undefined;

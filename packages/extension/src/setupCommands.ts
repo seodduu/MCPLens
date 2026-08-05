@@ -1,12 +1,12 @@
 import * as vscode from 'vscode';
 import { authenticateServer, collectAllSpecs, type LensStore } from '@mcp-lens/core';
-import { scanNow } from './autoScan.js';
+import { scanNow, type AfterScan } from './autoScan.js';
 
 /** 온보딩 워크스루의 "Scan servers" 버튼이 가리키는 커맨드. */
-export function registerScanNow(store: () => LensStore, refresh: () => void): vscode.Disposable {
+export function registerScanNow(store: () => LensStore, refresh: () => void, afterScan?: AfterScan): vscode.Disposable {
   return vscode.commands.registerCommand('mcp-lens.scanNow', async () => {
     try {
-      await scanNow(store(), refresh);
+      await scanNow(store(), refresh, afterScan);
     } catch (err) {
       // store.save()는 이 창이 writer 리스를 쥐고 있지 않으면 StaleWriterError를 던진다.
       // 워크스루의 주 버튼이라 원본 익스텐션 호스트 에러를 그대로 노출하지 않고 안내로 바꾼다.
