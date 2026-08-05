@@ -32,6 +32,20 @@ function atOrAfter(observedAt: string, createdAt: string): boolean {
 }
 
 /**
+ * The name codex hands to a hook is not the tool's own name. Codex joins server and tool into
+ * `mcp__<server>__<tool>` and, because `__` is the separator, replaces characters that would break
+ * that shape. `notion-search` therefore arrives as `notion_search`. Most servers name their tools
+ * with underscores already, so the transform is the identity for them and nothing shows; a server
+ * that uses dashes is the only one that splits into two rows.
+ *
+ * The transform cannot be inverted from the string alone (`notion_search` could have come from
+ * either spelling), so the inverse is resolved against the definitions the scan already recorded.
+ */
+function codexSanitizeToolName(name: string): string {
+  return name.replace(/[^A-Za-z0-9_]/g, '_');
+}
+
+/**
  * schema.sql uses CREATE TABLE IF NOT EXISTS, so new columns never appear on an existing DB.
  * On every open the real column list is inspected and missing columns are added and backfilled (idempotent).
  */
@@ -246,6 +260,7 @@ export class LensStore {
                                            excluded.first_scanned_at)`,
           [d.serverName, d.toolName, d.definitionTokens, d.scannedAt, d.firstScannedAt]);
       this.reattributePendingCodexLoads();
+      this.reattributeSanitizedCodexToolNames();
     });
   }
 
@@ -595,6 +610,7 @@ export class LensStore {
       // This path runs on every activation. Even on a DB where scans have settled and are skipped,
       // past loads frozen by a failed attribution recover here.
       this.reattributePendingCodexLoads();
+      this.reattributeSanitizedCodexToolNames();
     });
   }
 
@@ -820,16 +836,37 @@ export class LensStore {
        file_path=excluded.file_path, external_session_id=excluded.external_session_id,
        started_at=excluded.started_at`,
       [sessionId, session.client, session.filePath, session.externalSessionId, session.startedAt, session.mode]);
-    for (const call of materialized.toolCalls) this.run(
-      `INSERT INTO tool_calls(session_id, server_name, tool_name, called_at, duration_ms, is_error, response_tokens)
-       VALUES(?,?,?,?,?,?,?)`, [sessionId, call.serverName, call.toolName, call.calledAt,
-        call.durationMs, Number(call.isError), call.responseTokens]);
+    for (const call of materialized.toolCalls) {
+      const toolName = session.client === 'codex'
+        ? this.canonicalCodexToolName(call.serverName, call.toolName)
+        : call.toolName;
+      this.run(
+        `INSERT INTO tool_calls(session_id, server_name, tool_name, called_at, duration_ms, is_error, response_tokens)
+         VALUES(?,?,?,?,?,?,?)`, [sessionId, call.serverName, toolName, call.calledAt,
+          call.durationMs, Number(call.isError), call.responseTokens]);
+    }
     for (const load of materialized.toolLoads) {
       const attributed = this.attributeCodexLoadName(session.client, load);
       this.run(
         `INSERT INTO tool_loads(session_id, server_name, tool_name, loaded_tokens) VALUES(?,?,?,?)`,
         [sessionId, attributed.serverName, attributed.toolName, attributed.loadedTokens]);
     }
+  }
+
+  /**
+   * The tool name as the scan recorded it, for a name codex already split into server and tool.
+   *
+   * Returns the argument unchanged unless exactly one definition of that server sanitizes to it.
+   * Two or more matches are ambiguous, and guessing would produce a join that is confidently wrong;
+   * leaving the name alone keeps the display at "at least N tokens", which says it does not know.
+   */
+  private canonicalCodexToolName(serverName: string, toolName: string): string {
+    const rows = this.select(
+      `SELECT tool_name FROM tool_definitions WHERE server_name=?`, [serverName],
+    ).map((row) => row.tool_name as string);
+    if (rows.includes(toolName)) return toolName; // already canonical: no lookup needed
+    const matches = rows.filter((name) => codexSanitizeToolName(name) === toolName);
+    return matches.length === 1 ? matches[0]! : toolName;
   }
 
   /** A canonical name left by Codex is split only when it uniquely matches the current scan and config. */
@@ -844,7 +881,8 @@ export class LensStore {
       `SELECT d.server_name, d.tool_name FROM tool_definitions d
        JOIN client_servers c ON c.server_name=d.server_name
        WHERE c.client='codex'`, [],
-    ).filter((row) => `mcp__${row.server_name as string}__${row.tool_name as string}` === load.toolName);
+    ).filter((row) => codexSanitizeToolName(
+      `mcp__${row.server_name as string}__${row.tool_name as string}`) === load.toolName);
     if (candidates.length !== 1) return load;
     return {
       ...load,
@@ -860,6 +898,25 @@ export class LensStore {
        JOIN sessions s ON s.session_id = l.session_id
        WHERE s.client = 'codex' AND l.server_name IS NULL
          AND l.tool_name LIKE 'mcp\\_\\_%' ESCAPE '\\'`, [],
+    );
+    for (const row of rows) this.rebuildSession(row.session_id as string);
+  }
+
+  /**
+   * Rebuilds codex sessions whose stored tool name is codex's joined-form name rather than the
+   * tool's own. The log cursor has already passed these files, so re-ingesting alone never reaches
+   * them; the rebuild re-runs the name resolution against the definitions present now.
+   */
+  private reattributeSanitizedCodexToolNames(): void {
+    const rows = this.select(
+      `SELECT DISTINCT c.session_id FROM tool_calls c
+       JOIN sessions s ON s.session_id = c.session_id
+       WHERE s.client = 'codex'
+         AND NOT EXISTS (
+           SELECT 1 FROM tool_definitions d
+           WHERE d.server_name = c.server_name AND d.tool_name = c.tool_name)
+         AND EXISTS (
+           SELECT 1 FROM tool_definitions d WHERE d.server_name = c.server_name)`, [],
     );
     for (const row of rows) this.rebuildSession(row.session_id as string);
   }

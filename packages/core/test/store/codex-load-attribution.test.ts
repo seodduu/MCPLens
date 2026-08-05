@@ -191,6 +191,48 @@ describe('codex load attribution', () => {
     }]);
   });
 
+  it('attributes a load whose tool name had a dash replaced', async () => {
+    const store = await LensStore.open(':memory:');
+    store.upsertDefinitions([definition('notion', 'notion-search')]);
+    registerCodexServers(store, ['notion']);
+
+    store.ingest(codexSession([
+      { serverName: null, toolName: 'mcp__notion__notion_search', loadedTokens: 52 },
+    ]));
+
+    expect(loadsOf(store)[0]).toMatchObject({
+      serverName: 'notion', toolName: 'notion-search',
+    });
+  });
+
+  it('attributes a load when the server name itself had a dash replaced', async () => {
+    const store = await LensStore.open(':memory:');
+    store.upsertDefinitions([definition('brave-search', 'brave_web_search')]);
+    registerCodexServers(store, ['brave-search']);
+
+    store.ingest(codexSession([
+      { serverName: null, toolName: 'mcp__brave_search__brave_web_search', loadedTokens: 44 },
+    ]));
+
+    expect(loadsOf(store)[0]).toMatchObject({
+      serverName: 'brave-search', toolName: 'brave_web_search',
+    });
+  });
+
+  it('leaves a load alone when two servers sanitize to the same joined name', async () => {
+    const store = await LensStore.open(':memory:');
+    store.upsertDefinitions([definition('a-b', 't'), definition('a_b', 't')]);
+    registerCodexServers(store, ['a-b', 'a_b']);
+
+    store.ingest(codexSession([
+      { serverName: null, toolName: 'mcp__a_b__t', loadedTokens: 9 },
+    ]));
+
+    expect(loadsOf(store)[0]).toMatchObject({
+      serverName: null, toolName: 'mcp__a_b__t',
+    });
+  });
+
   it('surfaces an attributed load as a matrix row', async () => {
     const store = await LensStore.open(':memory:');
     registerCodexServers(store, ['node_repl']);
