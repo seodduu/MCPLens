@@ -560,6 +560,5 @@ describe('확신 등급 렌더링', () => {
     expect(node.confidence).toBe('medium');
     expect(node.confidence).not.toBe('high');
     expect(node.description).not.toContain('candidate'); // 표시 강등은 low만
-    expect(node.tooltip).toContain('2026-03-14');
   });
 });

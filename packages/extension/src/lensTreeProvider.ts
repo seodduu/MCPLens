@@ -32,14 +32,14 @@ export class LensTreeProvider implements vscode.TreeDataProvider<LensNode> {
         : vscode.TreeItemCollapsibleState.None);
     item.id = n.id;
     item.description = n.description;
-    item.tooltip = n.tooltip;
+    // 호버 설명은 두지 않는다 — 툴·클라이언트마다 문구가 갈려 읽는 비용만 컸다.
+    // 마우스를 올렸을 때의 행동은 삭제 가능한 툴의 disable 액션 하나로 통일한다.
     if (n.kind === 'tool' && n.analysisStatus) {
       item.command = {
         command: 'mcplens.openAnalysisDetails',
         title: 'Open analysis details',
         arguments: [n],
       };
-      item.tooltip = n.analysisSummary ?? n.tooltip;
     }
     if (n.kind === 'client') item.iconPath = new vscode.ThemeIcon('device-desktop');
     else if (n.kind === 'server') {
