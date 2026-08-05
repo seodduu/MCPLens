@@ -515,4 +515,26 @@ describe('durable hook inbox', () => {
     expect(statSync(join(root, 'pending', 'd1.json')).mode & 0o777).toBe(0o600);
     expect(statSync(join(root, '.locks', 'd1.committed')).mode & 0o777).toBe(0o600);
   });
+
+  // 배달마다 lock 디렉터리가 reaping 이름으로 남으면 ~/.mcplens가 무한히 불어난다.
+  it('배달을 끝내도 lock 잔해가 쌓이지 않는다', () => {
+    const root = temporaryRoot();
+    for (let index = 0; index < 5; index += 1)
+      enqueueEnvelope(fixtureEnvelope({ deliveryId: `d${index}` }), { root });
+    const leftovers = readdirSync(join(root, '.locks')).filter((name) => name.includes('.reaping-'));
+    expect(leftovers).toEqual([]);
+  });
+
+  it('이전 버전이 남긴 잔해는 드레인 시 정리된다', () => {
+    const root = temporaryRoot();
+    enqueueEnvelope(fixtureEnvelope(), { root });
+    mkdirSync(join(root, '.locks', 'd1.lock.reaping-old1'), { recursive: true });
+    mkdirSync(join(root, '.locks', 'd1.lock.reaping-old2'), { recursive: true });
+
+    const batch = claimPending({ root });
+
+    expect(batch).toHaveLength(1);
+    expect(readdirSync(join(root, '.locks')).filter((name) => name.includes('.reaping-'))).toEqual([]);
+    expect(readdirSync(join(root, '.locks'))).toContain('d1.committed');
+  });
 });

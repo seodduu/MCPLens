@@ -579,19 +579,23 @@ export class LensStore {
    */
   upsertClientServers(attribution: Map<string, Set<ClientId>>,
     replaceable: Set<ClientId>): void {
-    for (const client of replaceable)
-      this.run('DELETE FROM client_servers WHERE client=?', [client]);
-    for (const [serverName, clients] of attribution)
-      for (const client of clients) {
-        if (!replaceable.has(client)) continue; // 보존 대상은 새로 쓰지도 않는다
-        this.run(
-          `INSERT INTO client_servers(client, server_name) VALUES(?,?)
-           ON CONFLICT(client, server_name) DO NOTHING`,
-          [client, serverName]);
-      }
-    // 매 활성화마다 실행되는 경로다. 스캔이 정착해 건너뛰어지는 DB에서도
-    // 귀속 실패로 굳은 과거 load가 여기서 회복된다.
-    this.reattributePendingCodexLoads();
+    // DELETE·INSERT·소급 귀속이 한 단위다. 중간에 실패하면 그 클라이언트의 귀속이
+    // 빈 채로 남아 매트릭스가 서버를 못 붙인다.
+    this.transaction(() => {
+      for (const client of replaceable)
+        this.run('DELETE FROM client_servers WHERE client=?', [client]);
+      for (const [serverName, clients] of attribution)
+        for (const client of clients) {
+          if (!replaceable.has(client)) continue; // 보존 대상은 새로 쓰지도 않는다
+          this.run(
+            `INSERT INTO client_servers(client, server_name) VALUES(?,?)
+             ON CONFLICT(client, server_name) DO NOTHING`,
+            [client, serverName]);
+        }
+      // 매 활성화마다 실행되는 경로다. 스캔이 정착해 건너뛰어지는 DB에서도
+      // 귀속 실패로 굳은 과거 load가 여기서 회복된다.
+      this.reattributePendingCodexLoads();
+    });
   }
 
   /** 클라이언트 → 그 클라이언트에 설정된 서버 이름 집합. 매핑이 없으면 빈 맵. */

@@ -8,6 +8,7 @@ import {
   readFileSync,
   readdirSync,
   renameSync,
+  rmSync,
   statSync,
   unlinkSync,
   utimesSync,
@@ -23,6 +24,7 @@ import {
   isCode,
   readLease,
   reapingPath,
+  sweepReapingDirs,
   takeOverLease,
   type Lease,
 } from './lease.js';
@@ -160,6 +162,8 @@ function releaseDeliveryLock(lockPath: string, token: string): void {
   const reaping = reapingPath(lockPath, token);
   try {
     renameSync(lockPath, reaping);
+    // rename만 하고 지우지 않으면 배달마다 디렉터리가 하나씩 쌓인다.
+    rmSync(reaping, { recursive: true, force: true });
   } catch (error) {
     if (!isBusy(error) && !isCode(error, 'ENOENT')) throw error;
   }
@@ -169,6 +173,8 @@ export function claimPending(opts: InboxOptions = {}): ClaimBatch {
   const paths = inboxPaths(opts);
   const now = (opts.now ?? (() => new Date()))();
   recoverStaleProcessing(paths, opts);
+  // 구버전이 남긴 lock 잔해는 드레인 때 한 번에 회수한다. 배달 경로에 부담을 주지 않는다.
+  sweepReapingDirs(paths.locks);
 
   const claims: ClaimedEnvelope[] = [];
   let parseErrors = 0;

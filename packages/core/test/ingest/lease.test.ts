@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { acquireLease, renewLease, releaseLease, readLease, takeOverLease, installLease } from '../../src/ingest/lease.js';
+import { acquireLease, renewLease, releaseLease, readLease, takeOverLease, installLease, sweepReapingDirs } from '../../src/ingest/lease.js';
 
 let dir: string; let lock: string;
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'lease-')); lock = join(dir, 'w.lock'); });
@@ -69,5 +69,28 @@ describe('lease', () => {
     releaseLease(lock, a.token);
     expect(readLease(lock)).toBeNull();
     expect(acquireLease(lock, 1000)).not.toBeNull();
+  });
+
+  it('release는 reaping 잔해를 남기지 않는다', () => {
+    const a = acquireLease(lock, 1000)!;
+    releaseLease(lock, a.token);
+    expect(readdirSync(dir).filter((name) => name.includes('.reaping-'))).toEqual([]);
+  });
+
+  // reaping 이름은 rename 이후에만 생기므로 활성 리스가 아니다. 남아 있으면 잔해다.
+  it('sweepReapingDirs는 잔해만 지우고 살아 있는 락과 다른 파일은 건드리지 않는다', () => {
+    const a = acquireLease(lock, 1000)!;
+    mkdirSync(`${lock}.reaping-dead1`, { recursive: true });
+    mkdirSync(`${lock}.reaping-dead2`, { recursive: true });
+    writeFileSync(join(dir, 'keep.json'), '{}');
+    expect(sweepReapingDirs(dir)).toBe(2);
+    expect(readdirSync(dir).sort()).toEqual(['keep.json', 'w.lock']);
+    expect(readLease(lock)?.token).toBe(a.token);
+  });
+
+  it('획득 시 이전 실행이 남긴 잔해를 함께 치운다', () => {
+    mkdirSync(`${lock}.reaping-crashed`, { recursive: true });
+    expect(acquireLease(lock, 1000)).not.toBeNull();
+    expect(readdirSync(dir).filter((name) => name.includes('.reaping-'))).toEqual([]);
   });
 });

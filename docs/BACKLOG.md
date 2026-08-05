@@ -6,8 +6,8 @@
 |---|---|---|
 | ~~V1~~ | ~~Codex zero-call 액션 후보 노출 불가~~ | **해결 (2026-08-05)** — 원인이 둘이었다. 부분일치 검색 출력의 다중 정의를 통째로 버린 것과, 서버 귀속을 수집 시점에 해서 스캔이 나중에 오면 null로 굳은 것. `docs/reports/2026-08-05-codex-load-귀속-보정/보고서.md` |
 | V2 | Claude direct regret 실기기 미검증 | **범위 밖 (3차 E2E에서 확정)** — `permissions.deny`가 deny된 도구를 모델의 툴 목록에서 통째로 제거해 호출 시도 자체가 발생하지 않는다. 즉 "차단된 툴을 쓰려다 막혔다"는 신호를 Claude에서 만들 방법이 현재 없다. 회귀 스펙으로만 커버 중 |
-| V3 | writer-lock reaping 디렉터리 잔존 | 만료된 `~/.mcplens/db-writer.lock.reaping-*`가 지워지지 않고 남는다. 활성 lease가 아니라 동작에는 영향 없으나 reaping 로직이 자기 디렉터리를 끝까지 못 지우는 패턴. 4차 E2E에서 4개 발견 |
-| V4 | `upsertClientServers`에 트랜잭션 없음 | 이 메서드가 `client_servers` DELETE·INSERT에 더해 이제 `rebuildSession`까지 수행하는데 `this.transaction(...)`으로 감싸여 있지 않다. 중간 실패 시 롤백 단위가 없다. 이번 변경이 만든 문제는 아니고 기존부터 같은 상황 |
+| ~~V3~~ | ~~writer-lock reaping 디렉터리 잔존~~ | **해결 (2026-08-05)** — 4차 E2E가 본 db-writer 쪽 4개보다 실제 규모가 컸다. 진짜 누수원은 `inbox.ts`의 `releaseDeliveryLock`이 rename만 하고 rm을 안 한 것으로, 배달마다 1개씩 쌓여 실측 165개(880K)였다. rm 추가 + `sweepReapingDirs`로 옛 잔해를 드레인·리스 획득 때 회수한다 |
+| ~~V4~~ | ~~`upsertClientServers`에 트랜잭션 없음~~ | **해결 (2026-08-05)** — DELETE·INSERT·`reattributePendingCodexLoads`를 `this.transaction(...)`으로 묶었다. 중간 실패 시 직전 귀속이 남는 것을 회귀 테스트로 고정 |
 
 ## 관측된 클라이언트 특성 (결함 아님, 기억용)
 
@@ -38,6 +38,7 @@
 | ~~M4~~ | ~~엔진 row 합집합에 loads 미포함~~ | **해결 (2026-07-19)** |
 | ~~M5~~ | ~~절감량 max 선택~~ | **해결 (Wave 9 Task 30)** — 키 단위 택일(직접 우선) 합산으로 교체 |
 | ~~M6~~ | ~~loadsSince 기간 무시~~ | **해결 (Wave 9 Task 30)** — sessions 조인 기간 필터. M5·M6·비교집합 불일치의 합작이 실데이터에서 saved=−20,759로 발현했던 버그 — 수정 후 실DB 검산 saved=+13,255, actual ≤ potential 성립 |
+| M9 | 대시보드 `MatrixTable.tsx` 타입 에러 2건 | `ACTION_COLOR`·`ACTION_LABEL`이 `inspect` 액션 키를 안 채워 `tsc -p packages/dashboard`가 실패한다. 동결 표면이라 `npm test`·`npm run build`는 녹색이고 릴리스를 막지 않는다. 고치면 키 2개 추가로 끝난다 |
 | M8 | 대시보드 리로드 동시성 + 미검증 경로 | **격하** — 표면 자체가 동결됨(`packages/dashboard/README.md`). 동결 표면의 잠재 결함으로만 기록, 수정 계획 없음 |
 
 ## 동결·취소 기록
