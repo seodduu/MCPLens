@@ -93,24 +93,26 @@ describe('AnalysisCoordinator', () => {
     expect(run).not.toHaveBeenCalled();
   });
 
-  // 제공자가 둘 다 깔려 있으면 수동 경로는 사람에게 고르라고 묻는다.
-  // 자동 경로에는 물을 자리가 없으므로 정해둔 우선순위(첫 번째 = claude)로 고른다.
-  it('picks the first provider instead of asking when both are available', async () => {
+  // 실측 회귀: 자동 경로가 임의의 우선순위로 제공자를 고르면, 온보딩에서 Codex를 고른
+  // 사용자의 선택이 무시된다. 게다가 그 선택은 동의 기록과 어긋나므로 분석이 영영
+  // 조용히 건너뛰어진다. 자동 경로는 사용자가 동의한 제공자를 그대로 써야 한다.
+  it('uses the provider the user consented to when both are available', async () => {
     const run = vi.fn(async () => ({ ok: true as const, value: { results: [] } }));
-    const modelFor = vi.fn((provider: 'claude' | 'codex') => provider === 'claude' ? 'haiku' : 'gpt');
     const testStore = {
-      ...store({ policyVersion: 1, provider: 'claude', model: 'haiku', status: 'accepted', acceptedAt: '', revokedAt: null }),
+      ...store({ policyVersion: 1, provider: 'codex', model: 'gpt', status: 'accepted', acceptedAt: '', revokedAt: null }),
       save: vi.fn(),
     };
     const coordinator = new AnalysisCoordinator({
       store: () => testStore as never, serverNames: () => ['docs'],
       resolve: () => ({ kind: 'choose', choices: ['claude', 'codex'] }),
-      modelFor, run,
+      run,
     });
 
     await coordinator.analyze([], { auto: true });
     expect(run).toHaveBeenCalled();
-    expect(modelFor).toHaveBeenCalledWith('claude');
+    const request = run.mock.calls[0][0] as { provider: string; model: string };
+    expect(request.provider).toBe('codex');
+    expect(request.model).toBe('gpt');
   });
 
   it('still asks a human to choose on the manual path', async () => {

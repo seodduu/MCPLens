@@ -415,10 +415,6 @@ export async function activate(ctx: vscode.ExtensionContext) {
   const analysisCoordinator = new AnalysisCoordinator({
     store: () => store!, serverNames: () => [...new Set(store!.allDefinitions().map((row) => row.serverName))],
     resolve: providerResolution,
-    modelFor: (provider) => {
-      const config = readProviderConfig(vscode.workspace.getConfiguration('mcpLens'));
-      return provider === 'claude' ? config.claudeModel : config.codexModel;
-    },
     run: async (request) => {
       const result = await runInference({
         provider: request.provider,
@@ -554,7 +550,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
    * mcpLens.autoAnalyze로 끌 수 있고, 이미 분석한 툴은 다시 보내지 않는다.
    */
   const analyzeAfterScan = async (): Promise<void> => {
-    if (!vscode.workspace.getConfiguration('mcpLens').get<boolean>('autoAnalyze', true)) return;
+    if (!vscode.workspace.getConfiguration('mcpLens').get<boolean>('autoAnalyze', false)) return;
     await analysisCoordinator.analyze([], { auto: true });
   };
 

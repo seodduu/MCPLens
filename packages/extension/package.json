@@ -250,11 +250,11 @@
             "always",
             "never"
           ],
-          "default": "always",
+          "default": "never",
           "enumDescriptions": [
             "Asks with a notification popup when a new server to scan is detected",
-            "Scans a newly detected server right away, without asking (default). The very first scan is left to you: nothing is scanned automatically until you have scanned once from the walkthrough",
-            "Never scans on its own. Scan from the walkthrough, the matrix view, or the MCP Lens: Scan MCP Servers command"
+            "Scans a newly detected server right away, without asking. The very first scan is still left to you: nothing is scanned automatically until you have scanned once from the walkthrough",
+            "Never scans on its own (default until you opt in during onboarding). Scan from the walkthrough, the matrix view, or the MCP Lens: Scan MCP Servers command"
           ],
           "markdownDescription": "Automatic scanning of MCP server tool definitions. Scanning briefly runs each registered stdio server and requests tools/list. No LLM tokens are spent and no config file is modified."
         },
@@ -286,7 +286,7 @@
         },
         "mcpLens.autoAnalyze": {
           "type": "boolean",
-          "default": true,
+          "default": false,
           "markdownDescription": "After a server is scanned automatically, analyze its new tools to judge whether each one can be turned off independently. **This calls the provider CLI (Claude or Codex) and spends its tokens**, and it sends tool definitions and aggregated usage counts to that provider. It reuses the consent you already gave and never runs before you have consented once, so the first analysis is always yours to start from the walkthrough. Only tools that have not been analyzed before are sent."
         },
         "mcpLens.claudeModel": {
@@ -362,8 +362,8 @@
           },
           {
             "id": "actions",
-            "title": "Enable global actions (optional)",
-            "description": "Let Lens turn unused tools off for you by editing your client config. This is locked by default.\n[Open setting](command:mcp-lens.openRolloutSetting)",
+            "title": "Finish setup: automation and global actions",
+            "description": "Decide whether Lens keeps itself up to date when you add a new MCP server later, then choose whether it may turn unused tools off for you by editing your client config. Both are off until you say otherwise.\n[Finish setup](command:mcp-lens.openRolloutSetting)",
             "media": {
               "image": "media/walkthrough/actions.svg",
               "altText": "Enabling global actions"
