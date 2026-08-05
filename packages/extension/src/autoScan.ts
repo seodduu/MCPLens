@@ -155,7 +155,8 @@ export async function maybeAutoScan(store: LensStore, onDone: () => void, afterS
   const setting = config.get<AutoScanSetting>('autoScan', 'always');
   const scannedServers = store.serversWithDefinitionBodies();
   const action = decideScanAction({
-    setting, specs, scannedServers, unsupported: new Set(unsupportedServers(config)) });
+    setting, specs, scannedServers, unsupported: new Set(unsupportedServers(config)),
+    neverScanned: store.allDefinitions().length === 0 });
 
   if (action.kind === 'skip') return;
   if (action.kind === 'scan') return runScan(store, action.targets, onDone, identities, afterScan);

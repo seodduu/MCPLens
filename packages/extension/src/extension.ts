@@ -428,16 +428,6 @@ export async function activate(ctx: vscode.ExtensionContext) {
       });
       return result.ok ? { ok: true, value: result.value } : { ok: false, errorCode: result.errorCode };
     },
-    recordAutoConsent: ({ provider, model }) => {
-      store!.saveInferenceConsent({
-        policyVersion: CONSENT_POLICY_VERSION,
-        provider, model,
-        status: 'accepted',
-        acceptedAt: new Date().toISOString(),
-        revokedAt: null,
-      });
-      store!.save();
-    },
     requestConsent: async ({ provider, model }) => {
       const bodies = store!.allDefinitions().flatMap((definition) => store!.definitionBodiesForServer(definition.serverName));
       const estimate = estimateInferenceCost(provider, bodies.reduce((sum, body) => sum + body.definitionTokens, 0), bodies.length);

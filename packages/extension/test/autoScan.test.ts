@@ -77,10 +77,13 @@ describe('maybeAutoScan', () => {
 
   it('activation scan persists definitions, bodies, and identities in one scan result', async () => {
     const { maybeAutoScan } = await import('../src/autoScan.js');
+    // 첫 실행(정의 0건)에는 자동 스캔이 돌지 않으므로, 이미 쓰던 DB에 새 서버가
+    // 붙은 상황으로 둔다.
     await maybeAutoScan({
       upsertClientServers,
-      allDefinitions: () => [],
-      serversWithDefinitionBodies: () => new Set(),
+      allDefinitions: () => [{ serverName: 'already', toolName: 'tool', definitionTokens: 5,
+        scannedAt: '2026-08-01T00:00:00Z', firstScannedAt: '2026-08-01T00:00:00Z' }],
+      serversWithDefinitionBodies: () => new Set(['already']),
       upsertScanResult,
       upsertDefinitions,
       recordServerScanStatus,
@@ -116,10 +119,13 @@ describe('runScan의 서버별 스캔 상태 기록', () => {
     vi.clearAllMocks();
   });
 
+  // 첫 실행(정의 0건)에는 자동 스캔이 돌지 않는다. 여기서 보려는 것은 그 다음 단계,
+  // 즉 "이미 쓰던 사용자에게 새 서버가 붙었을 때"의 동작이므로 기존 정의를 하나 둔다.
   const store = () => ({
     upsertClientServers,
-    allDefinitions: () => [],
-    serversWithDefinitionBodies: () => new Set(),
+    allDefinitions: () => [{ serverName: 'already', toolName: 'tool', definitionTokens: 5,
+      scannedAt: '2026-08-01T00:00:00Z', firstScannedAt: '2026-08-01T00:00:00Z' }],
+    serversWithDefinitionBodies: () => new Set(['already']),
     upsertScanResult,
     upsertDefinitions,
     recordServerScanStatus,
@@ -163,10 +169,13 @@ describe('maybeAuthPrompt의 로그인 후 재스캔 상태 기록', () => {
   });
 
   const spec = { name: 'srv', command: 'cmd', args: [] };
+  // 첫 실행(정의 0건)에는 자동 스캔이 돌지 않는다. 여기서 보려는 것은 그 다음 단계,
+  // 즉 "이미 쓰던 사용자에게 새 서버가 붙었을 때"의 동작이므로 기존 정의를 하나 둔다.
   const store = () => ({
     upsertClientServers,
-    allDefinitions: () => [],
-    serversWithDefinitionBodies: () => new Set(),
+    allDefinitions: () => [{ serverName: 'already', toolName: 'tool', definitionTokens: 5,
+      scannedAt: '2026-08-01T00:00:00Z', firstScannedAt: '2026-08-01T00:00:00Z' }],
+    serversWithDefinitionBodies: () => new Set(['already']),
     upsertScanResult,
     upsertDefinitions,
     recordServerScanStatus,

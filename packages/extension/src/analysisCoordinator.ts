@@ -16,11 +16,6 @@ export interface AnalysisCoordinatorDeps {
   modelFor?: (provider: 'claude' | 'codex') => string;
   run: InferenceRunner;
   requestConsent?: (choice: { provider: 'claude' | 'codex'; model: string }) => void | Promise<void>;
-  /**
-   * 자동 경로에서 묻지 않고 남기는 동의 기록. core의 분석 게이트가 이 기록을 요구하고,
-   * 무엇을 어떤 제공자·모델로 보냈는지의 감사 흔적이 된다.
-   */
-  recordAutoConsent?: (choice: { provider: 'claude' | 'codex'; model: string }) => void;
   onRefresh?: () => void;
 }
 
@@ -40,7 +35,8 @@ export class AnalysisCoordinator {
 
   /**
    * @param options.auto 스캔 직후 자동으로 도는 호출이다. 사람이 답할 자리가 없으므로
-   *   동의창을 띄우지 않고, 제공자가 둘 다 있으면 묻는 대신 첫 번째(claude)를 고른다.
+   *   동의창을 띄우지 않고, 이미 받아 둔 동의가 없으면 분석을 건너뛴다. 제공자가 둘 다
+   *   있으면 묻는 대신 첫 번째(claude)를 고른다.
    *   자동 분석을 끄는 스위치는 mcpLens.autoAnalyze 설정이며, 호출자가 그것을 본다.
    */
   async analyze(
@@ -62,16 +58,12 @@ export class AnalysisCoordinator {
     const usable = consent !== null && consent.status === 'accepted'
       && consent.provider === chosen.provider && consent.model === chosen.model;
     if (!usable) {
-      if (!options.auto) {
-        await this.deps.requestConsent?.({ provider: chosen.provider, model: chosen.model });
-        return;
-      }
-      // 사용자가 명시적으로 철회했으면 자동 경로도 멈춘다. 철회가 다음 스캔에 조용히
-      // 뒤집히면 그건 철회가 아니다. 다시 켜려면 분석 커맨드를 직접 실행한다.
-      if (consent?.status === 'revoked') return;
-      // core(analyzeUncachedServers)도 같은 동의를 확인하므로 기록 없이는 진행할 수 없다.
-      // 자동 경로는 묻지 않는 대신 무엇을 어떤 제공자로 보냈는지 기록을 남긴다.
-      this.deps.recordAutoConsent?.({ provider: chosen.provider, model: chosen.model });
+      // 자동 경로는 묻지 않는 대신, 사용자가 아직 제공자를 고르고 동의한 적이 없으면
+      // 그냥 멈춘다. 여기서 대신 골라 주면 워크스루의 제공자 선택이 무의미해지고,
+      // 사용자가 승낙한 적 없는 계정에서 토큰이 나간다. 철회한 경우도 같다.
+      if (options.auto) return;
+      await this.deps.requestConsent?.({ provider: chosen.provider, model: chosen.model });
+      return;
     }
 
     const generation = ++this.generation;

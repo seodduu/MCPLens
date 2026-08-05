@@ -42,44 +42,54 @@ describe('AnalysisCoordinator', () => {
   });
 
   // 스캔 직후 자동으로 도는 경로. 사람이 답할 자리가 없으므로 동의창을 띄우지 않는다.
-  // 대신 제공자 CLI 토큰을 쓰므로 mcpLens.autoAnalyze로 끄고, 호출자가 그 설정을 본다.
-  it('runs without asking for consent on the automatic path', async () => {
+  // 이미 받아 둔 동의가 있으면 묻지 않고 그대로 돈다.
+  it('runs without asking again when consent is already on file', async () => {
     const requestConsent = vi.fn();
-    const recordAutoConsent = vi.fn();
     const run = vi.fn(async () => ({ ok: true as const, value: { results: [] } }));
-    // 자동 경로가 기록을 남긴 뒤에는 core 게이트가 통과해야 하므로, 기록 이후를 반영한다.
-    let consent: unknown = null;
-    const testStore = { ...store(), save: vi.fn(), currentInferenceConsent: () => consent };
+    const testStore = {
+      ...store({ policyVersion: 1, provider: 'claude', model: 'haiku', status: 'accepted', acceptedAt: '', revokedAt: null }),
+      save: vi.fn(),
+    };
     const coordinator = new AnalysisCoordinator({
       store: () => testStore as never,
       serverNames: () => ['docs'],
       resolve: () => ({ kind: 'resolved', provider: 'claude', model: 'haiku' }),
       run, requestConsent,
-      recordAutoConsent: (choice) => {
-        recordAutoConsent(choice);
-        consent = { policyVersion: 1, ...choice, status: 'accepted', acceptedAt: '', revokedAt: null };
-      },
     });
 
     await coordinator.analyze([], { auto: true });
     expect(requestConsent).not.toHaveBeenCalled();
-    expect(recordAutoConsent).toHaveBeenCalledWith({ provider: 'claude', model: 'haiku' });
     expect(run).toHaveBeenCalled();
+  });
+
+  // 첫 실행은 사용자 몫이다. 여기서 확장이 대신 고르면 워크스루의 제공자 선택이
+  // 무의미해지고, 승낙한 적 없는 계정에서 토큰이 나간다.
+  it('stays put on the automatic path when the user has never consented', async () => {
+    const requestConsent = vi.fn();
+    const run = vi.fn();
+    const coordinator = new AnalysisCoordinator({
+      store: () => store(),                      // 저장된 동의 없음
+      serverNames: () => ['docs'],
+      resolve: () => ({ kind: 'resolved', provider: 'claude', model: 'haiku' }),
+      run, requestConsent,
+    });
+
+    await coordinator.analyze([], { auto: true });
+    expect(run).not.toHaveBeenCalled();
+    expect(requestConsent).not.toHaveBeenCalled();   // 자동 경로는 묻지도 않는다
   });
 
   // 철회가 다음 스캔에 조용히 뒤집히면 그건 철회가 아니다.
   it('respects an explicit withdrawal on the automatic path', async () => {
     const run = vi.fn();
-    const recordAutoConsent = vi.fn();
     const coordinator = new AnalysisCoordinator({
       store: () => store({ policyVersion: 1, provider: 'claude', model: 'haiku', status: 'revoked', acceptedAt: '', revokedAt: '2026-08-05T00:00:00.000Z' }),
       serverNames: () => ['docs'],
       resolve: () => ({ kind: 'resolved', provider: 'claude', model: 'haiku' }),
-      run, recordAutoConsent,
+      run,
     });
 
     await coordinator.analyze([], { auto: true });
-    expect(recordAutoConsent).not.toHaveBeenCalled();
     expect(run).not.toHaveBeenCalled();
   });
 
@@ -88,15 +98,14 @@ describe('AnalysisCoordinator', () => {
   it('picks the first provider instead of asking when both are available', async () => {
     const run = vi.fn(async () => ({ ok: true as const, value: { results: [] } }));
     const modelFor = vi.fn((provider: 'claude' | 'codex') => provider === 'claude' ? 'haiku' : 'gpt');
-    let consent: unknown = null;
-    const testStore = { ...store(), save: vi.fn(), currentInferenceConsent: () => consent };
+    const testStore = {
+      ...store({ policyVersion: 1, provider: 'claude', model: 'haiku', status: 'accepted', acceptedAt: '', revokedAt: null }),
+      save: vi.fn(),
+    };
     const coordinator = new AnalysisCoordinator({
       store: () => testStore as never, serverNames: () => ['docs'],
       resolve: () => ({ kind: 'choose', choices: ['claude', 'codex'] }),
       modelFor, run,
-      recordAutoConsent: (choice) => {
-        consent = { policyVersion: 1, ...choice, status: 'accepted', acceptedAt: '', revokedAt: null };
-      },
     });
 
     await coordinator.analyze([], { auto: true });

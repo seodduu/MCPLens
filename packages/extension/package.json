@@ -253,7 +253,7 @@
           "default": "always",
           "enumDescriptions": [
             "Asks with a notification popup when a new server to scan is detected",
-            "Scans a newly detected server right away, without asking (default)",
+            "Scans a newly detected server right away, without asking (default). The very first scan is left to you: nothing is scanned automatically until you have scanned once from the walkthrough",
             "Never scans on its own. Scan from the walkthrough, the matrix view, or the MCP Lens: Scan MCP Servers command"
           ],
           "markdownDescription": "Automatic scanning of MCP server tool definitions. Scanning briefly runs each registered stdio server and requests tools/list. No LLM tokens are spent and no config file is modified."
@@ -287,7 +287,7 @@
         "mcpLens.autoAnalyze": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "After a scan, analyze newly measured tools to judge whether each one can be turned off independently. **This calls the provider CLI (Claude or Codex) and spends its tokens**, and it sends tool definitions and aggregated usage counts to that provider. Only tools that have not been analyzed before are sent. Turn this off to analyze manually with `MCP Lens: Analyze Dependencies`."
+          "markdownDescription": "After a server is scanned automatically, analyze its new tools to judge whether each one can be turned off independently. **This calls the provider CLI (Claude or Codex) and spends its tokens**, and it sends tool definitions and aggregated usage counts to that provider. It reuses the consent you already gave and never runs before you have consented once, so the first analysis is always yours to start from the walkthrough. Only tools that have not been analyzed before are sent."
         },
         "mcpLens.claudeModel": {
           "type": "string",
@@ -351,7 +351,7 @@
           {
             "id": "analyze",
             "title": "Analyze tool dependencies",
-            "description": "Find out which tools you can turn off without breaking others. This runs automatically after a scan and calls your Claude or Codex CLI, which spends that account's tokens. Only tool definitions and aggregated usage counts are sent; prompts, tool inputs, tool outputs and source code are never sent. Turn it off with the mcpLens.autoAnalyze setting.\n[Analyze now](command:mcplens.analyzeDependencies)",
+            "description": "Find out which tools you can turn off without breaking others. This calls your Claude or Codex CLI and spends that account's tokens, so you pick the provider and confirm the cost here first. Only tool definitions and aggregated usage counts are sent; prompts, tool inputs, tool outputs and source code are never sent. Afterwards, servers you add later are analyzed automatically with the same choice (turn that off with mcpLens.autoAnalyze).\n[Analyze now](command:mcplens.analyzeDependencies)",
             "media": {
               "image": "media/walkthrough/analyze.svg",
               "altText": "Analyzing dependencies"
