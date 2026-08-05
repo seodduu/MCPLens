@@ -19,7 +19,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/seodduu/MCPLens"
+    "url": "https://github.com/seodduu/MCPLens-V2.git"
   },
   "engines": {
     "vscode": "^1.90.0"
@@ -215,6 +215,12 @@
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "mcpLens.matrix",
+        "contents": "아직 수집된 데이터가 없습니다.\n스캔을 실행하면 등록된 MCP 서버의 툴 정의를 읽어 세션마다 드는 토큰을 계산합니다.\n[스캔 실행](command:mcp-lens.scanNow)\n실제 사용량까지 보려면 Setup Status 뷰에서 훅을 설치하세요.\n[Setup Status 열기](command:mcpLens.setupStatus.focus)"
+      }
+    ],
     "configuration": {
       "title": "MCP Lens",
       "properties": {
@@ -369,7 +375,7 @@
     "build": "node esbuild.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "smoke": "node scripts/bundle-smoke.mjs",
-    "vscode:prepublish": "npm run typecheck && npm run build",
+    "vscode:prepublish": "npm run verify:hooks --prefix ../.. && npm run typecheck && npm run build",
     "package": "npx @vscode/vsce package --no-dependencies"
   },
   "dependencies": {

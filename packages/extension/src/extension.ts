@@ -44,10 +44,12 @@ import { buildSetupRows } from './setupTree.js';
 import { SetupStatusProvider } from './setupTreeProvider.js';
 import { applyCollectionResult } from './collectionRefresh.js';
 import { noInstallTargetsMessage, installedSummaryMessage } from './installHooksAllMessage.js';
+import { openStoreWithRecovery } from './storeOpen.js';
 
 let watcher: LogWatcher | undefined;
 let store: LensStore | undefined;
 let lease: WriterLeaseManager | undefined;
+let coordinator: IngestionCoordinatorLike | undefined;
 let hooksPaused = false;
 
 type IngestionCoordinatorLike = {
@@ -180,8 +182,25 @@ export async function activate(ctx: vscode.ExtensionContext) {
       await computeCollection();
     }));
 
-  store = await LensStore.open(dbPath()); // 전역 제약 2: 공유 경로
-  const coordinator = coordinatorFor(store);
+  // 전역 제약 2: 공유 경로. 손상된 DB 하나 때문에 활성화 전체가 죽지 않도록 복구 경로를 거친다.
+  const opened = await openStoreWithRecovery(dbPath(), {
+    open: (filePath) => LensStore.open(filePath),
+    exists: (filePath) => fs.existsSync(filePath),
+    rename: (from, to) => fs.renameSync(from, to),
+    now: () => new Date(),
+  });
+  if (opened.kind === 'failed') {
+    // 여기서 멈춰도 activate 자체는 성공으로 끝난다. 앞서 등록한 커맨드는 살아 있고,
+    // 데이터가 필요한 기능은 store 가드가 안내 문구를 낸다.
+    item.text = 'Lens: DB error';
+    item.tooltip = opened.message;
+    void vscode.window.showErrorMessage(opened.message);
+    return;
+  }
+  store = opened.store;
+  if (opened.kind === 'recovered') void vscode.window.showWarningMessage(opened.message);
+  else if (opened.kind === 'degraded') void vscode.window.showErrorMessage(opened.message);
+  coordinator = coordinatorFor(store);
   const active = detectClients().filter((c) => c.installed);
   watcher = new LogWatcher(store,
     [new ClaudeAdapter(), new CodexAdapter(), new GeminiAdapter()]
@@ -278,6 +297,13 @@ export async function activate(ctx: vscode.ExtensionContext) {
   }
 
   async function computeCollection(): Promise<ClientRowInput[]> {
+    // installHooks 커맨드는 store 준비보다 먼저 등록된다. 활성화 극초반이나 DB 열기
+    // 실패 뒤에 불려도 죽지 않고 안내만 낸다.
+    if (!store) {
+      void vscode.window.showInformationMessage(
+        'MCP Lens: 데이터베이스를 준비하는 중입니다. 잠시 뒤 다시 시도하세요.');
+      return [];
+    }
     const gen = ++collectionGeneration;
     const detected = detectClients().filter((c) => c.installed).map((c) => c.client);
     const byHealth = store!.collectionHealthByClient();
@@ -481,11 +507,15 @@ export async function activate(ctx: vscode.ExtensionContext) {
     void coordinator?.stopDraining().catch(() => {}); // pending 감시 중지(인플라이트 drain은 자연 종료)
     let lastMtime = 0;
     if (!roPoll) roPoll = setInterval(() => {
+      let acquired = false;
       try {
         const m = fs.statSync(dbPath()).mtimeMs;
         if (m !== lastMtime) { lastMtime = m; store!.reload(); refresh(); }
+        // 락 파일 권한 문제 등으로 acquire가 throw할 수 있다. 4초마다 미처리 예외를
+        // 내지 않도록 같은 try 안에 둔다. 승격 자체는 catch 밖에서 한다.
+        acquired = lease!.tryAcquire();
       } catch { /* 파일 없음/일시 오류 무시 */ }
-      if (lease!.tryAcquire()) enterWriter(); // 홀더가 죽었으면 승격
+      if (acquired) enterWriter(); // 홀더가 죽었으면 승격
     }, 4_000);
   }
 
@@ -720,6 +750,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
 export async function deactivate() {
   await watcher?.stop();
+  // pending 감시 인터벌을 남기지 않는다. 프로세스 종료 경로지만 정리 순서를 명시한다.
+  await coordinator?.stopDraining().catch(() => {});
   try { store?.save(); }
   catch (e) {
     // read-only(비홀더)는 정상적으로 save()가 차단된다(StaleWriterError) — 무시.
