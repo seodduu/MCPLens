@@ -14,7 +14,6 @@ export interface LensNode {
   id: string;
   label: string;
   description: string;
-  tooltip?: string;
   /** 'inspect'|'remove' 등 — 래퍼가 아이콘 선택에 사용 */
   action?: MatrixRow['recommendation']['action'];
   /** 확신 등급 — low는 아이콘 강조에서 제외한다 */
@@ -184,7 +183,6 @@ export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set
             id: `${client}/${server}/${r.toolName}`,
             label: r.toolName,
             description: enabled === false ? `${toolDesc}${analysisText} · Disabled` : `${toolDesc}${analysisText}`,
-            tooltip: r.recommendation.reason,
             action,
             confidence,
             searchedNotCalled: r.loadPattern === 'search-pollution',

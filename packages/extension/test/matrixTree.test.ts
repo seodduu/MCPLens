@@ -121,6 +121,18 @@ describe('buildTree', () => {
     ]));
   });
 
+  // 두 액션 모두 행에 마우스를 올리면 바로 보인다 (우클릭 메뉴에 숨기지 않는다).
+  it('exposes both matrix actions inline on hover', () => {
+    const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+    const matrixItems = manifest.contributes.menus['view/item/context']
+      .filter((item: { when?: string }) => item.when?.includes('view == mcpLens.matrix'));
+    for (const command of ['mcplens.disableGlobally', 'mcplens.restoreGlobally']) {
+      expect(matrixItems).toEqual(expect.arrayContaining([
+        expect.objectContaining({ command, group: 'inline' }),
+      ]));
+    }
+  });
+
   it('로드만 되고 호출 0인 툴도 정의 토큰을 누적 비용으로 표시한다', () => {
     const loadedOnly: EngineInput = {
       definitions: [{ serverName: 'notion', toolName: 'notion-update-page',
@@ -560,6 +572,5 @@ describe('확신 등급 렌더링', () => {
     expect(node.confidence).toBe('medium');
     expect(node.confidence).not.toBe('high');
     expect(node.description).not.toContain('candidate'); // 표시 강등은 low만
-    expect(node.tooltip).toContain('2026-03-14');
   });
 });

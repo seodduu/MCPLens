@@ -190,7 +190,7 @@
         {
           "command": "mcplens.restoreGlobally",
           "when": "view == mcpLens.matrix && viewItem == mcpAnalysis-restore",
-          "group": "1_actions"
+          "group": "inline"
         }
       ]
     },

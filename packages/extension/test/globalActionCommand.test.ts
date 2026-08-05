@@ -81,15 +81,29 @@ describe('global action commands', () => {
     }
   });
 
+  // 사용량 판단은 더 이상 차단하지 않는다. Independent면 사람이 확인 대화상자에서 결정한다.
   it.each([
     ['calls', { callsSince: () => [{ serverName: 'docs', toolName: 'search' }] }],
-    ['confidence', { sessionsSince: () => [] }],
-    ['collection health', { collectionHealthByClient: () => new Map([['claude-code', { health: 'degraded' }]]) }],
+    ['low confidence', { sessionsSince: () => [] }],
+    ['degraded collection health', { collectionHealthByClient: () => new Map([['claude-code', { health: 'degraded' }]]) }],
     ['recent restore', { hasRestoredActionSince: () => true }],
-  ])('rejects ineligible %s before applying', async (_name, overrides) => {
-    const apply = vi.fn();
+  ])('applies despite %s because the tool is Independent', async (_name, overrides) => {
+    const apply = vi.fn(async () => ({ status: 'applied' as const, rule: action.ownedRule,
+      backupPath: action.backupPath, preFingerprint: 'before', postFingerprint: 'after' }));
     const result = await disableGlobally({
       store: eligibleStore(overrides) as any,
+      target: { client: 'claude-code', serverName: 'docs', toolName: 'search', definitionSetHash: action.definitionSetHash },
+      rolloutAllowed: true, analysisRulesVersion: 1, apply, createAction: () => action,
+    });
+    expect(result).toEqual({ ok: true });
+    expect(apply).toHaveBeenCalledOnce();
+  });
+
+  it('rejects a tool that is not Independent before applying', async () => {
+    const apply = vi.fn();
+    const result = await disableGlobally({
+      store: eligibleStore({ findDependencyAnalysis: () => ({ results: [
+        { serverName: 'docs', toolName: 'search', status: 'Dependent' }] }) }) as any,
       target: { client: 'claude-code', serverName: 'docs', toolName: 'search', definitionSetHash: action.definitionSetHash },
       rolloutAllowed: true, analysisRulesVersion: 1, apply,
     });

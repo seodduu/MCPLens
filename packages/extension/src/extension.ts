@@ -32,6 +32,7 @@ import { approvalPendingClients, pendingHookClients } from './nudge.js';
 import { claimFirstRun, WALKTHROUGH_CATEGORY_ID } from './firstRun.js';
 import { buildAnalysisRows } from './analysisTree.js';
 import { buildAnalysisDetails } from './analysisDetails.js';
+import { buildDisableConfirmation } from './disableConfirmation.js';
 import { requestInferenceConsent, withdrawConsent } from './inferenceConsent.js';
 import { readProviderConfig, resolveProvider, type ProviderResolution } from './providerConfig.js';
 import { runInference } from './inferenceCli.js';
@@ -584,6 +585,14 @@ export async function activate(ctx: vscode.ExtensionContext) {
     if (!node?.canDisableGlobally || !node.serverName || !node.toolName) return;
     const client = actionClient(node); const body = store!.definitionBodiesForServer(node.serverName).find((row) => row.toolName === node.toolName);
     if (!client || !body) return;
+    // 무엇을 잃는지 먼저 보여주고 사람의 확인을 받는다. 복원 경로에는 이 단계가 없다.
+    const analysisResult = store!.findDependencyAnalysis(body.definitionSetHash, ANALYSIS_RULES_VERSION)?.results
+      .find((row) => row.serverName === node.serverName && row.toolName === node.toolName);
+    if (!analysisResult) { void vscode.window.showInformationMessage('This tool has not been analyzed yet.'); return; }
+    const confirmation = buildDisableConfirmation(analysisResult);
+    const answer = await vscode.window.showWarningMessage(
+      confirmation.message, { modal: true, detail: confirmation.detail }, confirmation.confirmLabel);
+    if (answer !== confirmation.confirmLabel) return;
     const rolloutAllowed = actionAllowedByRollout(dependencyRollout(), client);
     const result = await disableGlobally({ store: store!, target: { client, serverName: node.serverName, toolName: node.toolName, definitionSetHash: body.definitionSetHash },
       rolloutAllowed, analysisRulesVersion: ANALYSIS_RULES_VERSION,

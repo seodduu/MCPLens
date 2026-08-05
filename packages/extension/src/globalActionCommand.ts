@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
-  actionEligibility, buildMatrix, type ActionMutation, type GlobalAction,
+  actionEligibility, type ActionMutation, type GlobalAction,
   type EligibilityResult, type GlobalActionClient, type LensStore,
 } from '@mcp-lens/core';
 
@@ -59,33 +59,17 @@ export function currentActionEligibility(
   const analysis = body && store.findDependencyAnalysis(body.definitionSetHash, analysisRulesVersion);
   const result = analysis?.results.find((row) => row.serverName === target.serverName
     && row.toolName === target.toolName);
-  const matrix = buildMatrix({
-    definitions: store.allDefinitions(),
-    calls: store.callsSince('1970-01-01T00:00:00.000Z'),
-    loads: store.loadsSince('1970-01-01T00:00:00.000Z'),
-    sessions: store.sessionsSince('1970-01-01T00:00:00.000Z'),
-    lastCallByTool: store.lastCallByTool(),
-    serversByClient: store.serversByClient(),
-  }).find((row) => row.serverName === target.serverName && row.toolName === target.toolName);
   const identities = store.serverIdentities(target.serverName);
   const clientHasServer = store.serversByClient().get(target.client)?.has(target.serverName) === true;
   const identityConflictState = clientHasServer && identities.length > 0
     && identityIsSafe(store, target.serverName, target.client)
     ? 'clear' : 'conflict';
-  const health = store.collectionHealthByClient().get(target.client)?.health ?? 'unavailable';
-  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   return actionEligibility({
-    recommendationAction: matrix?.recommendation.action ?? 'unknown',
-    recommendationConfidence: matrix?.recommendation.confidence ?? 'low',
-    callCount: matrix?.callCount ?? Number.POSITIVE_INFINITY,
     analysisStatus: result?.status ?? 'Review required',
     identityConflictState,
-    collectionHealth: health,
     hasDefinitionBody: body !== undefined,
     hasActiveAction: store.activeActionFor(target.client, target.serverName, target.toolName) !== null,
     client: target.client,
-    recentRestoredSameDefinition: store.hasRestoredActionSince(
-      target.client, target.serverName, target.toolName, target.definitionSetHash, cutoff),
   });
 }
 
