@@ -218,7 +218,7 @@
     "viewsWelcome": [
       {
         "view": "mcpLens.matrix",
-        "contents": "아직 수집된 데이터가 없습니다.\n스캔을 실행하면 등록된 MCP 서버의 툴 정의를 읽어 세션마다 드는 토큰을 계산합니다.\n[스캔 실행](command:mcp-lens.scanNow)\n실제 사용량까지 보려면 Setup Status 뷰에서 훅을 설치하세요.\n[Setup Status 열기](command:mcpLens.setupStatus.focus)"
+        "contents": "No data collected yet.\nA scan reads each configured MCP server's tool definitions and measures what they cost per session.\n[Scan now](command:mcp-lens.scanNow)\nTo see actual usage, install the collection hooks from the Setup Status view.\n[Open Setup Status](command:mcpLens.setupStatus.focus)"
       }
     ],
     "configuration": {

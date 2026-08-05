@@ -10,7 +10,7 @@ import {
 import type { AnalysisRow } from './analysisTree.js';
 
 export interface LensNode {
-  kind: 'client' | 'server' | 'tool';
+  kind: 'client' | 'server' | 'tool' | 'hint';
   id: string;
   label: string;
   description: string;
@@ -152,16 +152,55 @@ function sumCosts(costs: CumulativeCost[]): CumulativeCost {
   );
 }
 
+/**
+ * 스캔으로 잰 정의 토큰. 사용 이력이 없어도 이 값은 이미 실측이다.
+ *
+ * 실측 회귀: 훅을 아직 설치하지 않은 첫 사용자는 스캔 직후 사용 기록이 0인데,
+ * 예전에는 이 경로가 서버 이름만 싣고 "0 calls · 0 tokens"를 하드코딩해 방금 잰
+ * 정의 토큰을 통째로 버렸다. 스캔했는데 화면이 0을 말하면 도구의 존재 이유가 사라진다.
+ *
+ * 세션 기록이 없어 업프론트인지 지연 로딩인지 판정할 수 없으므로 "/session"을 붙이지
+ * 않는다. 잰 사실만 말하고 세션당 부담 주장은 사용 기록이 생긴 뒤로 미룬다.
+ */
+function definedTools(definitions: EngineInput['definitions'], serverName: string) {
+  return definitions
+    .filter((d) => d.serverName === serverName)
+    .map((d) => ({ toolName: d.toolName, tokens: d.definitionTokens }))
+    .sort((a, b) => (b.tokens ?? 0) - (a.tokens ?? 0) || a.toolName.localeCompare(b.toolName));
+}
+
+function definitionSegment(tools: { tokens: number | null }[]): string {
+  if (tools.length === 0) return '0 tokens';
+  const measured = tools.filter((t) => t.tokens != null);
+  if (measured.length === 0) return 'definition unmeasured';
+  const sum = measured.reduce((s, t) => s + (t.tokens ?? 0), 0);
+  return `definition ${fmtTok(sum)}`;
+}
+
 /** 사용 이력 없는 managed 서버 → 0회 서버 노드 (스펙 1-2: 설정된 서버는 항상 표시) */
-function zeroUsageServerNodes(managed: ManagedServer[], usedNames: Set<string>): LensNode[] {
-  return managed.filter((s) => !usedNames.has(s.name)).map((s): LensNode => ({
+function zeroUsageServerNodes(
+  managed: ManagedServer[], usedNames: Set<string>,
+  definitions: EngineInput['definitions'] = [],
+): LensNode[] {
+  return managed.filter((s) => !usedNames.has(s.name)).map((s): LensNode => {
+    const tools = definedTools(definitions, s.name);
+    const desc = `0 calls · ${definitionSegment(tools)}`;
+    return {
     kind: 'server',
     id: `claude-code/${s.name}`,
     label: s.name,
-    description: s.enabled ? '0 calls · 0 tokens' : '0 calls · 0 tokens · Disabled',
+    description: s.enabled ? desc : `${desc} · Disabled`,
     client: 'claude-code', serverName: s.name, enabled: s.enabled,
-    children: [],
-  }));
+    children: tools.map((t): LensNode => ({
+      kind: 'tool',
+      id: `claude-code/${s.name}/${t.toolName}`,
+      label: t.toolName,
+      description: `0 calls · ${definitionSegment([t])}`,
+      client: 'claude-code', serverName: s.name, toolName: t.toolName,
+      children: [],
+    })),
+    };
+  });
 }
 
 export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set(),
@@ -174,7 +213,7 @@ export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set
   managedServers = managedServers.filter((s) => !excludeServers.has(s.name));
   const managed = new Map(managedServers.map((s) => [s.name, s]));
   const analysisByTool = new Map(analysisRows.map((row) => [`${row.serverName}\u0000${row.toolName}`, row]));
-  const roots = splitByClient(input).map(({ client, input: sub }) => {
+  const roots: LensNode[] = splitByClient(input).map(({ client, input: sub }) => {
     // 모드 인지 표시: 지연 로딩 클라이언트에서는 실비용 0인 미사용 툴을 숨긴다
     const rows = visibleMatrixRows(buildMatrix(sub), sub.sessions)
       .filter((r) => !excludeServers.has(r.serverName));
@@ -246,7 +285,8 @@ export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set
       };
     });
     if (client === 'claude-code') {
-      servers.push(...zeroUsageServerNodes(managedServers, new Set(byServer.keys())));
+      servers.push(...zeroUsageServerNodes(
+        managedServers, new Set(byServer.keys()), input.definitions));
     }
     const totalCalls = rows.reduce((s, r) => s + r.callCount, 0);
     const totalErrors = rows.reduce((s, r) => s + r.reliability.errorCount, 0);
@@ -260,10 +300,26 @@ export function buildTree(input: EngineInput, deniedRules: Set<string> = new Set
   });
   // 기간 내 claude-code 세션이 없어도 설정된 서버는 표시한다 (스펙 1-2)
   if (managedServers.length > 0 && !roots.some((r) => r.id === 'claude-code')) {
+    const servers = zeroUsageServerNodes(managedServers, new Set(), input.definitions);
+    const allTools = managedServers.flatMap((s) => definedTools(input.definitions, s.name));
     roots.push({
       kind: 'client', id: 'claude-code', label: 'claude-code',
-      description: '0 sessions · total 0 calls · 0 tokens',
-      children: zeroUsageServerNodes(managedServers, new Set()),
+      description: `0 sessions · total 0 calls · ${definitionSegment(allTools)}`,
+      children: servers,
+    });
+  }
+  // 스캔 전이면 트리는 0만 늘어선 채 다음 할 일을 말해 주지 않는다. package.json의
+  // viewsWelcome은 트리가 완전히 빌 때만 뜨는데, 서버가 하나라도 설정돼 있으면
+  // "0 calls · 0 tokens" 행이 생겨 영영 뜨지 않는다. 그 자리를 이 힌트 행이 메운다.
+  // 맨 뒤에 붙인다. 앞에 끼우면 "첫 행은 클라이언트"라는 기존 계약이 깨지고,
+  // 스캔 전에는 트리가 짧아 맨 뒤여도 한 화면에 들어온다.
+  if (input.definitions.length === 0) {
+    roots.push({
+      kind: 'hint',
+      id: 'hint/scan',
+      label: 'Run a scan to measure token cost',
+      description: 'No tool definitions measured yet',
+      children: [],
     });
   }
   return roots;
