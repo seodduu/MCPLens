@@ -571,7 +571,11 @@ export async function activate(ctx: vscode.ExtensionContext) {
   void maybeAutoScan(store, refresh, analyzeAfterScan);                     // 시작 시 1회 판정
   ctx.subscriptions.push(watchConfigSources(store, refresh, analyzeAfterScan)); // 이후 설정 파일 감시
   ctx.subscriptions.push(
-    registerScanNow(() => store!, refresh, analyzeAfterScan),
+    // 수동 스캔에는 분석을 잇지 않는다. 이 커맨드는 워크스루 1단계 버튼이고, 누르면
+    // 3단계(분석)가 소리 없이 끝나면서 사용자 토큰까지 나간다. 4단계를 차례로 보여주는
+    // 화면에서 1단계가 3단계를 대신 해버리면 남은 단계가 무엇을 뜻하는지 알 수 없다.
+    // 자동 분석은 새 서버를 감지해 스스로 스캔한 경로에서만 이어진다.
+    registerScanNow(() => store!, refresh),
     registerOpenRolloutSetting(), registerAuthenticateServer(refresh));
 
   const requestAnalysis = async (node?: LensNode, reanalyze = false) => {
