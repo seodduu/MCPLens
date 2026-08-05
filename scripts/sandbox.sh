@@ -17,7 +17,20 @@ EXT_ID="seodduu.mcp-context-lens"
 VSIX=""
 INSTALL=1
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CODE_APP="/Applications/Visual Studio Code.app/Contents/MacOS/Electron"
+# 실행 바이너리 이름은 VS Code 버전에 따라 다르다. 요즘 빌드는 Code이고 예전 빌드는
+# Electron이었다. 낡은 이름을 박아 두면 env가 "No such file or directory"로 죽는다.
+CODE_MACOS="/Applications/Visual Studio Code.app/Contents/MacOS"
+if [ -n "${CODE_APP:-}" ]; then
+  :
+elif [ -x "$CODE_MACOS/Code" ]; then
+  CODE_APP="$CODE_MACOS/Code"
+elif [ -x "$CODE_MACOS/Electron" ]; then
+  CODE_APP="$CODE_MACOS/Electron"
+else
+  echo "VS Code 실행 바이너리를 찾지 못했습니다: $CODE_MACOS" >&2
+  echo "다른 위치에 설치했다면 CODE_APP=<바이너리 경로> $0 로 지정하세요." >&2
+  exit 2
+fi
 
 while [ $# -gt 0 ]; do
   case "$1" in
