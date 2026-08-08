@@ -14,12 +14,12 @@ mcp-lens report
 ```
 
 ```
-server          tool                                 defTokens  calls  respTokens  loaded/sessions  errorRate  errorTokens  action         confidence  reason
---------------  -----------------------------------  ---------  -----  ----------  ---------------  ---------  -----------  -------------  ----------  ------
-knowledge-base  knowledge-base-search                1809       10     124         5/533            0%         0            keep           high        called 10 times
-web-search      web-search_web_search                1365       1      96          0/533            0%         0            keep           high        called 1 time
-web-search      web-search_place_search              17251      0      0           0/533            -          0            remove         medium      definition 17,251 tokens, 0 calls. small savings, but cleans up the search space. 98 sessions/3d observed, confirmed with more observation
-knowledge-base  knowledge-base-query-meeting-notes    5929       0      0           1/533            -          0            filter-server  high        Only 2 of 28 tools used on server knowledge-base. Tool filtering recommended. small savings, but cleans up the search space (loaded but never called, so it pollutes the search space). 441 sessions/19d observed, accumulated cost 2,614,689 tokens. Restorable with one config line
+server          tool                                defTokens  calls  respTokens  loaded/sessions  errorRate  errorTokens  action         confidence  reason
+--------------  ----------------------------------  ---------  -----  ----------  ---------------  ---------  -----------  -------------  ----------  ------
+knowledge-base  knowledge-base-search               1809       10     124         5/533            0%         0            keep           high        called 10 times
+web-search      web-search_web_search               1365       1      96          0/533            0%         0            keep           high        called 1 time
+web-search      web-search_place_search             17251      0      0           0/533            -          0            remove         medium      definition 17,251 tokens, 0 calls. small savings, but cleans up the search space. 98 sessions/3d observed, confirmed with more observation
+knowledge-base  knowledge-base-query-meeting-notes  5929       0      0           1/533            -          0            filter-server  high        Only 2 of 28 tools used on server knowledge-base. Tool filtering recommended. small savings, but cleans up the search space (loaded but never called, so it pollutes the search space). 441 sessions/19d observed, accumulated cost 2,614,689 tokens. Restorable with one config line
 
 savings: potential=61893 actual=26839 saved=35054
 ```
