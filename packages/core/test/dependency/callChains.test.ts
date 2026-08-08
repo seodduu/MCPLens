@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import records from '../../../../fixtures/dependency/call-chains.json' assert { type: 'json' };
-import { findCallChainDependencies } from '../../src/dependency/callChains.js';
+import { findCallChainDependencies, CALL_CHAIN_MIN_SESSIONS } from '../../src/dependency/callChains.js';
 import type { DependencyCallRecord } from '../../src/types.js';
 
 describe('findCallChainDependencies', () => {
@@ -27,5 +27,26 @@ describe('findCallChainDependencies', () => {
     ];
 
     expect(findCallChainDependencies(calls, { now: '2026-08-03T00:02:00.000Z' })).toEqual([]);
+  });
+
+  it('keeps the three-session threshold after extracting the constant', () => {
+    expect(CALL_CHAIN_MIN_SESSIONS).toBe(3);
+
+    const session = (id: string, day: string): DependencyCallRecord[] => [
+      { sequence: 1, sessionId: id, serverName: 's', toolName: 'a', calledAt: `2026-08-0${day}T00:00:00.000Z`, isError: false },
+      { sequence: 2, sessionId: id, serverName: 's', toolName: 'b', calledAt: `2026-08-0${day}T00:01:00.000Z`, isError: false },
+    ];
+    const twoSessions = [...session('s1', '1'), ...session('s2', '2')];
+    const threeSessions = [...twoSessions, ...session('s3', '3')];
+
+    expect(findCallChainDependencies(twoSessions, { now: '2026-08-04T00:00:00.000Z' })).toEqual([]);
+    expect(findCallChainDependencies(threeSessions, { now: '2026-08-04T00:00:00.000Z' })).toEqual([
+      {
+        serverName: 's',
+        toolName: 'a',
+        dependedOnBy: ['b'],
+        evidence: ['call-chain:b:3/3'],
+      },
+    ]);
   });
 });

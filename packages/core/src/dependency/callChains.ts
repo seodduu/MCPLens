@@ -1,6 +1,13 @@
 import type { DependencyCallRecord } from '../types.js';
 import type { DependencyEvidence } from './merge.js';
 
+/**
+ * Minimum number of sessions in which A preceded B before the pair counts as a signal.
+ * Below this the ordering is anecdote, not pattern. The reanalysis trigger reuses this value:
+ * re-running the analysis is only worth its cost once this tier can produce a signal at all.
+ */
+export const CALL_CHAIN_MIN_SESSIONS = 3;
+
 export interface CallChainOptions {
   now?: string;
 }
@@ -48,7 +55,7 @@ export function findCallChainDependencies(
           if (hasABeforeB) before += 1;
           else bWithoutA += 1;
         }
-        if (before >= 3 && before / bSessions >= 0.8 && bWithoutA < 2) {
+        if (before >= CALL_CHAIN_MIN_SESSIONS && before / bSessions >= 0.8 && bWithoutA < 2) {
           evidence.push({
             serverName,
             toolName: a,
