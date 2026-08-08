@@ -7,15 +7,15 @@
 ## 쉬운 방법: 확장이 대신 하게 한다
 
 VS Code 확장을 쓰고 있다면 `MCP Lens: Install Hooks for All Clients` 커맨드를 실행한다.
-그러면 이 플러그인이 자동으로 설치된다. [VS Code Extension](/ko/guide/vscode-extension) 참고.
+그러면 이 플러그인이 자동으로 설치된다. [VS Code 확장](/ko/guide/vscode-extension) 참고.
 이 경로를 탔다면 아래 수동 설치 절은 건너뛰고 [설치 후](#설치-후)로 바로 간다. 이 절은
 건너뛰지 않는다. 플러그인이 어떻게 설치됐든 Codex는 훅의 해시를 그 절에서 신뢰하기 전까지
 훅을 실행하지 않는다.
 
 ## 플러그인을 수동으로 설치한다
 
-Codex 플러그인은 로컬 마켓플레이스 스냅샷에서 등록하며, 이 스냅샷은 리포지터리 빌드가
-만든다. 먼저 리포지터리를 빌드하고, 그 스냅샷을 `codex` CLI에 등록한다.
+Codex 플러그인은 로컬 마켓플레이스 스냅샷에서 등록하며, 이 스냅샷은 저장소 빌드가
+만든다. 먼저 저장소를 빌드하고, 그 스냅샷을 `codex` CLI에 등록한다.
 
 ```bash
 git clone https://github.com/seodduu/MCPLens-V2.git

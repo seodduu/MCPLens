@@ -6,10 +6,10 @@ hero:
   tagline: AI 코딩 클라이언트에 붙은 MCP 서버가 매 프롬프트마다 얼마를 쓰는지, 그리고 실제로 얼마나 쓰이는지 본다.
   actions:
     - theme: brand
-      text: Quick Start
+      text: 빠른 시작
       link: /ko/quick-start
     - theme: alt
-      text: View on GitHub
+      text: GitHub에서 보기
       link: https://github.com/seodduu/MCPLens-V2
 
 features:

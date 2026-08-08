@@ -1,20 +1,21 @@
 # 전역 조치
 
 이 문서를 끝내면 Claude Code와 Codex 중 하나 또는 둘 다에서 전역 조치의 잠금을 풀고,
-[리포트](/ko/guide/reading-reports)의 `remove`나 `filter-server` 권장을 설정 파일을 직접
+[리포트 읽기](/ko/guide/reading-reports)의 `remove`나 `filter-server` 권장을 설정 파일을 직접
 고치지 않고 끌 수 있으며, 마음이 바뀌면 되돌릴 수 있는 상태가 된다.
 
 전역 조치는 전적으로 [VS Code 확장](/ko/guide/vscode-extension) 안에서 산다. 이 문서의
 모든 단계는 VS Code 커맨드이고, CLI에는 대응하는 기능이 없다. CLI만 쓰는 경로에서는 리포트의
-한 행을 직접 클라이언트 설정을 고쳐서 반영해야 한다.
-[툴을 전역으로 끄기](#툴을-전역으로-끄기) 아래 두 블록이 확장이라면 쓸 정확한 규칙을 보여준다.
+한 행에 직접 클라이언트 설정을 고쳐서 대응해야 한다.
+[툴을 전역으로 끄기](#툴을-전역으로-끄기) 아래 두 블록은 확장이 써 넣었을 규칙 그대로를
+보여준다.
 
 ## 전역 조치란
 
 전역 조치는 클라이언트 설정을 고쳐서 현재 세션뿐 아니라 모든 세션에서 그 툴을 쓸 수 없게
 만든다. 리포트가 어떤 툴을 꺼도 안전하다고 알려준 다음 단계다.
 
-| Client | 전역 조치 |
+| 클라이언트 | 전역 조치 |
 |---|---|
 | Claude Code | 지원 |
 | Codex | 지원 |
@@ -28,7 +29,7 @@ Gemini CLI는 아예 제외된다. 아래 rollout 설정과 무관하게 대상�
 MCP Lens는 여느 때처럼 권장을 계산하고 리포트와 사이드바에 보여주지만, 클라이언트 설정
 파일은 절대 고치지 않는다.
 
-| Value | 효과 |
+| 값 | 효과 |
 |---|---|
 | `off` (기본값) | 전역 조치가 잠긴다. Lens는 클라이언트 설정을 고치지 않는다. |
 | `claude` | Claude Code에 대해서만 전역 조치를 허용한다. |
@@ -51,11 +52,10 @@ Command Palette(`Cmd/Ctrl+Shift+P`)에서 **MCP Lens: Open Global Actions Settin
 
 ## 의존성 분석을 먼저 돌린다
 
-**MCP Lens: Disable Globally**는 의존성 분석이 아직 판정하지 않은 툴에는 거부한다. 무언가를
-고치기 직전에 그 툴에 대한 저장된 분석 결과를 다시 읽고, 결과가 없으면 "Review required"로
-취급하는데 이는 대상 자격이 없다. 그러니 무언가를 끄기 전에 **MCP Lens: Analyze
-Dependencies**를 실행하거나(또는 온보딩 walkthrough의 3단계가 대신 하게 두거나) 먼저
-그것부터 한다.
+**MCP Lens: Disable Globally**는 의존성 분석이 아직 판정하지 않은 툴에 대해서는 거부한다.
+무언가를 고치기 직전에 그 툴에 대한 저장된 분석 결과를 다시 읽고, 결과가 없으면 "Review
+required"로 취급하는데 이는 대상 자격이 없다. 그러니 무언가를 끄기 전에 **MCP Lens: Analyze
+Dependencies**를 실행한다(또는 온보딩 walkthrough의 3단계가 대신 하게 둔다).
 
 ## 툴을 전역으로 끄기
 

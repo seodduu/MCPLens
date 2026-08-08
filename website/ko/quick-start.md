@@ -1,4 +1,4 @@
-# Quick Start
+# 빠른 시작
 
 이 문서를 끝내면 MCP Lens가 설치되고 자기 비용 × 사용량 매트릭스, 즉 각 MCP 툴 정의가
 몇 토큰을 쓰는지와 실제로 몇 번 호출되었는지를 나란히 놓은 표를 직접 본 상태가 된다.
@@ -48,8 +48,8 @@ npm link -w @mcp-lens/cli      # only if you want mcp-lens outside the repositor
 ::: code-group
 
 ```md [VS Code extension]
-Reopen VS Code. The MCP Lens icon appears in the activity bar, and the onboarding walkthrough opens
-automatically.
+VS Code를 다시 연다. activity bar에 MCP Lens 아이콘이 나타나고, 온보딩 walkthrough가
+자동으로 열린다.
 ```
 
 ```bash [CLI]
@@ -67,7 +67,7 @@ mcp-lens: MCP context accounting tool
 ## 5분 만에 하는 첫 감사
 
 두 경로 모두 같은 매트릭스에 도달한다. 아래 CLI 명령은 앞의 경고대로 `npx --no-install mcp-lens`
-형태를 쓰며 클론한 리포지토리 안에서 실행한다. 선택 사항인 `npm link` 단계를 실행했다면
+형태를 쓰며 클론한 저장소 안에서 실행한다. 선택 사항인 `npm link` 단계를 실행했다면
 어디서든 그냥 `mcp-lens`가 동작하므로 이 문서 전체에서 `npx --no-install` 접두사를 빼도 된다.
 
 ### 1. MCP 서버 스캔
@@ -75,9 +75,9 @@ mcp-lens: MCP context accounting tool
 ::: code-group
 
 ```md [VS Code extension]
-Run **MCP Lens: Scan MCP Servers** from the Command Palette (`Cmd/Ctrl+Shift+P`). The onboarding
-walkthrough's first step runs the same scan, so if you just finished the walkthrough this is
-already done.
+Command Palette(`Cmd/Ctrl+Shift+P`)에서 **MCP Lens: Scan MCP Servers**를 실행한다. 온보딩
+walkthrough의 첫 단계가 같은 스캔을 실행하므로, walkthrough를 막 끝냈다면 이미 완료된
+상태다.
 ```
 
 ```bash [CLI]
@@ -94,8 +94,8 @@ npx --no-install mcp-lens scan
 ::: code-group
 
 ```md [VS Code extension]
-Open the MCP Lens icon in the activity bar and look at the `Cost × Usage Matrix` view. For the same
-matrix as a full report page, run **MCP Lens: Show Report** from the Command Palette.
+activity bar에서 MCP Lens 아이콘을 열고 `Cost × Usage Matrix` 뷰를 본다. 같은 매트릭스를
+전체 리포트 페이지로 보려면 Command Palette에서 **MCP Lens: Show Report**를 실행한다.
 ```
 
 ```bash [CLI]
@@ -127,5 +127,5 @@ savings: potential=61893 actual=26839 saved=35054
 이제 매트릭스를 봤다. `calls`가 모든 항목에서 0으로 머물지 않고 실제 사용량을 반영하게
 하려면 다음으로 자기 클라이언트에 훅을 설치한다. [Claude Code](/ko/guide/claude-code),
 [Codex](/ko/guide/codex), [Gemini CLI](/ko/guide/gemini-cli) 중 하나를 본다. 열과 조치가
-정확히 무엇을 뜻하는지는 [Reading Reports](/ko/guide/reading-reports)를 본다. 스캔과 훅이
-내부에서 어떻게 맞물리는지는 [How It Works](/ko/concepts/how-it-works)를 본다.
+정확히 무엇을 뜻하는지는 [리포트 읽기](/ko/guide/reading-reports)를 본다. 스캔과 훅이
+내부에서 어떻게 맞물리는지는 [동작 원리](/ko/concepts/how-it-works)를 본다.

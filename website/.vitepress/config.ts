@@ -65,7 +65,36 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: true,
   themeConfig: {
-    search: { provider: 'local' },
+    search: {
+      provider: 'local',
+      options: {
+        locales: {
+          ko: {
+            translations: {
+              button: {
+                buttonText: '검색',
+                buttonAriaLabel: '검색'
+              },
+              modal: {
+                displayDetails: '상세 목록 표시',
+                resetButtonTitle: '검색 초기화',
+                backButtonTitle: '검색 닫기',
+                noResultsText: '검색 결과 없음',
+                footer: {
+                  selectText: '선택',
+                  selectKeyAriaLabel: '엔터',
+                  navigateText: '이동',
+                  navigateUpKeyAriaLabel: '위쪽 화살표',
+                  navigateDownKeyAriaLabel: '아래쪽 화살표',
+                  closeText: '닫기',
+                  closeKeyAriaLabel: 'esc'
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     socialLinks: [{ icon: 'github', link: 'https://github.com/seodduu/MCPLens-V2' }],
     outline: 'deep'
   },
@@ -86,13 +115,27 @@ export default defineConfig({
       label: '한국어',
       lang: 'ko',
       link: '/ko/',
+      description:
+        'MCP 서버의 컨텍스트 회계: 정의 토큰 비용과 실제 사용량을 클라이언트별로 대조한다.',
       themeConfig: {
         nav: [
           { text: '빠른 시작', link: '/ko/quick-start' },
           { text: '가이드', link: '/ko/guide/vscode-extension' },
           { text: '레퍼런스', link: '/ko/reference/cli' }
         ],
-        sidebar: koSidebar
+        sidebar: koSidebar,
+        outline: { level: 'deep', label: '이 페이지 목차' },
+        docFooter: {
+          prev: '이전 페이지',
+          next: '다음 페이지'
+        },
+        darkModeSwitchLabel: '테마',
+        lightModeSwitchTitle: '라이트 모드로 전환',
+        darkModeSwitchTitle: '다크 모드로 전환',
+        returnToTopLabel: '맨 위로',
+        langMenuLabel: '언어 변경',
+        sidebarMenuLabel: '메뉴',
+        lastUpdatedText: '최종 수정'
       }
     }
   }

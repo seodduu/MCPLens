@@ -1,11 +1,11 @@
 # CLI
 
-이 문서는 `mcp-lens`의 모든 커맨드를 정확한 플래그와 기본값까지 함께 정리한다. `--help`를
+이 문서는 `mcp-lens`의 모든 명령을 정확한 플래그와 기본값까지 함께 정리한다. `--help`를
 다시 실행하지 않아도 여기서 바로 찾을 수 있다. 처음부터 끝까지 한 번 돌려보려면
-[Quick Start](/ko/quick-start)를 보고, 리포트 컬럼이 무엇을 뜻하는지는
-[Reading Reports](/ko/guide/reading-reports)를 본다.
+[빠른 시작](/ko/quick-start)를 보고, 리포트 열이 무엇을 뜻하는지는
+[리포트 읽기](/ko/guide/reading-reports)를 본다.
 
-모든 커맨드는 같은 진입점을 공유한다.
+모든 명령은 같은 진입점을 공유한다.
 
 ```
 mcp-lens <command> [options]
@@ -14,7 +14,7 @@ mcp-lens <command> [options]
 `scan`과 `auth`만 데이터베이스에 쓰기 때문에, 이 둘만 writer lease를 잡고 VS Code 확장과
 경합한다. `report`는 데이터베이스를 열지만 부수적인 로그 백필 외에는 쓰지 않는다. 확장이
 lease를 쥐고 있으면 그 저장을 조용히 건너뛰고도 동일한 리포트를 읽기 전용으로 그대로
-출력한다. writer lease가 왜 존재하는지는 [How It Works](/ko/concepts/how-it-works)를 본다.
+출력한다. writer lease가 왜 존재하는지는 [동작 원리](/ko/concepts/how-it-works)를 본다.
 
 ## report
 
@@ -23,7 +23,7 @@ mcp-lens report [--days <n>] [--format <f>]
 ```
 
 비용 × 사용량 매트릭스를 출력한다. 스캔된 모든 툴의 정의 토큰 비용을 실제 호출 횟수와
-나란히 놓고, 행마다 권장 조치를 붙인다. 이것이 기본 커맨드라서 플레인 `mcp-lens`도 같은
+나란히 놓고, 행마다 권장 조치를 붙인다. 이것이 기본 명령이라서 플레인 `mcp-lens`도 같은
 동작을 한다.
 
 | 옵션 | 기본값 | 의미 |
@@ -35,7 +35,7 @@ mcp-lens report [--days <n>] [--format <f>]
 mcp-lens report --days 14 --format table
 ```
 
-표는 11개 컬럼을 갖는다. 블록을 짧게 유지하려고 실제 행 중 3개만 발췌했지만, 컬럼은 전부
+표에는 열이 11개 있다. 블록을 짧게 유지하려고 실제 행 중 3개만 발췌했지만, 열은 전부
 실제 그대로다.
 
 ```
@@ -50,7 +50,7 @@ savings: potential=61893 actual=26839 saved=35054
 ```
 
 `--format ai`는 같은 데이터를 Markdown으로 출력하되, 행별 reason 템플릿을 중복 제거해서 표
-위쪽 "Row reason templates" 절로 모아준다. 이것이 `/lens-audit` 슬래시 커맨드가 소비하는
+위쪽 "Row reason templates" 절로 모아준다. 이것이 `/lens-audit` 슬래시 명령이 소비하는
 형식이며, 어떤 툴을 끌지 LLM과 채팅하며 판단시키고 싶을 때 붙여넣기 좋은 형태이기도 하다.
 
 ## scan
@@ -112,7 +112,7 @@ github: login complete, 12 tools · 3410 tokens
 근처에서만 그렇다. 브라우저 로그인 자체는 lease를 요청하기 전에 일어나므로, 로그인이 느려도
 확장을 막지 않는다. 서버가 자동 클라이언트 등록을 거부하면(예를 들어 GitHub나 Figma의
 원격 MCP 서버), 대신 OAuth 클라이언트 id를 설정할 설정 키나 개인 액세스 토큰용 헤더를
-커맨드가 출력해 준다.
+명령이 출력해 준다.
 
 ## hooks status
 
@@ -174,7 +174,7 @@ mcp-lens hooks doctor codex
 mcp-lens hook capture --client <c>
 ```
 
-이것은 사람이 직접 실행하는 커맨드가 아니라 훅 런타임의 진입점이다. Claude Code, Codex,
+이것은 사람이 직접 실행하는 명령이 아니라 훅 런타임의 진입점이다. Claude Code, Codex,
 Gemini CLI가 lifecycle hook으로 이것을 호출하며, 훅 payload를 stdin으로 흘려보낸다. payload를
 디코드해서 관측 결과를 `~/.mcplens/inbox`에 큐잉하고, payload가 잘못됐거나 `--client`가
 없거나 인식되지 않는 경우에도 항상 stdout에 `{}`를 출력하고 exit 0으로 끝난다. 이 fail-open
