@@ -12,7 +12,8 @@ mcp-lens <command> [options]
 
 Only `scan` and `auth` write to the database, so only they take the writer lease and contend with the
 VS Code extension. `report` opens the database but only ever writes an incidental log backfill; if the
-extension holds the lease it silently skips that save and still prints the same report, read-only.
+extension holds the lease it silently skips that save and still prints the same report, read-only. For
+why a writer lease exists at all, see [How It Works](/concepts/how-it-works).
 
 ## report
 
@@ -33,11 +34,15 @@ runs it too.
 mcp-lens report --days 14 --format table
 ```
 
+The table has eleven columns. This excerpt keeps only 3 of the real rows so the block stays short,
+but every column is real:
+
 ```
-server        tool                   defTokens  calls  respTokens  action         confidence  reason
-------------  ---------------------  ---------  -----  ----------  -------------  ----------  ------
-web-search    place_search           17251      0      0           remove         medium      definition 17,251 tokens, 0 calls
-knowledge-base query-meeting-notes   5929       0      0           filter-server  high        Only 2 of 28 tools used on server knowledge-base. Tool filtering recommended.
+server          tool          defTokens  calls  respTokens  loaded/sessions  errorRate  errorTokens  action  confidence  reason
+--------------  ------------  ---------  -----  ----------  ---------------  ---------  -----------  ------  ----------  ------------------------------------------------------------------------------------------------------------------------------------------
+web-search      place_search  17251      0      0           0/533            -          0            remove  medium      definition 17,251 tokens, 0 calls. small savings, but cleans up the search space. 98 sessions/3d observed, confirmed with more observation
+knowledge-base  search        1809       10     124         5/533            0%         0            keep    high        called 10 times
+weather-tools   get_weather   74         4      83          3/533            0%         0            keep    high        called 4 times
 
 savings: potential=61893 actual=26839 saved=35054
 (0 session files backfilled)
@@ -65,8 +70,12 @@ definition token count. It spends no LLM tokens and never edits a client config 
 mcp-lens scan
 ```
 
+The `discovered:` line lists how many servers were found per config source (`claude-user`,
+`claude-project`, `codex`, `gemini`), joined with ` · `. The example below shows the real format with
+illustrative counts:
+
 ```
-discovered: 2 claude-code, 1 codex
+discovered: claude-user 2 · codex 1
 - web-search: 9 tools, 26198 tokens
 - knowledge-base: 15 tools, 24157 tokens
 ```
@@ -98,7 +107,7 @@ mcp-lens auth github
 ```
 
 ```
-github: 12 tools, 3410 tokens
+github: login complete, 12 tools · 3410 tokens
 ```
 
 Like `scan`, `auth` writes to the database and takes the writer lease, but only around the final save;
@@ -125,15 +134,18 @@ how many events are still pending, and an overall health.
 mcp-lens hooks status
 ```
 
+Field names and shape below are real (one block per client, `client / package / trust / runner /
+last event / pending / fallback / health`); the values are illustrative, not a captured run:
+
 ```
 Claude Code
   package: installed
   trust: not-required
   runner: ready
-  last event: 2026-08-09T02:14:31.000Z
+  last event: <ISO timestamp of the most recent inbox event, or "none">
   pending: 0
   fallback: unknown
-  health: healthy
+  health: idle
 ```
 
 ## hooks doctor
