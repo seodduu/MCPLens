@@ -56,15 +56,15 @@ With the rollout set, open the MCP Lens sidebar tree, select the tool you want t
 {
   "permissions": {
     "deny": [
-      "mcp__brave-search__brave_place_search"
+      "mcp__web-search__web-search_place_search"
     ]
   }
 }
 ```
 
 ```toml [~/.codex/config.toml]
-[mcp_servers.brave-search]
-disabled_tools = ["brave_place_search"]
+[mcp_servers.web-search]
+disabled_tools = ["web-search_place_search"]
 ```
 
 :::

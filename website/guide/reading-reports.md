@@ -14,20 +14,24 @@ mcp-lens report
 ```
 
 ```
-server               tool                                           defTokens  calls  respTokens  loaded/sessions  errorRate  errorTokens  action         confidence  reason
--------------------  ---------------------------------------------  ---------  -----  ----------  ---------------  ---------  -----------  -------------  ----------  ------
-notion               notion-search                                  1809       10     124         5/533            0%         0            keep           high        called 10 times
-brave-search         brave_web_search                                1365       1      96          0/533            0%         0            keep           high        called 1 time
-brave-search         brave_place_search                             17251      0      0           0/533            -          0            remove         medium      definition 17,251 tokens, 0 calls. small savings, but cleans up the search space. 98 sessions/3d observed, confirmed with more observation
-notion               notion-query-meeting-notes                     5929       0      0           1/533            -          0            filter-server  high        Only 2 of 28 tools used on server notion. Tool filtering recommended. small savings, but cleans up the search space (loaded but never called, so it pollutes the search space). 441 sessions/19d observed, accumulated cost 2,614,689 tokens. Restorable with one config line
+server          tool                                 defTokens  calls  respTokens  loaded/sessions  errorRate  errorTokens  action         confidence  reason
+--------------  -----------------------------------  ---------  -----  ----------  ---------------  ---------  -----------  -------------  ----------  ------
+knowledge-base  knowledge-base-search                1809       10     124         5/533            0%         0            keep           high        called 10 times
+web-search      web-search_web_search                1365       1      96          0/533            0%         0            keep           high        called 1 time
+web-search      web-search_place_search              17251      0      0           0/533            -          0            remove         medium      definition 17,251 tokens, 0 calls. small savings, but cleans up the search space. 98 sessions/3d observed, confirmed with more observation
+knowledge-base  knowledge-base-query-meeting-notes    5929       0      0           1/533            -          0            filter-server  high        Only 2 of 28 tools used on server knowledge-base. Tool filtering recommended. small savings, but cleans up the search space (loaded but never called, so it pollutes the search space). 441 sessions/19d observed, accumulated cost 2,614,689 tokens. Restorable with one config line
 
 savings: potential=61893 actual=26839 saved=35054
 ```
 
-This excerpt keeps 4 of the real rows and the summary line; a live run prints one row per tool you
-have observed. If another process (usually the VS Code extension) is writing to the database at the
-same moment, `report` still prints the same output, just read-only; see [Notes on the writer
-lease](#notes-on-the-writer-lease) below.
+This excerpt keeps 4 of the real rows and the summary line, in a keep/remove/filter-server teaching
+order rather than the capture's original defTokens-descending order; this is not one command's raw
+output. A live run prints one row per tool you have observed, sorted by `defTokens` descending.
+Server and tool names are also renamed here to the same generic ones used on the [Quick
+Start](/quick-start) page (`web-search` for `brave-search`, `knowledge-base` for `notion`); every
+number, column and row is otherwise exactly as captured. If another process (usually the VS Code
+extension) is writing to the database at the same moment, `report` still prints the same output,
+just read-only; see [Notes on the writer lease](#notes-on-the-writer-lease) below.
 
 ## Read the columns
 
@@ -51,9 +55,10 @@ session, then check `calls` to see whether you are paying for something you use.
 
 - `keep`: called during the window. Leave it attached.
 - `remove`: `defTokens` paid, `calls` is 0. The `reason` states the accumulated cost so far, for
-  example the `brave_place_search` row above: 17,251 tokens per session, never called.
-- `filter-server`: only a few of a server's tools are ever called (the `notion` row above: 2 of 28).
-  Turning off individual unused tools on that server, rather than the whole server, is recommended.
+  example the `web-search_place_search` row above: 17,251 tokens per session, never called.
+- `filter-server`: only a few of a server's tools are ever called (the `knowledge-base` row above:
+  2 of 28). Turning off individual unused tools on that server, rather than the whole server, is
+  recommended.
 - `inspect`: a tool that fails often enough to be worth investigating before deciding.
 - `unknown`: the scanner has not covered this tool's definition tokens yet.
 
@@ -99,18 +104,18 @@ mcp-lens report --format ai
 potential tokens 61893 / actual tokens 26839 / savable tokens 35054
 
 ## Shared server basis
-- notion: Only 2 of 28 tools used on server notion. Tool filtering recommended.
+- knowledge-base: Only 2 of 28 tools used on server knowledge-base. Tool filtering recommended.
 
 ## Row reason templates
 - T2: small savings, but cleans up the search space (loaded but never called, so it pollutes the search space). 441 sessions/19d observed, accumulated cost {cost} tokens. Restorable with one config line
 
 | server | tool | defTokens | calls | respTokens | loaded/sessions | errorRate | errorTokens | action | confidence | reason |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| notion | notion-search | 1809 | 10 | 124 | 5/533 | 0% | 0 | keep | high | called 10 times |
-| notion | notion-query-meeting-notes | 5929 | 0 | 0 | 1/533 | - | 0 | filter-server | high | T2 (accumulated cost 2,614,689 tokens) |
+| knowledge-base | knowledge-base-search | 1809 | 10 | 124 | 5/533 | 0% | 0 | keep | high | called 10 times |
+| knowledge-base | knowledge-base-query-meeting-notes | 5929 | 0 | 0 | 1/533 | - | 0 | filter-server | high | T2 (accumulated cost 2,614,689 tokens) |
 
 ## Recommendations
-- [filter-server·high] notion/notion-query-meeting-notes: T2 (accumulated cost 2,614,689 tokens) (measured)
+- [filter-server·high] knowledge-base/knowledge-base-query-meeting-notes: T2 (accumulated cost 2,614,689 tokens) (measured)
 ```
 
 `mcp-lens report --format json` prints the same rows and the `savings` object as a single JSON
