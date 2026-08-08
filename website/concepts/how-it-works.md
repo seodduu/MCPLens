@@ -21,9 +21,11 @@ is the entire operation.
 mcp-lens scan
 ```
 
+`scan` prints one line per server, `<server>` the server name, the first `<N>` the number of tools
+it exposes, and the second `<N>` the total definition tokens across those tools:
+
 ```
-- weather-tools: 3 tools, 412 tokens
-- knowledge-base: 28 tools, 9105 tokens
+- <server>: <N> tools, <N> tokens
 ```
 
 Three properties make this scan safe to run against a live configuration:
