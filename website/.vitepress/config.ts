@@ -28,6 +28,34 @@ const sidebar = [
   { text: 'FAQ', link: '/faq' }
 ]
 
+const koSidebar = [
+  { text: '빠른 시작', link: '/ko/quick-start' },
+  {
+    text: '가이드',
+    items: [
+      { text: 'VS Code 확장', link: '/ko/guide/vscode-extension' },
+      { text: 'Claude Code', link: '/ko/guide/claude-code' },
+      { text: 'Codex', link: '/ko/guide/codex' },
+      { text: 'Gemini CLI', link: '/ko/guide/gemini-cli' },
+      { text: '리포트 읽기', link: '/ko/guide/reading-reports' },
+      { text: '대시보드', link: '/ko/guide/dashboard' },
+      { text: '전역 조치', link: '/ko/guide/global-actions' }
+    ]
+  },
+  {
+    text: '개념',
+    items: [{ text: '동작 원리', link: '/ko/concepts/how-it-works' }]
+  },
+  {
+    text: '레퍼런스',
+    items: [
+      { text: 'CLI', link: '/ko/reference/cli' },
+      { text: '설정', link: '/ko/reference/configuration' }
+    ]
+  },
+  { text: 'FAQ', link: '/ko/faq' }
+]
+
 export default defineConfig({
   title: 'MCP Lens',
   description:
@@ -57,7 +85,15 @@ export default defineConfig({
     ko: {
       label: '한국어',
       lang: 'ko',
-      link: '/ko/'
+      link: '/ko/',
+      themeConfig: {
+        nav: [
+          { text: '빠른 시작', link: '/ko/quick-start' },
+          { text: '가이드', link: '/ko/guide/vscode-extension' },
+          { text: '레퍼런스', link: '/ko/reference/cli' }
+        ],
+        sidebar: koSidebar
+      }
     }
   }
 })
