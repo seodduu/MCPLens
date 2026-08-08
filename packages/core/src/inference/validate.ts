@@ -1,6 +1,7 @@
 import type {
   DependencyStatus,
   InferenceBatch,
+  PredictedPrerequisite,
   ToolDependencyResult,
   ValidatedInferenceResult,
 } from './types.js';
@@ -35,6 +36,51 @@ function nullableIndependentText(
 function expectedToolKeys(batch: InferenceBatch): Set<string> {
   return new Set(batch.servers.flatMap((server) =>
     server.tools.map((tool) => `${server.serverName}\u0000${tool.toolName}`)));
+}
+
+/** Maps every tool name in the batch to the servers that declare it. */
+function serversByToolName(batch: InferenceBatch): Map<string, Set<string>> {
+  const owners = new Map<string, Set<string>>();
+  for (const server of batch.servers) {
+    for (const tool of server.tools) {
+      const existing = owners.get(tool.toolName);
+      if (existing === undefined) owners.set(tool.toolName, new Set([server.serverName]));
+      else existing.add(server.serverName);
+    }
+  }
+  return owners;
+}
+
+/**
+ * Advisory field: a malformed entry is dropped instead of failing the batch, because the
+ * three-tier verdict stands without it and discarding a paid batch costs more.
+ */
+function validatePredictedPrerequisites(batch: InferenceBatch, value: unknown): PredictedPrerequisite[] {
+  if (!Array.isArray(value)) return [];
+  const owners = serversByToolName(batch);
+  const kept: PredictedPrerequisite[] = [];
+
+  for (const raw of value) {
+    if (!isObject(raw)) continue;
+    const { toolName, requires, basis } = raw;
+    if (typeof toolName !== 'string' || typeof basis !== 'string' || basis.trim().length === 0) continue;
+    if (!Array.isArray(requires)) continue;
+    const toolServers = owners.get(toolName);
+    if (toolServers === undefined) continue;
+
+    const keptRequires = requires.filter((name): name is string => {
+      if (typeof name !== 'string' || name === toolName) return false;
+      const requiredServers = owners.get(name);
+      if (requiredServers === undefined) return false;
+      // Server boundary: a prerequisite only counts inside the server that declares the tool.
+      return [...requiredServers].some((serverName) => toolServers.has(serverName));
+    });
+    if (keptRequires.length === 0) continue;
+
+    kept.push({ toolName, requires: keptRequires, basis });
+  }
+
+  return kept;
 }
 
 export function validateInferenceOutput(batch: InferenceBatch, value: unknown): ValidatedInferenceResult {
@@ -78,5 +124,8 @@ export function validateInferenceOutput(batch: InferenceBatch, value: unknown): 
     throw new Error(`result tool set mismatch: expected ${expected.size}, got ${seen.size}`);
   }
 
-  return { results };
+  return {
+    results,
+    predictedPrerequisites: validatePredictedPrerequisites(batch, value.predictedPrerequisites),
+  };
 }

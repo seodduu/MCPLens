@@ -1,3 +1,5 @@
+import type { StateConsumerHint } from '../types.js';
+
 export type InferenceProvider = 'claude' | 'codex';
 export type DependencyStatus = 'Independent' | 'Review required' | 'Dependent';
 
@@ -20,6 +22,12 @@ export interface InferenceCallChainSummary {
 export interface InferenceServerInput {
   serverName: string;
   tools: readonly InferenceToolInput[];
+  /**
+   * Tools detected as operating on ambient state. Empty when none were found.
+   * Optional only until the analyzer wiring always supplies it; treat a missing
+   * value as an empty list.
+   */
+  stateConsumers?: readonly StateConsumerHint[];
 }
 
 export interface InferenceBatch {
@@ -40,8 +48,16 @@ export interface ToolDependencyResult {
   riskWithoutTool: string | null;
 }
 
+/** An ordering the model inferred from definitions alone. Advisory: it can only downgrade a verdict. */
+export interface PredictedPrerequisite {
+  toolName: string;
+  requires: readonly string[];
+  basis: string;
+}
+
 export interface ValidatedInferenceResult {
   results: ToolDependencyResult[];
+  predictedPrerequisites: PredictedPrerequisite[];
 }
 
 export interface InferenceCostEstimate {
