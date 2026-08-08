@@ -2,7 +2,7 @@
 
 이 문서는 MCP Lens가 데이터를 어디에 저장하는지와 VS Code 확장 설정 전체를 정리한다.
 walkthrough를 다시 뒤지지 않고도 키나 경로를 바로 찾을 수 있다. 무엇을 왜 바꿔야 하는지는
-[VS Code 확장 가이드](/ko/guide/vscode-extension)와 [전역 조치](/ko/guide/global-actions)를
+[VS Code 확장](/ko/guide/vscode-extension)과 [전역 조치](/ko/guide/global-actions)를
 본다.
 
 ## 데이터 위치
