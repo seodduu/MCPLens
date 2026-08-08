@@ -16,8 +16,10 @@ this page is for installing it by hand.
 gemini extensions install /absolute/path/to/packages/gemini-extension
 ```
 
-Substitute `/absolute/path/to` with the absolute path to your clone of the repository. Restart
-Gemini CLI afterward so it loads the extension and its hook registration.
+Substitute `/absolute/path/to` with the absolute path to your clone of the repository. The
+extension's manifest name is `mcp-lens`, so `gemini extensions list` should show `mcp-lens` among
+the installed extensions afterward. Restart Gemini CLI afterward so it loads the extension and its
+hook registration.
 
 ## What it collects
 
@@ -37,6 +39,8 @@ To pause collection without removing the extension, disable it and restart again
 gemini extensions disable mcp-lens
 ```
 
+This stops new capture without removing the extension. Restart Gemini CLI after changing the
+extension state for the change to take effect.
+
 To remove it entirely, uninstall it with Gemini CLI's extension uninstall command and restart.
-Disabling or uninstalling only stops new capture; it does not touch metadata already queued or any
-original Gemini logs.
+Either way, it does not touch metadata already queued or any original Gemini logs.
