@@ -1,11 +1,13 @@
 # 함정 모음 (참고 문서)
 
-출처는 `github.com/seodduu/MyClaude`의 `pitfalls/`다. 다른 프로젝트(Spring Boot + Vite/React)에서
-실제로 밟은 함정 기록이라 스택이 다른 항목도 섞여 있다. 원문을 그대로 보존하고, MCP Lens에
+`mcplens.md`는 이 저장소에서 직접 밟은 함정이다. 나머지 세 파일의 출처는
+`github.com/seodduu/MyClaude`의 `pitfalls/`이며, 다른 프로젝트(Spring Boot + Vite/React)에서
+실제로 밟은 기록이라 스택이 다른 항목도 섞여 있다. 가져온 원문은 그대로 보존하고, MCP Lens에
 해당하는 항목만 `CLAUDE.md`·`AGENTS.md`의 "알려진 함정" 절에 발췌해 뒀다.
 
 | 파일 | 내용 | MCP Lens 적용도 |
 |---|---|---|
+| `mcplens.md` | **이 저장소에서 직접 밟은 것.** worktree `node_modules` 부재, extension tsc가 보는 core `dist`, tsc가 안 보는 테스트 파일, 좀비 dev host의 DB 라이터 리스, 실 DB 검증 백업 | 전부 유효. 먼저 읽는다 |
 | `workflow.md` | worktree·병렬 웨이브·검증 운용, 거짓 신호 목록 | 대부분 그대로 유효 |
 | `frontend-react.md` | TypeScript·vitest·Playwright·브라우저 검증 | tsc `-p` 누락, vitest 오수집, 화면 스크린샷 검증은 그대로 유효 |
 | `backend-spring.md` | Spring/JPA/Flyway/Testcontainers | 스택이 다르다. "마이그레이션 번호 역전", "테스트 녹색이 실 DB를 보증하지 않는다"의 **원리만** 가져와 SQLite 스키마와 Wave 4 스모크에 적용 |

@@ -37,3 +37,11 @@ Claude Code, Codex, Gemini CLI의 MCP 컨텍스트 회계 도구다. 툴 정의 
 - fixture와 in-memory DB 테스트 통과만으로 실환경 동작을 주장하지 않는다.
 - 성능·토큰 수 측정은 dist 배포 경로에서 수행하고 구성도 report에 기록한다.
 - 화면 결함을 판정하기 전에 관련 빌드 산출물을 재생성하고 다시 확인한다.
+- 새 worktree에서는 다른 무엇보다 먼저 node_modules를 해결한다. 설치본이 없으면
+  packages/core/test/ingest/inbox.test.ts의 vite-node spawn이 ENOENT로 죽고, 이것이 5005ms
+  타임아웃으로 보여 CPU 부하로 오진하기 쉽다.
+- extension 타입체크 전에 npm run build -w @mcp-lens/core를 실행한다. extension은 core의
+  dist 선언 파일을 본다.
+- tsc는 테스트 파일을 보지 않는다. 스텁과 픽스처가 깨지는 것은 npm test만 잡는다.
+- 실 DB에 쓰는 검증 전에 ~/.mcplens/backups/에 날짜를 붙인 사본을 남긴다.
+- DB 라이터 리스가 거부되면 --extensionDevelopmentPath가 붙은 좀비 프로세스를 먼저 찾는다.

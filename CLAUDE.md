@@ -102,6 +102,25 @@ VS Code 확장 + CLI + 로컬 대시보드 + 클라이언트별 플러그인·�
   복사하는 지시를 실행 프롬프트 1단계에 넣는다.
 - **성능·토큰 수 측정은 개발 편의 경로가 아니라 배포 경로로 잰다.** 빌드 산출물(`dist/`)이
   아니라 소스 트랜스파일 경로로 재면 수치가 왜곡된다. 리포트에 어느 구성으로 쟀는지 적는다.
+- **새 worktree에서는 `node_modules`를 먼저 해결한다.** `packages/core/test/ingest/inbox.test.ts`가
+  `process.cwd()` 기준으로 `node_modules/.bin/vite-node`를 20개 spawn한다. 설치본이 없으면
+  `ENOENT`로 죽고 자식이 시작조차 못 해 5005ms 타임아웃으로 보인다. 실행 프롬프트 1단계에
+  심링크 또는 `npm install` + `npm run build` 지시를 넣는다. 병렬 터미널 4개가 전부 이것에
+  걸리고 각자 "기존 결함"으로 오진한 전례가 있다. CPU 부하로 착각하기 쉬우니 출력에서
+  `ENOENT`와 spawn 경로를 먼저 찾아라.
+- **extension 타입체크 전에 core를 빌드한다.** extension은 core의 소스가 아니라
+  `packages/core/dist`의 선언 파일을 본다. `npm run build -w @mcp-lens/core`를 먼저 돌리지
+  않으면 낡은 계약으로 판정한다. `tsc -p` 누락과는 별개의 거짓 신호다.
+- **tsc는 테스트 파일을 보지 않는다.** 스텁과 픽스처는 타입체크 대상이 아니다. store에 메서드를
+  추가하거나 페이로드에 필드를 넣으면 가짜 스텁과 deep-equal 픽스처가 깨지는데 tsc는 못 잡는다.
+  인터페이스를 넓히는 태스크는 소유 범위 밖의 스텁·픽스처 수정이 따라온다는 것을 계획서에
+  미리 적는다.
+- **실 DB에 쓰는 검증은 백업을 먼저 만든다.** 스크래치패드 백업은 세션이 끝나면 사라진다.
+  `~/.mcplens/backups/`처럼 세션과 무관한 곳에 날짜를 붙여 남긴다. 읽기만 하는 검증은 사본에서 한다.
+- **DB 라이터 리스 거부는 사용자 창을 의심하기 전에 좀비 dev host를 찾는다.**
+  `--extensionDevelopmentPath`가 붙은 낡은 Extension Development Host가 10초마다
+  `~/.mcplens/db-writer.lock`을 갱신하고 있을 수 있다. 그것이면 사용자 승인을 받아 그 프로세스만
+  종료하고, 자기가 띄운 dev host는 검증이 끝나면 반드시 닫는다.
 
 ### 도구가 만드는 거짓 신호 (판정 전에 의심할 것)
 
@@ -112,3 +131,6 @@ VS Code 확장 + CLI + 로컬 대시보드 + 클라이언트별 플러그인·�
 | 유닛테스트 녹색, 실행 시 실패 | 픽스처만 검증, 실 로그·실 DB 미검증 | Wave 4 스모크 |
 | 유닛테스트 녹색, 로컬 기동 실패 | 스키마 번호 역전 (clean 로드는 못 잡음) | 머지 직전 번호 재확인 |
 | 화면 결함 재현 | 빌드 산출물이 낡음 | 재빌드 후 다시 확인 |
+| inbox 테스트 타임아웃 4건 | 새 worktree에 node_modules 없음 (ENOENT) | 출력에서 `ENOENT`와 spawn 경로 확인 |
+| extension tsc 에러 또는 녹색 | core `dist`가 낡음 | `npm run build -w @mcp-lens/core` 선행 |
+| tsc 2개 녹색, npm test 실패 | tsc는 스텁·픽스처를 안 봄 | `npm test` |
