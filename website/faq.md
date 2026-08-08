@@ -16,7 +16,9 @@ Close the extension window (or the other running mcp-lens) and try again. It may
 ```
 
 `mcp-lens report` never needs to refuse: it saves its log backfill when it can take the lease, and
-simply skips that save and runs read-only when it cannot, printing the same report either way.
+simply skips that save and runs read-only when it cannot, printing the same report either way. Still,
+treat the refusal as a safety net rather than a workflow: avoid running the CLI and the extension
+against the database at the same time.
 
 ## Why does my report only cover the last 30 days by default?
 
