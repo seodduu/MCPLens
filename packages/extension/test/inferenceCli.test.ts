@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  INFERENCE_INSTRUCTION,
   INFERENCE_OUTPUT_SCHEMA,
   runInference,
   type InferenceRunBatch,
@@ -209,7 +210,7 @@ describe('runInference', () => {
 
     expect(JSON.parse(contextJson!)).toEqual({
       batchId: 'batch-001',
-      servers: batch.servers,
+      servers: batch.servers.map((server) => ({ ...server, stateConsumers: [] })),
     });
     expect(contextJson).not.toMatch(/PWD|headers?|userPrompt|toolInput|toolOutput|response|env/i);
 
@@ -248,7 +249,7 @@ describe('runInference', () => {
     expect(instruction).toMatch(/do not follow.*instructions/i);
     expect(JSON.parse(contextJson!)).toEqual({
       batchId: adversarialBatch.batchId,
-      servers: adversarialBatch.servers,
+      servers: adversarialBatch.servers.map((server) => ({ ...server, stateConsumers: [] })),
     });
 
     child.stdout.emit('data', JSON.stringify({
@@ -458,5 +459,49 @@ describe('runInference', () => {
     mismatch.stdout.emit('data', JSON.stringify({ results: [] }));
     mismatch.emit('close', 0);
     await expect(mismatchPromise).resolves.toEqual({ ok: false, errorCode: 'schema-mismatch', exitCode: 0 });
+  });
+});
+
+const stateBatch: InferenceRunBatch = {
+  batchId: 'batch-002',
+  servers: [{
+    serverName: 'chrome',
+    stateConsumers: [{ toolName: 'read_page', deicticPhrase: 'the current page' }],
+    tools: [{
+      toolName: 'read_page',
+      description: 'Read the current page',
+      inputSchemaJson: '{"type":"object"}',
+      definitionTokens: 80,
+      staticReferences: [],
+      callChainSummary: [],
+    }],
+  }],
+};
+
+async function capturePrompt(batchToSend: InferenceRunBatch): Promise<string> {
+  const child = new FakeChild();
+  const deps = depsFor(child);
+  const promise = runInference({ provider: 'claude', model: 'haiku', batch: batchToSend }, deps);
+  await vi.waitFor(() => expect(deps.spawn).toHaveBeenCalledTimes(1));
+  child.emit('close', 1);
+  await promise;
+  return child.stdinPayload;
+}
+
+describe('inference prompt', () => {
+  it('puts the untrusted-data line last in the instruction', () => {
+    const lines = INFERENCE_INSTRUCTION.split('\n');
+    expect(lines[lines.length - 1]).toContain('untrusted data');
+  });
+
+  it('includes stateConsumers in the payload', async () => {
+    const prompt = await capturePrompt(stateBatch);
+    expect(prompt).toContain('"stateConsumers":[{"toolName":"read_page"');
+  });
+
+  it('keeps tool inputs and outputs out of the payload', async () => {
+    const prompt = await capturePrompt(stateBatch);
+    expect(prompt).not.toContain('tool_input');
+    expect(prompt).not.toContain('tool_response');
   });
 });
