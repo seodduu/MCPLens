@@ -80,3 +80,66 @@
 
 배경·실측·결정 근거·남은 결정사항: `docs/decisions/2026-07-21-상태바-지표-재정의.md`
 (그 문서 하나로 새 세션에서 착수 가능)
+
+## 배선 누락 모듈 2건 (2026-08-09 발견) — **착수 가능**
+
+패키징 전 전수 스캔에서 나온 결과다. 구현과 테스트는 끝났는데 호출부가 없어 프로덕션 경로에서
+한 번도 실행되지 않는 모듈이 둘 있다. 죽은 코드가 아니라 배선 구멍이므로 삭제하지 않고 남겼다.
+
+| 파일 | 내용 | 배선할 곳 |
+|---|---|---|
+| `packages/core/src/engine/healthGate.ts` (`gateRecommendation`) | 수집 건강도가 `hook-only`면 추천 문구에서 토큰 수치 주장을 제거하고, `degraded`·`unavailable`이면 `remove`·`filter-server` 추천을 low confidence로 강등한다 | 추천 생성 직후, 즉 `engine/engine.ts`가 `Recommendation`을 내보내는 경로 |
+| `packages/extension/src/analysisStatus.ts` (`createAnalysisStatus`, `analysisFailureMessage`, `formatAnalysisStatus`) | 분석 1회분의 안전한 텔레메트리 계약과 사용자용 실패 문구. CLI stderr·프롬프트·정의·스키마를 절대 노출하지 않는다 | 의존성 분석 실행 경로, 즉 `extension/src/analysisCoordinator.ts`와 실패 알림 표시부 |
+
+`gateRecommendation`이 특히 중요하다. "근거 없이 수치를 말하지 않는다"는 이 프로젝트 최우선
+가치를 코드로 지키는 유일한 지점인데 지금은 아무도 통과하지 않는다. 수집이 훅 전용이거나
+저하된 상태에서도 추천이 토큰 절감량을 단정하고 있을 수 있다.
+
+같은 스캔에서 확인한 음성 결과도 적어둔다. 재조사 비용을 아끼기 위한 것이다.
+아무도 import하지 않는 파일 0건, 주석 처리된 죽은 코드 0건, 미사용 npm 의존성 0건,
+미사용 에셋 0건. 미사용 export로 잡힌 130여 건은 거의 전부 타입·인터페이스라 런타임 산출물에
+0바이트를 차지한다. `dist/extension.js`가 6.6MB인 것은 js-tiktoken의 BPE 랭크 데이터와
+sql.js 때문이며 둘 다 제품 핵심 기능이 쓴다.
+
+## ~~워크스루 첫 실행이 다중 창에서 조용히 사라진다~~ — **해결됨 (2026-08-09)**
+
+같은 날 재현하고 고쳤다. 진단 기록으로 남긴다.
+
+**고친 내용**
+- 첫 실행 클레임에 `vscode.window.state.focused` 가드를 걸었다. 포커스 없는 창은 플래그를
+  먹지 않으므로 사용자가 안 보는 창에서 워크스루가 열리는 일이 없다.
+- 실패를 삼키던 자리를 `console.error`로 바꿨다. 이제 Extension Host 로그에 흔적이 남는다.
+- 워크스루로 가는 입구를 두 개 만들었다. `SETUP STATUS` 타이틀 바의 학사모 버튼(항상)과
+  Setup Status 최상위의 `Get started` 행(워크스루를 한 번도 안 열었을 때만). 자동 오픈이
+  어떤 이유로 실패해도 사용자가 스스로 갈 수 있다.
+
+**남은 것**: 활성화 시점에 포커스가 없던 창은 나중에 포커스를 얻어도 재시도하지 않는다.
+모든 창이 포커스 없이 시작한 경우(다른 앱에 포커스가 있는 상태에서 VS Code 복원) 자동 오픈이
+아예 일어나지 않는다. 그때는 `Get started` 행이 남으므로 막힌 상태는 아니다.
+
+**증상(당시)**: 확장을 제거하고 재설치해도 온보딩 워크스루가 안 뜬다. 사용자가 보고 있는 창에는
+아무 일도 일어나지 않는다.
+
+**원인**: `globalState`는 창끼리 공유되지만 extension host는 창마다 따로 돈다. 창이 여러 개
+열려 있으면 각 창이 `claimFirstRun`(`packages/extension/src/firstRun.ts:12`)을 호출하고,
+먼저 도착한 창 하나만 `true`를 쓰고 워크스루를 연다. 나머지 창은 조용히 지나간다. 사용자가
+보고 있는 창이 그 나머지에 속하면 워크스루는 배경 창에서 열리고 아무도 못 본다.
+
+**재현**: VS Code 완전 종료 후 `state.vscdb`의 `seodduu.mcp-context-lens` 행을 삭제하고
+창을 하나만 열면 정상적으로 뜬다. 창을 여러 개 띄운 상태에서는 재현되지 않는다.
+
+**진단이 비싼 이유**: `extension.ts:540`이 실패를 완전히 삼킨다.
+
+```ts
+void vscode.commands.executeCommand('workbench.action.openWalkthrough', WALKTHROUGH_CATEGORY_ID)
+  .then(undefined, () => {});
+```
+
+로그가 한 줄도 없어서 원인을 찾으려면 VS Code의 `state.vscdb`를 직접 열어 플래그를 봐야 했다.
+`claimFirstRun`이 플래그를 먼저 쓰는 설계(`firstRun.ts:14`) 때문에 재시도도 없다. 탭이 반복해서
+튀어나오는 것을 막으려는 의도는 옳지만, 지금은 실패와 성공이 구분되지 않는다.
+
+**부수 사실**: 확장을 제거해도 `globalState`는 지워지지 않는다. 재설치로는 첫 실행을 재현할 수
+없고 `state.vscdb`를 직접 건드려야 한다. 워크스루 관련 상태는 세 곳에 흩어져 있다.
+`ItemTable`의 `seodduu.mcp-context-lens` 행, `workbench.welcomePage.walkthroughMetadata`,
+`workbench.welcomePage.hiddenCategories`.
