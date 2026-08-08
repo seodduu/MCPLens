@@ -18,7 +18,7 @@
 
 ::: code-group
 
-```bash [VS Code extension (recommended)]
+```bash [VS Code 확장 (권장)]
 git clone https://github.com/seodduu/MCPLens-V2.git
 cd MCPLens-V2
 npm install
@@ -37,7 +37,7 @@ npm link -w @mcp-lens/cli      # only if you want mcp-lens outside the repositor
 
 :::
 
-::: warning
+::: warning 주의
 레지스트리에는 `mcp-lens`라는 이름의 무관한 패키지가 이미 존재한다. 로컬에 bin이 없는
 상태에서 그냥 `npx mcp-lens`를 실행하면 그 서드파티 패키지를 내려받아 실행한다.
 항상 `npx --no-install mcp-lens` 형태를 쓰거나, 위처럼 링크된 bin을 직접 호출한다.
@@ -47,7 +47,7 @@ npm link -w @mcp-lens/cli      # only if you want mcp-lens outside the repositor
 
 ::: code-group
 
-```md [VS Code extension]
+```md [VS Code 확장]
 VS Code를 다시 연다. activity bar에 MCP Lens 아이콘이 나타나고, 온보딩 walkthrough가
 자동으로 열린다.
 ```
@@ -74,7 +74,7 @@ mcp-lens: MCP context accounting tool
 
 ::: code-group
 
-```md [VS Code extension]
+```md [VS Code 확장]
 Command Palette(`Cmd/Ctrl+Shift+P`)에서 **MCP Lens: Scan MCP Servers**를 실행한다. 온보딩
 walkthrough의 첫 단계가 같은 스캔을 실행하므로, walkthrough를 막 끝냈다면 이미 완료된
 상태다.
@@ -93,7 +93,7 @@ npx --no-install mcp-lens scan
 
 ::: code-group
 
-```md [VS Code extension]
+```md [VS Code 확장]
 activity bar에서 MCP Lens 아이콘을 열고 `Cost × Usage Matrix` 뷰를 본다. 같은 매트릭스를
 전체 리포트 페이지로 보려면 Command Palette에서 **MCP Lens: Show Report**를 실행한다.
 ```

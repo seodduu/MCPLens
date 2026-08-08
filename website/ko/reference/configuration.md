@@ -35,7 +35,7 @@ VS Code Settings UI에서 `MCP Lens`를 검색해 열거나, `settings.json`을 
 | `mcpLens.codexModel` | string | `gpt-5.6-luna` | 의존성 분석에 쓰는 Codex 모델. |
 | `mcplens.dependencyAnalysis.rollout` | `off` \| `claude` \| `codex` \| `all` | `off` | 전역 조치(사용하지 않는 툴을 해당 클라이언트의 설정 파일을 편집해 끄는 것)를 어느 클라이언트가 쓸 수 있는지. 분석·캐시·상세 보기는 `off`를 포함한 모든 값에서 계속 쓸 수 있다. Gemini CLI는 여기서 절대 허용되지 않는다. 전역 조치가 이를 지원하지 않는다. |
 
-::: tip
+::: tip 참고
 `mcplens.dependencyAnalysis.rollout`은 이 문서의 다른 모든 키와 다른(소문자) 설정 네임스페이스를
 쓴다. 오타가 아니라 VS Code가 실제로 읽는 정확한 키다. `settings.json`에 직접 설정한다면
 대소문자를 다시 한번 확인한다.
