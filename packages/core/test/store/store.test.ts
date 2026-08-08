@@ -156,7 +156,7 @@ describe('LensStore', () => {
       [{ serverName: 'a', toolName: 'tool', definitionTokens: 10,
         scannedAt: '2026-08-01T00:00:00Z', firstScannedAt: '2026-08-01T00:00:00Z' }],
       [{ serverName: 'a', toolName: 'tool', description: 'd', inputSchemaJson: '{}',
-        definitionTokens: 10, definitionSetHash: 'a'.repeat(64), scannedAt: '2026-08-01T00:00:00Z' }],
+        outputSchemaJson: null, definitionTokens: 10, definitionSetHash: 'a'.repeat(64), scannedAt: '2026-08-01T00:00:00Z' }],
       [],
     );
     s.upsertDefinitions([{ serverName: 'b', toolName: 'tool', definitionTokens: 10,

@@ -34,7 +34,7 @@ const definition: ToolDefinition = {
 
 const body: ToolDefinitionBody = {
   serverName: 'github', toolName: 'get_issue', description: 'Get an issue',
-  inputSchemaJson: '{"type":"object"}', definitionTokens: 120,
+  inputSchemaJson: '{"type":"object"}', outputSchemaJson: null, definitionTokens: 120,
   definitionSetHash: 'definitions-v1', scannedAt: NOW,
 };
 
@@ -49,6 +49,7 @@ function analysis(overrides: Partial<DependencyAnalysis> = {}): DependencyAnalys
     definitionSetHash: 'definitions-v1', analysisRulesVersion: 1,
     provider: 'claude', model: 'haiku', status: 'complete', analyzedAt: NOW,
     errorCode: null,
+    observedSessionCount: 0,
     results: [{
       serverName: 'github', toolName: 'get_issue', status: 'Independent',
       dependedOnBy: [], rationale: 'No observed or semantic dependency.',

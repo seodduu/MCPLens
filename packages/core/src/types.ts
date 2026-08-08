@@ -72,6 +72,8 @@ export interface ToolDefinitionBody {
   toolName: string;
   description: string | null;
   inputSchemaJson: string;
+  /** Canonical JSON of the tool's outputSchema. null when the server does not publish one. */
+  outputSchemaJson: string | null;
   definitionTokens: number;
   definitionSetHash: string;
   scannedAt: string;
@@ -116,7 +118,24 @@ export interface DependencyAnalysis {
   status: 'complete' | 'failed';
   analyzedAt: string;
   errorCode: string | null;
+  /**
+   * Distinct sessions observed for this server at the moment of the verdict, within the same
+   * 90-day window the call-chain tier uses. 0 means the call-chain tier had nothing to contribute.
+   * Read by the reanalysis trigger; never used in a token or savings calculation.
+   */
+  observedSessionCount: number;
   results: ToolDependencyResult[];
+}
+
+/**
+ * A tool detected as operating on ambient state rather than on its own inputs.
+ * Produced by the state-consumer tier and passed to the LLM tier so it can attribute
+ * the producer when no mechanical match exists.
+ */
+export interface StateConsumerHint {
+  toolName: string;
+  /** The deictic phrase that triggered detection, e.g. "the current page". Shown in rationale strings. */
+  deicticPhrase: string;
 }
 
 export interface GlobalAction {

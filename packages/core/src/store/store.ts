@@ -61,6 +61,26 @@ function migrate(db: Database): void {
     db.exec('UPDATE tool_definitions SET first_scanned_at = scanned_at');
   }
 
+  const bodyCols = new Set<string>();
+  const bt = db.prepare('PRAGMA table_info(tool_definition_bodies)');
+  while (bt.step()) bodyCols.add(bt.getAsObject().name as string);
+  bt.free();
+  // No backfill: a body written before this column has no outputSchema on record, and NULL is
+  // exactly that fact. Writing '' would make the B tier read it as "publishes an empty output".
+  if (!bodyCols.has('output_schema_json')) {
+    db.exec('ALTER TABLE tool_definition_bodies ADD COLUMN output_schema_json TEXT');
+  }
+
+  const analysisCols = new Set<string>();
+  const at = db.prepare('PRAGMA table_info(dependency_analyses)');
+  while (at.step()) analysisCols.add(at.getAsObject().name as string);
+  at.free();
+  // Default 0 is the truthful value for a pre-existing row: the verdict was reached without
+  // knowing the session count, which is indistinguishable from having observed none.
+  // It also makes every stored row eligible for the reanalysis trigger exactly once.
+  if (!analysisCols.has('observed_session_count')) {
+    db.exec('ALTER TABLE dependency_analyses ADD COLUMN observed_session_count INTEGER NOT NULL DEFAULT 0');
+  }
 }
 
 export class StaleWriterError extends Error {
@@ -291,13 +311,14 @@ export class LensStore {
     this.transaction(() => {
       for (const row of rows) this.run(
         `INSERT INTO tool_definition_bodies(server_name, tool_name, description,
-           input_schema_json, definition_tokens, definition_set_hash, scanned_at)
-         VALUES(?,?,?,?,?,?,?) ON CONFLICT(server_name, tool_name) DO UPDATE SET
+           input_schema_json, output_schema_json, definition_tokens, definition_set_hash, scanned_at)
+         VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(server_name, tool_name) DO UPDATE SET
            description=excluded.description, input_schema_json=excluded.input_schema_json,
+           output_schema_json=excluded.output_schema_json,
            definition_tokens=excluded.definition_tokens,
            definition_set_hash=excluded.definition_set_hash, scanned_at=excluded.scanned_at`,
         [row.serverName, row.toolName, row.description, row.inputSchemaJson,
-          row.definitionTokens, row.definitionSetHash, row.scannedAt],
+          row.outputSchemaJson ?? null, row.definitionTokens, row.definitionSetHash, row.scannedAt],
       );
     });
   }
@@ -374,8 +395,23 @@ export class LensStore {
       status: row.status as DependencyAnalysis['status'],
       analyzedAt: row.analyzed_at as string,
       errorCode: row.error_code as string | null,
+      observedSessionCount: Number(row.observed_session_count ?? 0),
       results,
     };
+  }
+
+  /**
+   * Distinct sessions in which this server's tools were called, within the given window.
+   * Errors are counted: a session that only produced failures still proves the server was reachable
+   * and exercised, which is what the call-chain tier needs to become meaningful.
+   */
+  sessionCountForServer(serverName: string, sinceIso: string): number {
+    const rows = this.select(
+      `SELECT COUNT(DISTINCT session_id) AS n FROM tool_calls
+       WHERE server_name=? AND (called_at IS NULL OR called_at >= ?)`,
+      [serverName, sinceIso],
+    );
+    return Number(rows[0]?.n ?? 0);
   }
 
   saveDependencyAnalysis(analysis: DependencyAnalysis): void {
@@ -383,12 +419,14 @@ export class LensStore {
       const key = [analysis.definitionSetHash, analysis.analysisRulesVersion];
       this.run(
         `INSERT INTO dependency_analyses(definition_set_hash, analysis_rules_version,
-           provider, model, status, analyzed_at, error_code) VALUES(?,?,?,?,?,?,?)
+           provider, model, status, analyzed_at, error_code, observed_session_count)
+         VALUES(?,?,?,?,?,?,?,?)
          ON CONFLICT(definition_set_hash, analysis_rules_version) DO UPDATE SET
            provider=excluded.provider, model=excluded.model, status=excluded.status,
-           analyzed_at=excluded.analyzed_at, error_code=excluded.error_code`,
+           analyzed_at=excluded.analyzed_at, error_code=excluded.error_code,
+           observed_session_count=excluded.observed_session_count`,
         [...key, analysis.provider, analysis.model, analysis.status,
-          analysis.analyzedAt, analysis.errorCode],
+          analysis.analyzedAt, analysis.errorCode, analysis.observedSessionCount ?? 0],
       );
       this.run(
         `DELETE FROM tool_explanations
@@ -994,6 +1032,7 @@ function rowToDefinitionBody(row: Record<string, unknown>): ToolDefinitionBody {
     toolName: row.tool_name as string,
     description: row.description as string | null,
     inputSchemaJson: row.input_schema_json as string,
+    outputSchemaJson: (row.output_schema_json ?? null) as string | null,
     definitionTokens: row.definition_tokens as number,
     definitionSetHash: row.definition_set_hash as string,
     scannedAt: row.scanned_at as string,

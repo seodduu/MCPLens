@@ -7,6 +7,7 @@ export interface RawToolBody {
   toolName: string;
   description?: string | null;
   inputSchema: unknown;
+  outputSchema?: unknown;
 }
 
 function sha256(value: string): string {
@@ -53,6 +54,7 @@ export function computeDefinitionSetHash(
       toolName: body.toolName,
       description: body.description ?? null,
       inputSchema: canonicalize(body.inputSchema),
+      outputSchema: body.outputSchema === undefined ? null : canonicalize(body.outputSchema),
     }))
     .sort((a, b) => a.toolName.localeCompare(b.toolName));
   return sha256(JSON.stringify({ serverName, tools }));
@@ -63,5 +65,6 @@ export function toolToRawBody(tool: Tool): RawToolBody {
     toolName: tool.name,
     description: tool.description ?? null,
     inputSchema: tool.inputSchema ?? {},
+    outputSchema: (tool as { outputSchema?: unknown }).outputSchema,
   };
 }

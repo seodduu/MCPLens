@@ -16,6 +16,7 @@ function body(serverName: string, hash: string, tokens = 10, toolName = 'read'):
     toolName,
     description: `Run ${toolName}`,
     inputSchemaJson: '{"type":"object"}',
+    outputSchemaJson: null,
     definitionTokens: tokens,
     definitionSetHash: hash,
     scannedAt: NOW,
@@ -31,6 +32,7 @@ function complete(hash: string, serverName: string, rulesVersion = 1): Dependenc
     status: 'complete',
     analyzedAt: NOW,
     errorCode: null,
+    observedSessionCount: 0,
     results: [{
       serverName,
       toolName: 'read',

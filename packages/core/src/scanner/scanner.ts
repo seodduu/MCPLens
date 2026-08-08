@@ -63,8 +63,17 @@ export async function scanServer(
     const definitions: ToolDefinition[] = tools.map((t) => ({
       serverName: spec.name,
       toolName: t.name,
+      // The client injects the whole tool object into context, outputSchema included. Counting only
+      // name+description+inputSchema under-reports the definition cost and therefore the savings.
       definitionTokens: countTokens(
-        JSON.stringify({ name: t.name, description: t.description, inputSchema: t.inputSchema }),
+        JSON.stringify({
+          name: t.name,
+          description: t.description,
+          inputSchema: t.inputSchema,
+          ...((t as { outputSchema?: unknown }).outputSchema === undefined
+            ? {}
+            : { outputSchema: (t as { outputSchema?: unknown }).outputSchema }),
+        }),
       ),
       scannedAt: now,
       firstScannedAt: now, // COALESCE on save preserves the existing first value
@@ -74,6 +83,9 @@ export async function scanServer(
       toolName: definition.toolName,
       description: rawBodies[index].description ?? null,
       inputSchemaJson: canonicalJson(rawBodies[index].inputSchema),
+      outputSchemaJson: rawBodies[index].outputSchema === undefined
+        ? null
+        : canonicalJson(rawBodies[index].outputSchema),
       definitionTokens: definition.definitionTokens,
       definitionSetHash,
       scannedAt: now,

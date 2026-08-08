@@ -70,7 +70,8 @@ CREATE INDEX IF NOT EXISTS idx_server_identity_name ON server_identities(server_
 
 CREATE TABLE IF NOT EXISTS tool_definition_bodies (
   server_name TEXT NOT NULL, tool_name TEXT NOT NULL, description TEXT,
-  input_schema_json TEXT NOT NULL, definition_tokens INTEGER NOT NULL,
+  input_schema_json TEXT NOT NULL, output_schema_json TEXT,
+  definition_tokens INTEGER NOT NULL,
   definition_set_hash TEXT NOT NULL, scanned_at TEXT NOT NULL,
   PRIMARY KEY (server_name, tool_name)
 );
@@ -80,6 +81,7 @@ CREATE TABLE IF NOT EXISTS dependency_analyses (
   definition_set_hash TEXT NOT NULL, analysis_rules_version INTEGER NOT NULL,
   provider TEXT NOT NULL, model TEXT NOT NULL, status TEXT NOT NULL,
   analyzed_at TEXT NOT NULL, error_code TEXT,
+  observed_session_count INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (definition_set_hash, analysis_rules_version)
 );
 CREATE TABLE IF NOT EXISTS tool_dependency_results (

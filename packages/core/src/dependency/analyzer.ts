@@ -193,6 +193,8 @@ export async function analyzeUncachedServers(
         status: 'complete',
         analyzedAt: now,
         errorCode: null,
+        // Placeholder until the call-chain session count is threaded through here (W3 wiring).
+        observedSessionCount: 0,
         results: mergeDependencyResults({
           bodies: pendingServer.bodies,
           staticRefs: staticRefs.filter((row) => row.serverName === server.serverName),
@@ -281,6 +283,7 @@ function failedAnalysis(
     status: 'failed',
     analyzedAt,
     errorCode,
+    observedSessionCount: 0,
     results: [],
   };
 }
