@@ -47,8 +47,25 @@ plugins are for (see [Claude Code](/guide/claude-code), [Codex](/guide/codex),
 [Gemini CLI](/guide/gemini-cli)).
 
 Each hook writes a small metadata record atomically into `~/.mcplens/inbox` whenever a tool call
-happens, and the extension or CLI later moves that record into the database. Three properties keep
-this collection path from ever getting in the way of your actual coding session:
+happens. Draining that queue into the database is a separate step, and only one component performs
+it.
+
+::: warning The VS Code extension is the only component that drains the inbox
+This is a current limitation, not a detail. The `mcp-lens` CLI has no drain path at all. If the
+extension is never running, the records the hooks write to `~/.mcplens/inbox` stay in the queue and
+never reach `~/.mcplens/lens.db`, no matter how many CLI commands you run. `mcp-lens hooks status`
+makes this visible: its `pending` count keeps growing instead of returning to 0, and
+`mcp-lens hooks doctor` raises a warning for the same events.
+
+So installing hooks alone does not make the `calls` column fill in on a CLI-only machine. What
+`mcp-lens report` can still recover comes from a different path: it backfills usage by parsing each
+client's own session logs. For anything those logs do not cover, `calls` stays at 0 until the
+extension runs and drains the queue. Nothing is lost in the meantime, since the queued records are
+drained whenever the extension does run.
+:::
+
+Three properties keep this collection path from ever getting in the way of your actual coding
+session:
 
 - Normal stdout is always `{}`. The hook never returns data that could alter the client's behavior.
 - It never blocks the client. A slow or failing write does not delay the tool call it is observing.

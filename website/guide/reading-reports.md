@@ -26,12 +26,11 @@ savings: potential=61893 actual=26839 saved=35054
 
 This excerpt keeps 4 of the real rows and the summary line, in a keep/remove/filter-server teaching
 order rather than the capture's original defTokens-descending order; this is not one command's raw
-output. A live run prints one row per tool you have observed, sorted by `defTokens` descending.
-Server and tool names are also renamed here to the same generic ones used on the [Quick
-Start](/quick-start) page (`web-search` for `brave-search`, `knowledge-base` for `notion`); every
-number, column and row is otherwise exactly as captured. If another process (usually the VS Code
-extension) is writing to the database at the same moment, `report` still prints the same output,
-just read-only; see [Notes on the writer lease](#notes-on-the-writer-lease) below.
+output. Server and tool names are placeholders; every number, column and row is otherwise exactly as
+captured. A live run prints one row per tool you have observed, sorted by `defTokens` descending. If
+another process (usually the VS Code extension) is writing to the database at the same moment,
+`report` still prints the same output, just read-only; see
+[Notes on the writer lease](#notes-on-the-writer-lease) below.
 
 ## Read the columns
 
@@ -117,6 +116,12 @@ potential tokens 61893 / actual tokens 26839 / savable tokens 35054
 ## Recommendations
 - [filter-server·high] knowledge-base/knowledge-base-query-meeting-notes: T2 (accumulated cost 2,614,689 tokens) (measured)
 ```
+
+This block is an excerpt too, cut the same way and with the same placeholder names. A real
+run also opens with a "How to read" paragraph explaining the basis and template notation, carries
+every reason template it needed (the run this came from produced T1 through T12), lists one table
+row and one recommendation per observed tool, and ends with "Candidates (not enough observation)"
+and "Failing tools to inspect" sections.
 
 `mcp-lens report --format json` prints the same rows and the `savings` object as a single JSON
 document (`{ "rows": [...], "savings": {...} }`), for scripting. Each row carries the same fields as

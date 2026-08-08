@@ -4,6 +4,11 @@ After this page you can unlock global actions for Claude Code and/or Codex, turn
 `filter-server` recommendation from the [report](/guide/reading-reports) without hand-editing a
 config file, and restore it if you change your mind.
 
+Global actions live entirely in the [VS Code extension](/guide/vscode-extension). Every step on this
+page is a VS Code command, and the CLI has no equivalent. On the CLI-only path, act on a report row
+by editing the client config yourself; the two blocks under
+[Disable a tool globally](#disable-a-tool-globally) show the exact rule the extension would write.
+
 ## What a global action is
 
 A global action edits your client's config so a tool is unavailable in every session, not just the
@@ -45,10 +50,19 @@ Alternatively, set it directly in `settings.json`:
 }
 ```
 
+## Run the dependency analysis first
+
+**MCP Lens: Disable Globally** refuses on any tool the dependency analysis has not judged yet: it
+re-reads the stored analysis result for the tool right before it edits anything, and treats a
+missing result as "Review required", which is not eligible. So run **MCP Lens: Analyze
+Dependencies** (or let the onboarding walkthrough's third step do it) before you try to disable
+anything.
+
 ## Disable a tool globally
 
-With the rollout set, open the MCP Lens sidebar tree, select the tool you want to turn off, and run
-**MCP Lens: Disable Globally**. The exact file it edits depends on the client the tool belongs to.
+With the rollout set and the analysis done, open the MCP Lens sidebar tree, select the tool you want
+to turn off, and run **MCP Lens: Disable Globally**. The exact file it edits depends on the client
+the tool belongs to.
 
 ::: code-group
 

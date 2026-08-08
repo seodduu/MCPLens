@@ -7,8 +7,10 @@ MCP tool call in your Codex sessions is recorded locally and the `calls` column 
 ## The easy way: let the extension do it
 
 If you use the VS Code extension, run its `MCP Lens: Install Hooks for All Clients` command and it
-installs this plugin for you. See [VS Code Extension](/guide/vscode-extension). The rest of this
-page is for installing it by hand.
+installs this plugin for you. See [VS Code Extension](/guide/vscode-extension). If you took that
+route, skip the manual install section below and continue at
+[After installing](#after-installing). Do not skip it: Codex will not run the hooks until you trust
+their hash there, no matter how the plugin was installed.
 
 ## Install the plugin manually
 

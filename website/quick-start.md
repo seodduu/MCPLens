@@ -29,7 +29,10 @@ code --install-extension packages/extension/mcp-context-lens-<version>.vsix
 ```
 
 ```bash [CLI]
-npm install && npm run build
+git clone https://github.com/seodduu/MCPLens-V2.git
+cd MCPLens-V2
+npm install
+npm run build
 npm link -w @mcp-lens/cli      # only if you want mcp-lens outside the repository
 ```
 
@@ -64,24 +67,50 @@ mcp-lens: MCP context accounting tool
 
 ## Your first audit in 5 minutes
 
+Both paths reach the same matrix. The CLI commands below use the `npx --no-install mcp-lens` form
+and are run from inside the cloned repository, per the warning above. If you ran the optional
+`npm link` step, plain `mcp-lens` works from anywhere and you can drop the `npx --no-install`
+prefix everywhere on this page.
+
 ### 1. Scan your MCP servers
 
-```bash
-mcp-lens scan
+::: code-group
+
+```md [VS Code extension]
+Run **MCP Lens: Scan MCP Servers** from the Command Palette (`Cmd/Ctrl+Shift+P`). The onboarding
+walkthrough's first step runs the same scan, so if you just finished the walkthrough this is
+already done.
 ```
 
-`scan` briefly starts each configured stdio server and calls `tools/list` on it. It spends no LLM
+```bash [CLI]
+npx --no-install mcp-lens scan
+```
+
+:::
+
+The scan briefly starts each configured stdio server and calls `tools/list` on it. It spends no LLM
 tokens and never edits a client config file, so it is safe to run against a live configuration.
 
 ### 2. Read the cost x usage matrix
 
-```bash
-mcp-lens report
+::: code-group
+
+```md [VS Code extension]
+Open the MCP Lens icon in the activity bar and look at the `Cost × Usage Matrix` view. For the same
+matrix as a full report page, run **MCP Lens: Show Report** from the Command Palette.
 ```
 
-`report` prints the definition token cost of every tool next to how often it was actually called, and
-a recommended action per row. These are real rows from a run; the `loaded/sessions`, `errorRate` and
-`errorTokens` columns are cut here for width, and your own terminal shows all of them:
+```bash [CLI]
+npx --no-install mcp-lens report
+```
+
+:::
+
+The report puts the definition token cost of every tool next to how often it was actually called,
+and a recommended action per row. Below is the CLI's table form. These are real rows from a run; the
+`loaded/sessions`, `errorRate` and `errorTokens` columns are cut here for width and the longer
+`reason` cells are truncated with an ellipsis, while your own terminal shows every column and each
+reason sentence in full:
 
 ```
 server          tool                                defTokens  calls  respTokens  action         confidence  reason

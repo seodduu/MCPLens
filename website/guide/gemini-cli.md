@@ -7,8 +7,9 @@ sitting at zero for servers you use through Gemini CLI.
 ## The easy way: let the VS Code extension do it
 
 If you use the VS Code extension, run its `MCP Lens: Install Hooks for All Clients` command and it
-installs this extension for you. See [VS Code Extension](/guide/vscode-extension). The rest of
-this page is for installing it by hand.
+installs this extension for you. See [VS Code Extension](/guide/vscode-extension). If you took that
+route, skip the manual install section below and continue at
+[After installing](#after-installing), which applies however the extension got there.
 
 ## Install the extension manually
 

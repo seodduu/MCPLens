@@ -38,11 +38,11 @@ The table has eleven columns. This excerpt keeps only 3 of the real rows so the 
 but every column is real:
 
 ```
-server          tool          defTokens  calls  respTokens  loaded/sessions  errorRate  errorTokens  action  confidence  reason
---------------  ------------  ---------  -----  ----------  ---------------  ---------  -----------  ------  ----------  ------------------------------------------------------------------------------------------------------------------------------------------
-web-search      place_search  17251      0      0           0/533            -          0            remove  medium      definition 17,251 tokens, 0 calls. small savings, but cleans up the search space. 98 sessions/3d observed, confirmed with more observation
-knowledge-base  search        1809       10     124         5/533            0%         0            keep    high        called 10 times
-weather-tools   get_weather   74         4      83          3/533            0%         0            keep    high        called 4 times
+server          tool                     defTokens  calls  respTokens  loaded/sessions  errorRate  errorTokens  action  confidence  reason
+--------------  -----------------------  ---------  -----  ----------  ---------------  ---------  -----------  ------  ----------  ------------------------------------------------------------------------------------------------------------------------------------------
+web-search      web-search_place_search  17251      0      0           0/533            -          0            remove  medium      definition 17,251 tokens, 0 calls. small savings, but cleans up the search space. 98 sessions/3d observed, confirmed with more observation
+knowledge-base  knowledge-base-search    1809       10     124         5/533            0%         0            keep    high        called 10 times
+weather-tools   get_weather              74         4      83          3/533            0%         0            keep    high        called 4 times
 
 savings: potential=61893 actual=26839 saved=35054
 (0 session files backfilled)

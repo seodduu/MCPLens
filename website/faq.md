@@ -42,6 +42,34 @@ No, it is frozen. Its code and tests still work as of the freeze, and you can st
 absorbed that role. Use the extension's sidebar for anything beyond a quick look; see
 [Dashboard](/guide/dashboard) for what still works.
 
+## I installed hooks but my usage is always zero. What's wrong?
+
+If you are on the CLI-only path, this is a current limitation rather than a misconfiguration. The
+hooks write each call into the `~/.mcplens/inbox` queue, and the VS Code extension is the only
+component that drains that queue into `~/.mcplens/lens.db`. The `mcp-lens` CLI has no drain path at
+all, so with the extension never running those records stay queued and never reach the database.
+
+Check it with `mcp-lens hooks status`. If the `pending` count keeps growing instead of returning to
+0, that is exactly this situation, and `mcp-lens hooks doctor` raises a warning for the same events:
+
+```bash
+mcp-lens hooks status
+```
+
+The `pending` line is the one to watch (field names below are real, the number is illustrative):
+
+```
+  pending: 128
+```
+
+Nothing is lost while they wait. Run the [VS Code extension](/guide/vscode-extension) once and it
+drains the whole queue. Until then, the only usage `mcp-lens report` can show is what it recovers by
+parsing each client's own session logs, which is a separate path from the inbox. See
+[How It Works](/concepts/how-it-works) for both paths in full.
+
+If you are already running the extension and the `calls` column is still zero, the cause is
+per-client. Codex in particular needs its hook hash trusted; see the next question.
+
 ## My Codex hooks are installed but no events show up. What's wrong?
 
 Codex skips plugin-bundled hooks, including MCP Lens's, until you trust their current
