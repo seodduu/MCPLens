@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { findSchemaFlowDependencies } from '../src/dependency/schemaFlow.js';
-import type { ToolDefinitionBody } from '../src/types.js';
+import { findSchemaFlowDependencies } from '../../src/dependency/schemaFlow.js';
+import type { ToolDefinitionBody } from '../../src/types.js';
 
 interface ToolSpec {
   serverName?: string;

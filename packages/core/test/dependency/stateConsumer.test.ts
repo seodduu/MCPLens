@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { findStateConsumers } from '../src/dependency/stateConsumer.js';
-import type { ToolDefinitionBody } from '../src/types.js';
+import { findStateConsumers } from '../../src/dependency/stateConsumer.js';
+import type { ToolDefinitionBody } from '../../src/types.js';
 
 function body(
   serverName: string,

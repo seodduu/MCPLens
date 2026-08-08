@@ -5,8 +5,18 @@ import {
 } from '@mcp-lens/core';
 import type { ProviderResolution } from './providerConfig.js';
 
-export const ANALYSIS_RULES_VERSION = 1;
+export const ANALYSIS_RULES_VERSION = 2;
 export const CONSENT_POLICY_VERSION = 1;
+
+/**
+ * Cached verdicts the call-chain trigger may wake in one automatic run.
+ *
+ * One, so that "the user added one server" maps to "one server's worth of extra tokens" and the
+ * cost stays explainable. The automatic path has no dialog, and the stored consent records only
+ * provider and model, not volume; the estimate the user saw at consent time was for that moment's
+ * scope. Servers left over are picked up by the next automatic scan or by a manual reanalysis.
+ */
+export const AUTO_REANALYSIS_LIMIT = 1;
 
 export interface AnalysisCoordinatorDeps {
   store: () => LensStore;
@@ -79,6 +89,8 @@ export class AnalysisCoordinator {
       provider: chosen.provider,
       model: chosen.model,
       reanalyzeServerNames,
+      // A human initiated this run and is watching, so the whole backlog may clear at once.
+      maxTriggeredReanalyses: options.auto ? AUTO_REANALYSIS_LIMIT : undefined,
       signal: controller.signal,
     }, async (request) => {
       if (controller.signal.aborted) return { ok: false, errorCode: 'cancelled' };

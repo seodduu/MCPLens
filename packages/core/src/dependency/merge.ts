@@ -11,11 +11,23 @@ export interface MergeDependencyInput {
   bodies: readonly ToolDefinitionBody[];
   staticRefs: readonly DependencyEvidence[];
   callChains: readonly DependencyEvidence[];
+  /** Schema data-flow tier (A/B). Defaults to none. */
+  schemaFlow?: readonly DependencyEvidence[];
+  /** State-consumer tier (F), producer-attributed entries only. Defaults to none. */
+  stateFlow?: readonly DependencyEvidence[];
+  /** Prerequisites the model inferred (D), converted to evidence. Defaults to none. */
+  llmPrereqs?: readonly DependencyEvidence[];
   llmResults: readonly ToolDependencyResult[];
 }
 
 export function mergeDependencyResults(input: MergeDependencyInput): ToolDependencyResult[] {
-  const blockers = evidenceByTool([...input.staticRefs, ...input.callChains]);
+  const blockers = evidenceByTool([
+    ...input.staticRefs,
+    ...input.callChains,
+    ...(input.schemaFlow ?? []),
+    ...(input.stateFlow ?? []),
+    ...(input.llmPrereqs ?? []),
+  ]);
   const llmByTool = new Map(input.llmResults.map((result) => [keyOf(result), result]));
 
   return [...input.bodies]

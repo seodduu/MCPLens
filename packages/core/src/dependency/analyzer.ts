@@ -3,12 +3,16 @@ import type { DependencyAnalysis, InferenceProvider, ToolDefinitionBody } from '
 import { findCallChainDependencies } from './callChains.js';
 import type { DependencyEvidence } from './merge.js';
 import { mergeDependencyResults } from './merge.js';
+import { needsCallChainReanalysis } from './reanalysisTrigger.js';
+import { findSchemaFlowDependencies } from './schemaFlow.js';
+import { findStateConsumers, type StateConsumerScan } from './stateConsumer.js';
 import { findStaticDependencyRefs } from './staticRefs.js';
 import { planInferenceBatches } from '../inference/batchPlanner.js';
 import type {
   InferenceBatch,
   InferenceCallChainSummary,
   InferenceServerInput,
+  PredictedPrerequisite,
 } from '../inference/types.js';
 import { validateInferenceOutput } from '../inference/validate.js';
 
@@ -27,6 +31,13 @@ export interface AnalyzeServersInput {
   provider: ResolvedInferenceProvider;
   model: string;
   reanalyzeServerNames?: readonly string[];
+  /**
+   * How many cached verdicts the call-chain trigger may wake in this run.
+   * undefined means unlimited, which is the user-initiated path. The automatic path passes a
+   * finite budget so that adding one server cannot silently re-analyze the whole cache.
+   * Servers with no cached row at all are never charged against this budget.
+   */
+  maxTriggeredReanalyses?: number;
   /** User-initiated refreshes cancel in-flight external inference. */
   signal?: AbortSignal;
   now?: string;
@@ -60,6 +71,11 @@ interface PendingServer {
   serverName: string;
   definitionSetHash: string;
   bodies: ToolDefinitionBody[];
+  /**
+   * Counted before the analysis runs. Counting again afterwards would store a number from a
+   * later moment than the verdict was reached at, and the trigger compares against exactly this.
+   */
+  observedSessionCount: number;
   inference: InferenceServerInput;
 }
 
@@ -83,6 +99,8 @@ export async function analyzeUncachedServers(
   const serverNames = [...new Set(input.serverNames)].sort();
   const bodies = serverNames.flatMap((serverName) => input.store.definitionBodiesForServer(serverName));
   const staticRefs = findStaticDependencyRefs(bodies);
+  const schemaFlow = findSchemaFlowDependencies(bodies);
+  const stateScan = findStateConsumers(bodies);
   const callChains = findCallChainDependencies(
     input.store.dependencyCallsSince(daysBefore(now, 90)),
     { now },
@@ -92,6 +110,8 @@ export async function analyzeUncachedServers(
   const cachedServerNames: string[] = [];
   const failedServerNames: string[] = [];
   const pending: PendingServer[] = [];
+  const reanalysisBudget = input.maxTriggeredReanalyses ?? Number.POSITIVE_INFINITY;
+  let triggeredReanalyses = 0;
 
   for (const serverName of serverNames) {
     const serverBodies = bodies.filter((body) => body.serverName === serverName);
@@ -101,21 +121,39 @@ export async function analyzeUncachedServers(
       definitionSetHash,
       input.analysisRulesVersion,
     );
+    const currentSessionCount = input.store.sessionCountForServer(serverName, daysBefore(now, 90));
+
     if (!reanalyze.has(serverName) && existing?.status === 'complete') {
-      analyses.push(existing);
-      cachedServerNames.push(serverName);
-      continue;
+      // The budget is checked only after the trigger fires, so a run full of settled servers
+      // never consumes it. Order follows the sorted serverNames, which makes the choice
+      // deterministic and therefore testable; no server starves, because a rerun raises its
+      // stored count above the threshold and it stops being a candidate forever.
+      const staleForCallChain = needsCallChainReanalysis({
+        storedSessionCount: existing.observedSessionCount,
+        currentSessionCount,
+      });
+      if (!staleForCallChain || triggeredReanalyses >= reanalysisBudget) {
+        analyses.push(existing);
+        cachedServerNames.push(serverName);
+        continue;
+      }
+      triggeredReanalyses += 1;
     }
+
+    // A failed analysis failed regardless of how many sessions have run since; retrying it is the
+    // user's call through reanalyzeServerNames, not the trigger's.
     if (!reanalyze.has(serverName) && existing?.status === 'failed') {
       analyses.push(existing);
       failedServerNames.push(serverName);
       continue;
     }
+
     pending.push({
       serverName,
       definitionSetHash,
       bodies: serverBodies,
-      inference: inferenceServer(serverName, serverBodies, staticRefs, callChains),
+      observedSessionCount: currentSessionCount,
+      inference: inferenceServer(serverName, serverBodies, staticRefs, callChains, stateScan),
     });
   }
 
@@ -193,12 +231,17 @@ export async function analyzeUncachedServers(
         status: 'complete',
         analyzedAt: now,
         errorCode: null,
-        // Placeholder until the call-chain session count is threaded through here (W3 wiring).
-        observedSessionCount: 0,
+        observedSessionCount: pendingServer.observedSessionCount,
         results: mergeDependencyResults({
           bodies: pendingServer.bodies,
           staticRefs: staticRefs.filter((row) => row.serverName === server.serverName),
           callChains: callChains.filter((row) => row.serverName === server.serverName),
+          schemaFlow: schemaFlow.filter((row) => row.serverName === server.serverName),
+          stateFlow: stateScan.evidence.filter((row) => row.serverName === server.serverName),
+          llmPrereqs: prerequisiteEvidence(
+            server.serverName,
+            prerequisitesOfServer(server, validated.predictedPrerequisites),
+          ),
           llmResults: validated.results.filter((row) => row.serverName === server.serverName),
         }),
       };
@@ -218,14 +261,47 @@ export async function analyzeUncachedServers(
   };
 }
 
+/** The batch carries no server name on a prerequisite, so ownership comes from the tool list. */
+function prerequisitesOfServer(
+  server: InferenceServerInput,
+  prerequisites: readonly PredictedPrerequisite[],
+): PredictedPrerequisite[] {
+  const owned = new Set(server.tools.map((tool) => tool.toolName));
+  return prerequisites.filter((entry) => owned.has(entry.toolName));
+}
+
+/** {toolName: B, requires: [A]} means A is needed by B, so the evidence lands on A. */
+function prerequisiteEvidence(
+  serverName: string,
+  prerequisites: readonly PredictedPrerequisite[],
+): DependencyEvidence[] {
+  const byTool = new Map<string, DependencyEvidence>();
+  for (const entry of prerequisites)
+    for (const required of entry.requires) {
+      const current = byTool.get(required)
+        ?? { serverName, toolName: required, dependedOnBy: [], evidence: [] };
+      if (!current.dependedOnBy.includes(entry.toolName)) current.dependedOnBy.push(entry.toolName);
+      const reason = `llm-prereq:${entry.toolName}`;
+      if (!current.evidence.includes(reason)) current.evidence.push(reason);
+      byTool.set(required, current);
+    }
+  return [...byTool.values()].map((row) => ({
+    ...row,
+    dependedOnBy: row.dependedOnBy.sort(),
+    evidence: row.evidence.sort(),
+  })).sort((a, b) => a.toolName.localeCompare(b.toolName));
+}
+
 function inferenceServer(
   serverName: string,
   bodies: readonly ToolDefinitionBody[],
   staticRefs: readonly DependencyEvidence[],
   callChains: readonly DependencyEvidence[],
+  stateScan: StateConsumerScan,
 ): InferenceServerInput {
   return {
     serverName,
+    stateConsumers: stateScan.hintsByServer[serverName] ?? [],
     tools: bodies.map((body) => ({
       toolName: body.toolName,
       description: body.description,

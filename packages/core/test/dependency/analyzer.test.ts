@@ -23,7 +23,65 @@ function body(serverName: string, hash: string, tokens = 10, toolName = 'read'):
   };
 }
 
-function complete(hash: string, serverName: string, rulesVersion = 1): DependencyAnalysis {
+interface SchemaBodyOptions {
+  description?: string | null;
+  properties?: Record<string, unknown>;
+  required?: string[];
+  outputSchema?: unknown;
+}
+
+function schemaBody(
+  serverName: string,
+  hash: string,
+  toolName: string,
+  options: SchemaBodyOptions = {},
+): ToolDefinitionBody {
+  return {
+    ...body(serverName, hash, 10, toolName),
+    description: options.description ?? null,
+    inputSchemaJson: JSON.stringify({
+      type: 'object',
+      properties: options.properties ?? {},
+      required: options.required ?? [],
+    }),
+    outputSchemaJson: options.outputSchema === undefined ? null : JSON.stringify(options.outputSchema),
+  };
+}
+
+function ingestSessions(store: LensStore, serverName: string, count: number): void {
+  for (let index = 0; index < count; index += 1) {
+    const sessionId = `${serverName}-s${index}`;
+    store.ingest({
+      session: { sessionId, client: 'codex', filePath: null, startedAt: NOW, mode: 'UPFRONT' },
+      toolCalls: [{
+        sessionId, serverName, toolName: 'read', calledAt: '2026-08-02T00:00:00.000Z',
+        durationMs: null, isError: false, responseTokens: null, responseText: null,
+      }],
+      toolLoads: [], usage: [], parseErrors: 0,
+    });
+  }
+}
+
+async function staleServers(
+  names: readonly string[],
+  storedSessionCount = 0,
+  sessions = 5,
+): Promise<LensStore> {
+  const store = await LensStore.open(':memory:');
+  for (const name of names) {
+    store.upsertDefinitionBodies([body(name, `${name}-v1`)]);
+    store.saveDependencyAnalysis(complete(`${name}-v1`, name, 1, storedSessionCount));
+    ingestSessions(store, name, sessions);
+  }
+  return store;
+}
+
+function complete(
+  hash: string,
+  serverName: string,
+  rulesVersion = 1,
+  observedSessionCount = 0,
+): DependencyAnalysis {
   return {
     definitionSetHash: hash,
     analysisRulesVersion: rulesVersion,
@@ -32,7 +90,7 @@ function complete(hash: string, serverName: string, rulesVersion = 1): Dependenc
     status: 'complete',
     analyzedAt: NOW,
     errorCode: null,
-    observedSessionCount: 0,
+    observedSessionCount,
     results: [{
       serverName,
       toolName: 'read',
@@ -231,5 +289,213 @@ describe('analyzeUncachedServers', () => {
     await expect(analyzeUncachedServers(base, run)).resolves.toMatchObject({ status: 'consent-required' });
     await expect(analyzeUncachedServers({ ...base, provider: 'unavailable' }, run)).resolves.toMatchObject({ status: 'provider-unavailable' });
     expect(run).not.toHaveBeenCalled();
+  });
+
+  it('downgrades a schema-flow producer to Review required', async () => {
+    const store = await LensStore.open(':memory:');
+    store.upsertDefinitionBodies([
+      schemaBody('alpha', 'alpha-v1', 'search_restaurants', { description: 'Find places to eat.' }),
+      schemaBody('alpha', 'alpha-v1', 'book_reservation', {
+        description: 'Reserve a table.',
+        properties: { restaurant_id: { type: 'string' } },
+        required: ['restaurant_id'],
+      }),
+    ]);
+
+    await analyzeUncachedServers(await input(store), successfulRunner([]));
+
+    const producer = store.findDependencyAnalysis('alpha-v1', 1)!
+      .results.find((row) => row.toolName === 'search_restaurants')!;
+    expect(producer.status).toBe('Review required');
+    expect(producer.dependedOnBy).toEqual(['book_reservation']);
+  });
+
+  it('keeps a tool Independent when two producers exist', async () => {
+    const store = await LensStore.open(':memory:');
+    store.upsertDefinitionBodies([
+      schemaBody('alpha', 'alpha-v1', 'find_places', {
+        outputSchema: { type: 'object', properties: { restaurant_id: { type: 'string' } } },
+      }),
+      schemaBody('alpha', 'alpha-v1', 'list_places', {
+        outputSchema: { type: 'object', properties: { restaurant_id: { type: 'string' } } },
+      }),
+      schemaBody('alpha', 'alpha-v1', 'book_reservation', {
+        properties: { restaurant_id: { type: 'string' } },
+        required: ['restaurant_id'],
+      }),
+    ]);
+
+    await analyzeUncachedServers(await input(store), successfulRunner([]));
+
+    const producer = store.findDependencyAnalysis('alpha-v1', 1)!
+      .results.find((row) => row.toolName === 'find_places')!;
+    expect(producer.status).toBe('Independent');
+  });
+
+  it('passes state consumer hints into the inference payload', async () => {
+    const store = await LensStore.open(':memory:');
+    store.upsertDefinitionBodies([
+      schemaBody('alpha', 'alpha-v1', 'read_page', { description: 'Read the current page.' }),
+      schemaBody('alpha', 'alpha-v1', 'navigate', {
+        description: 'Open a URL.',
+        properties: { url: { type: 'string' } },
+        required: ['url'],
+      }),
+    ]);
+    const batches: InferenceBatch[] = [];
+
+    await analyzeUncachedServers(await input(store), successfulRunner(batches));
+
+    expect(batches[0]!.servers[0]!.stateConsumers[0]!.toolName).toBe('read_page');
+  });
+
+  it('downgrades a tool named in predictedPrerequisites', async () => {
+    const store = await LensStore.open(':memory:');
+    store.upsertDefinitionBodies([
+      schemaBody('alpha', 'alpha-v1', 'read_page', { description: 'Read the current page.' }),
+      schemaBody('alpha', 'alpha-v1', 'navigate', {
+        description: 'Open a URL.',
+        properties: { url: { type: 'string' } },
+        required: ['url'],
+      }),
+    ]);
+    const run: InferenceRunner = vi.fn(async ({ batch }) => ({
+      ok: true as const,
+      value: {
+        results: batch.servers.flatMap((server) => server.tools.map((tool) => ({
+          serverName: server.serverName,
+          toolName: tool.toolName,
+          status: 'Independent',
+          dependedOnBy: [],
+          rationale: 'No dependency was found.',
+          displaySummary: 'Reads data.',
+          whatYouLose: 'Direct data lookup.',
+          riskWithoutTool: 'Manual lookup is required.',
+        }))),
+        predictedPrerequisites: [{
+          toolName: 'read_page',
+          requires: ['navigate'],
+          basis: 'read_page reports on whatever navigate opened.',
+        }],
+      },
+    }));
+
+    await analyzeUncachedServers(await input(store), run);
+
+    const navigate = store.findDependencyAnalysis('alpha-v1', 1)!
+      .results.find((row) => row.toolName === 'navigate')!;
+    expect(navigate.status).toBe('Review required');
+    expect(navigate.rationale).toContain('llm-prereq:read_page');
+  });
+
+  it('reanalyzes a cached verdict once sessions cross the threshold', async () => {
+    const store = await staleServers(['s'], 0, 3);
+    const run = successfulRunner([]);
+
+    const result = await analyzeUncachedServers(await input(store, { serverNames: ['s'] }), run);
+
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(result.cachedServerNames).toEqual([]);
+  });
+
+  it('keeps using the cache when sessions are still below the threshold', async () => {
+    const store = await staleServers(['s'], 0, 2);
+    const run = successfulRunner([]);
+
+    const result = await analyzeUncachedServers(await input(store, { serverNames: ['s'] }), run);
+
+    expect(run).not.toHaveBeenCalled();
+    expect(result.cachedServerNames).toEqual(['s']);
+  });
+
+  it('does not reanalyze a server that already had enough sessions', async () => {
+    const store = await staleServers(['s'], 5, 50);
+    const run = successfulRunner([]);
+
+    await analyzeUncachedServers(await input(store, { serverNames: ['s'] }), run);
+
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('stores the observed session count with the verdict', async () => {
+    const store = await LensStore.open(':memory:');
+    store.upsertDefinitionBodies([body('s', 's-v1')]);
+    ingestSessions(store, 's', 3);
+
+    await analyzeUncachedServers(await input(store, { serverNames: ['s'] }), successfulRunner([]));
+
+    expect(store.findDependencyAnalysis('s-v1', 1)?.observedSessionCount).toBe(3);
+  });
+
+  it('does not apply the trigger to a failed analysis', async () => {
+    const store = await LensStore.open(':memory:');
+    store.upsertDefinitionBodies([body('s', 's-v1')]);
+    store.saveDependencyAnalysis({
+      ...complete('s-v1', 's'), status: 'failed', errorCode: 'timeout', results: [],
+    });
+    ingestSessions(store, 's', 10);
+    const run = successfulRunner([]);
+
+    const result = await analyzeUncachedServers(await input(store, { serverNames: ['s'] }), run);
+
+    expect(run).not.toHaveBeenCalled();
+    expect(result.failedServerNames).toEqual(['s']);
+  });
+
+  it('wakes at most one cached verdict when a budget is given', async () => {
+    const store = await staleServers(['a', 'b', 'c']);
+
+    const result = await analyzeUncachedServers(await input(store, {
+      serverNames: ['a', 'b', 'c'], maxTriggeredReanalyses: 1,
+    }), successfulRunner([]));
+
+    expect(result.analyzedServerNames).toEqual(['a']);
+    expect(result.cachedServerNames).toEqual(['b', 'c']);
+  });
+
+  it('wakes every stale verdict when no budget is given', async () => {
+    const store = await staleServers(['a', 'b', 'c']);
+
+    const result = await analyzeUncachedServers(await input(store, {
+      serverNames: ['a', 'b', 'c'],
+    }), successfulRunner([]));
+
+    expect(result.analyzedServerNames).toEqual(['a', 'b', 'c']);
+    expect(result.cachedServerNames).toEqual([]);
+  });
+
+  it('does not charge a brand-new server against the budget', async () => {
+    const store = await staleServers(['b']);
+    store.upsertDefinitionBodies([body('a', 'a-v1')]);
+
+    const result = await analyzeUncachedServers(await input(store, {
+      serverNames: ['a', 'b'], maxTriggeredReanalyses: 1,
+    }), successfulRunner([]));
+
+    expect(result.analyzedServerNames).toEqual(['a', 'b']);
+  });
+
+  it('does not consume the budget when nothing is stale', async () => {
+    const store = await staleServers(['a', 'b', 'c'], 5, 5);
+    const run = successfulRunner([]);
+
+    const result = await analyzeUncachedServers(await input(store, {
+      serverNames: ['a', 'b', 'c'], maxTriggeredReanalyses: 1,
+    }), run);
+
+    expect(run).not.toHaveBeenCalled();
+    expect(result.cachedServerNames).toHaveLength(3);
+  });
+
+  it('picks the budgeted server deterministically', async () => {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const store = await staleServers(['a', 'b', 'c']);
+
+      const result = await analyzeUncachedServers(await input(store, {
+        serverNames: ['a', 'b', 'c'], maxTriggeredReanalyses: 1,
+      }), successfulRunner([]));
+
+      expect(result.analyzedServerNames).toEqual(['a']);
+    }
   });
 });

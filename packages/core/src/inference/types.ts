@@ -22,12 +22,8 @@ export interface InferenceCallChainSummary {
 export interface InferenceServerInput {
   serverName: string;
   tools: readonly InferenceToolInput[];
-  /**
-   * Tools detected as operating on ambient state. Empty when none were found.
-   * Optional only until the analyzer wiring always supplies it; treat a missing
-   * value as an empty list.
-   */
-  stateConsumers?: readonly StateConsumerHint[];
+  /** Tools detected as operating on ambient state. Empty when none were found. */
+  stateConsumers: readonly StateConsumerHint[];
 }
 
 export interface InferenceBatch {

@@ -12,6 +12,7 @@ function store(consent: unknown = null) {
     definitionBodiesForServer: vi.fn(() => [body]),
     currentInferenceConsent: vi.fn(() => consent),
     dependencyCallsSince: vi.fn(() => []),
+    sessionCountForServer: vi.fn(() => 0),
     findDependencyAnalysis: vi.fn(() => null),
     saveDependencyAnalysis: vi.fn(),
   };

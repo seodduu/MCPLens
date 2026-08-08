@@ -22,8 +22,8 @@ export interface InferenceRunBatch {
 export interface InferenceRunServer {
   serverName: string;
   tools: readonly InferenceRunTool[];
-  /** Tools detected as operating on ambient state. A missing value means none were found. */
-  stateConsumers?: readonly InferenceRunStateConsumer[];
+  /** Tools detected as operating on ambient state. Empty when none were found. */
+  stateConsumers: readonly InferenceRunStateConsumer[];
 }
 
 export interface InferenceRunStateConsumer {
@@ -206,7 +206,7 @@ function buildPayload(batch: InferenceRunBatch): string {
     servers: batch.servers.map((server) => ({
       serverName: server.serverName,
       // Hints precede the tool list so the model reads them before the definitions.
-      stateConsumers: server.stateConsumers ?? [],
+      stateConsumers: server.stateConsumers,
       tools: server.tools.map((tool) => ({
         toolName: tool.toolName,
         description: tool.description,
