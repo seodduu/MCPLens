@@ -18,3 +18,7 @@ Thumbs.db
 docs/handoffs/
 
 .claude/worktrees/
+
+website/node_modules/
+website/.vitepress/cache/
+website/.vitepress/dist/
