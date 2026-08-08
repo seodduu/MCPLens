@@ -8,7 +8,7 @@ const GROUPS: SetupGroup[] =
 const ICON: Record<SetupIcon, string> = {
   pass: 'pass', warning: 'warning', 'circle-outline': 'circle-outline', error: 'error',
   'circle-slash': 'circle-slash', account: 'account', lock: 'lock', unlock: 'unlock',
-  clock: 'clock',
+  clock: 'clock', 'mortar-board': 'mortar-board',
 };
 
 type SetupNode = { kind: 'group'; group: SetupGroup } | { kind: 'row'; row: SetupRow };
@@ -32,7 +32,7 @@ export class SetupStatusProvider implements vscode.TreeDataProvider<SetupNode> {
     const { row } = node;
     const item = new vscode.TreeItem(row.label);
     item.description = row.description;
-    item.id = row.id ?? `${row.group}/${row.label}`;
+    item.id = row.id ?? (row.group ? `${row.group}/${row.label}` : row.label);
     item.tooltip = row.tooltip;
     item.contextValue = row.contextValue;
     item.iconPath = new vscode.ThemeIcon(
@@ -49,7 +49,13 @@ export class SetupStatusProvider implements vscode.TreeDataProvider<SetupNode> {
   }
 
   getChildren(node?: SetupNode): SetupNode[] {
-    if (!node) return GROUPS.map((group) => ({ kind: 'group', group }));
+    if (!node) {
+      // Rows with no group lead the view, above every group header. Only the Get started row uses this,
+      // and it has to be the first thing a first-time user sees.
+      const lead: SetupNode[] = this.rows.filter((row) => row.group === undefined)
+        .map((row) => ({ kind: 'row', row }));
+      return [...lead, ...GROUPS.map((group): SetupNode => ({ kind: 'group', group }))];
+    }
     if (node.kind === 'row') return [];
     return this.rows.filter((row) => row.group === node.group).map((row) => ({ kind: 'row', row }));
   }

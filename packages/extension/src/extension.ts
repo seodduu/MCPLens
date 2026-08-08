@@ -28,7 +28,7 @@ import { CodexHookInstaller } from './installers/codex.js';
 import { GeminiHookInstaller } from './installers/gemini.js';
 import { findBinary, runBin, nodeFs } from './claudeCli.js';
 import { bundledStamp, installedStamp, needsRuntimeRefresh, recordInstalledStamp } from './runtimeFreshness.js';
-import { claimFirstRun, WALKTHROUGH_CATEGORY_ID } from './firstRun.js';
+import { claimFirstRun, WALKTHROUGH_CATEGORY_ID, WALKTHROUGH_OPENED_KEY } from './firstRun.js';
 import { buildAnalysisRows } from './analysisTree.js';
 import { buildAnalysisDetails } from './analysisDetails.js';
 import { buildDisableConfirmation } from './disableConfirmation.js';
@@ -269,6 +269,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
       definitionServers: new Set(s.allDefinitions().map((definition) => definition.serverName)),
       consent: consent?.status === 'accepted' ? { provider: consent.provider, model: consent.model } : undefined,
       rollout: dependencyRollout(),
+      walkthroughOpened: ctx.globalState.get(WALKTHROUGH_OPENED_KEY) === true,
     })]);
   }
 
@@ -535,11 +536,31 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
   ctx.subscriptions.push({ dispose: () => { if (roPoll) clearInterval(roPoll); lease?.stop(); } });
 
-  if (await claimFirstRun(ctx.globalState)) {
-    // A failure here must not block activation: the Setup Status view is the source of truth.
-    void vscode.commands.executeCommand('workbench.action.openWalkthrough', WALKTHROUGH_CATEGORY_ID)
-      .then(undefined, () => {});
+  /**
+   * The one path to the walkthrough: first activation, the Get started row and the title-bar button all
+   * come through here. Opening it marks the flag, which is what drops the Get started row.
+   * The failure is logged instead of swallowed. A silent catch meant a walkthrough that never appeared
+   * left no trace at all, and finding out why took reading VS Code's own state database.
+   */
+  async function openWalkthrough(): Promise<void> {
+    try {
+      await vscode.commands.executeCommand('workbench.action.openWalkthrough', WALKTHROUGH_CATEGORY_ID);
+    } catch (error) {
+      // Never block activation: the Setup Status view is the source of truth for what is left to do.
+      console.error('[mcp-lens] could not open the walkthrough', error);
+    }
+    await ctx.globalState.update(WALKTHROUGH_OPENED_KEY, true);
+    void computeCollection();
   }
+
+  ctx.subscriptions.push(
+    vscode.commands.registerCommand('mcp-lens.openWalkthrough', () => openWalkthrough()));
+
+  // Only the focused window may claim the first run. globalState is shared across windows while the
+  // extension host is per window, so without this guard whichever window activates first claims the flag
+  // and opens the walkthrough in itself. With several windows open that is usually not the one the user
+  // is looking at, and the walkthrough appears to have silently never opened.
+  if (vscode.window.state.focused && await claimFirstRun(ctx.globalState)) void openWalkthrough();
 
   // Hook installation and approval prompts are never raised as notification popups. Back-to-back
   // popups right after install, before the user did anything, hurt the first impression. The Setup

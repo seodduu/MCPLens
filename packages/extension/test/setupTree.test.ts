@@ -10,6 +10,7 @@ const base = {
   definitionServers: new Set<string>(),
   consent: undefined as { provider: string; model: string } | undefined,
   rollout: 'off',
+  walkthroughOpened: true,
 };
 const auth = (rows: ReturnType<typeof buildSetupRows>) =>
   rows.filter((r) => r.group === 'MCP authentication');
@@ -171,5 +172,33 @@ describe('status colour', () => {
 
   it('gives a server Lens cannot support no colour: there is nothing the user can do', () => {
     expect(rowFor({ unsupported: ['notion'] }, 'notion', 'MCP authentication')?.colorId).toBeUndefined();
+  });
+});
+
+// The walkthrough is the only place that explains what a scan costs and what hooks collect. Reaching it
+// through the command palette assumes the user already knows it exists, which a first-time user does not.
+describe('buildSetupRows: the Get started row', () => {
+  it('leads the view before the walkthrough has ever been opened', () => {
+    const rows = buildSetupRows({ ...base, walkthroughOpened: false });
+    expect(rows[0]?.label).toBe('Get started');
+    expect(rows[0]?.command).toBe('mcp-lens.openWalkthrough');
+  });
+
+  // It belongs to no group, so the provider renders it above every group header rather than inside one.
+  it('carries no group, so it is not buried under a group header', () => {
+    const rows = buildSetupRows({ ...base, walkthroughOpened: false });
+    expect(rows[0]?.group).toBeUndefined();
+  });
+
+  // A permanent row would cost a line forever for something read once, pushing the matrix down.
+  it('disappears once the walkthrough has been opened', () => {
+    const rows = buildSetupRows({ ...base, walkthroughOpened: true });
+    expect(rows.some((row) => row.label === 'Get started')).toBe(false);
+  });
+
+  // Without an explicit empty argument list the provider passes { serverName: 'Get started' }.
+  it('passes no arguments, unlike the server rows', () => {
+    const row = buildSetupRows({ ...base, walkthroughOpened: false })[0];
+    expect(row?.commandArgs).toEqual([]);
   });
 });

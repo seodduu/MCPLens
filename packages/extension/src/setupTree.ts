@@ -9,10 +9,11 @@ export type SetupGroup =
 /** Icon names setupTreeProvider.ts maps to a ThemeIcon. */
 export type SetupIcon =
   | 'pass' | 'warning' | 'circle-outline' | 'error' | 'circle-slash' | 'account' | 'lock' | 'unlock'
-  | 'clock';
+  | 'clock' | 'mortar-board';
 
 export interface SetupRow {
-  group: SetupGroup;
+  /** Absent means the row is not in any group: the tree renders it above every group header. */
+  group?: SetupGroup;
   label: string;
   description: string;
   icon: SetupIcon;
@@ -44,6 +45,8 @@ export interface BuildSetupRowsInput {
   definitionServers: Set<string>;
   consent?: { provider: string; model: string };
   rollout: string;
+  /** The mcpLens.walkthroughOpened flag in globalState: true once the walkthrough has been opened. */
+  walkthroughOpened: boolean;
 }
 
 /**
@@ -119,9 +122,27 @@ function globalActionsRow(input: BuildSetupRowsInput): SetupRow {
   };
 }
 
+/**
+ * The entrance to the walkthrough, which is the only place that says what a scan costs and what the
+ * hooks collect. It leads the view because a first-time user does not know the walkthrough exists and
+ * so cannot find it in the command palette. It is dropped once the walkthrough has been opened: a
+ * permanent row would spend a line forever on something read once and push the matrix further down.
+ * The title-bar button stays regardless, so the walkthrough is never unreachable.
+ */
+function getStartedRow(): SetupRow {
+  return {
+    label: 'Get started', description: 'open the walkthrough', icon: 'mortar-board', colorId: TODO,
+    command: 'mcp-lens.openWalkthrough',
+    // Explicitly empty: the provider otherwise passes the server-row default of { serverName: label }.
+    commandArgs: [],
+    id: 'getStarted',
+  };
+}
+
 /** Pure function with no vscode reference: it decides only which server is in which state. */
 export function buildSetupRows(input: BuildSetupRowsInput): SetupRow[] {
   return [
+    ...(input.walkthroughOpened ? [] : [getStartedRow()]),
     ...input.serverNames.map((name) => authRow(input, name)),
     providerRow(input),
     ...input.serverNames.filter((name) => input.definitionServers.has(name))

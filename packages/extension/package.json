@@ -114,9 +114,21 @@
       {
         "command": "mcp-lens.signInIgnoredServer",
         "title": "Sign in"
+      },
+      {
+        "command": "mcp-lens.openWalkthrough",
+        "title": "MCP Lens: Open Walkthrough",
+        "icon": "$(mortar-board)"
       }
     ],
     "menus": {
+      "view/title": [
+        {
+          "command": "mcp-lens.openWalkthrough",
+          "when": "view == mcpLens.setupStatus",
+          "group": "navigation"
+        }
+      ],
       "commandPalette": [
         {
           "command": "mcp-lens.removeTool",
