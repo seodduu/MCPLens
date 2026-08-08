@@ -2,7 +2,7 @@
 
 By the end of this page you will know how to build and start the local web dashboard, and what to
 expect from it. **The dashboard is frozen.** Its code and tests remain in the repository, but no new
-features land there, because the VS Code sidebar (the `Cost x Usage Matrix` and `Setup Status` views)
+features land there, because the VS Code sidebar (the `Cost × Usage Matrix` and `Setup Status` views)
 absorbed its role. It still works as of the freeze.
 
 ## When to use it instead of the VS Code sidebar
