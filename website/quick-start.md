@@ -84,11 +84,11 @@ a recommended action per row. These are real rows from a run; the `loaded/sessio
 `errorTokens` columns are cut here for width, and your own terminal shows all of them:
 
 ```
-server           tool                                 defTokens  calls  respTokens  action         confidence  reason
----------------  -----------------------------------  ---------  -----  ----------  -------------  ----------  ------
-web-search       web-search_place_search              17251      0      0           remove         medium      definition 17,251 tokens, 0 calls...
-knowledge-base   knowledge-base-query-meeting-notes    5929       0      0           filter-server  high        Only 2 of 28 tools used on server knowledge-base...
-weather-tools    get_weather                           74         4      83          keep           high        called 4 times
+server          tool                                defTokens  calls  respTokens  action         confidence  reason
+--------------  ----------------------------------  ---------  -----  ----------  -------------  ----------  ---------------------------------------------------
+web-search      web-search_place_search             17251      0      0           remove         medium      definition 17,251 tokens, 0 calls...
+knowledge-base  knowledge-base-query-meeting-notes  5929       0      0           filter-server  high        Only 2 of 28 tools used on server knowledge-base...
+weather-tools   get_weather                         74         4      83          keep           high        called 4 times
 
 savings: potential=61893 actual=26839 saved=35054
 ```
