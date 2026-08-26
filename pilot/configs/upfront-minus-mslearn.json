@@ -1,0 +1,12 @@
+{
+  "name": "upfront-minus-mslearn",
+  "purpose": "Row 1. Measures the true weight of mslearn by subtraction against upfront-all.",
+  "servers": [
+    "huggingface",
+    "awsknowledge",
+    "context7",
+    "deepwiki"
+  ],
+  "allowToolSearch": false,
+  "expectedToolCount": 14
+}

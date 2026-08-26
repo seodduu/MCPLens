@@ -1,0 +1,12 @@
+{
+  "name": "upfront-minus-deepwiki",
+  "purpose": "Row 1. Measures the true weight of deepwiki by subtraction against upfront-all.",
+  "servers": [
+    "huggingface",
+    "awsknowledge",
+    "mslearn",
+    "context7"
+  ],
+  "allowToolSearch": false,
+  "expectedToolCount": 14
+}

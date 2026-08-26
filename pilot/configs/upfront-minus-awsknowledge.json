@@ -1,0 +1,12 @@
+{
+  "name": "upfront-minus-awsknowledge",
+  "purpose": "Row 1. Measures the true weight of awsknowledge by subtraction against upfront-all.",
+  "servers": [
+    "huggingface",
+    "mslearn",
+    "context7",
+    "deepwiki"
+  ],
+  "allowToolSearch": false,
+  "expectedToolCount": 12
+}

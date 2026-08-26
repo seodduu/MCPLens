@@ -1,0 +1,12 @@
+{
+  "name": "upfront-minus-huggingface",
+  "purpose": "Row 1. Measures the true weight of huggingface by subtraction against upfront-all.",
+  "servers": [
+    "awsknowledge",
+    "mslearn",
+    "context7",
+    "deepwiki"
+  ],
+  "allowToolSearch": false,
+  "expectedToolCount": 13
+}

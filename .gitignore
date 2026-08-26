@@ -22,3 +22,6 @@ docs/handoffs/
 website/node_modules/
 website/.vitepress/cache/
 website/.vitepress/dist/
+
+# Pilot run outputs (transcripts, isolated Lens home)
+pilot/.work/

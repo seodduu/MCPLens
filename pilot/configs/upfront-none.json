@@ -1,0 +1,7 @@
+{
+  "name": "upfront-none",
+  "purpose": "Row 1 baseline for subtraction. No MCP servers, so the remaining tokens are hook and system prompt overhead.",
+  "servers": [],
+  "allowToolSearch": false,
+  "expectedToolCount": 0
+}

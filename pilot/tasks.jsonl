@@ -1,0 +1,110 @@
+{"taskId":"HF-01","type":"single","prompt":"Qwen 계열 모델 중에 다운로드 많은 거 5개 찾아줘","goldServers":["huggingface"],"goldTools":["hub_repo_search"],"assert":"hub_repo_search 호출, 모델 5개 이름 제시"}
+{"taskId":"HF-02","type":"single","prompt":"meta-llama/Llama-3.1-8B-Instruct 모델 라이선스가 뭐야?","goldServers":["huggingface"],"goldTools":["hub_repo_details"],"assert":"hub_repo_details 호출, llama 계열 라이선스 명시"}
+{"taskId":"HF-03","type":"single","prompt":"한국어 감성분석용 데이터셋 추천해줘","goldServers":["huggingface"],"goldTools":["hub_repo_search"],"assert":"hub_repo_search를 dataset 타입으로 호출"}
+{"taskId":"HF-04","type":"single","prompt":"openai/whisper-large-v3 저장소의 config.json 안에 뭐가 들어있어?","goldServers":["huggingface"],"goldTools":["hf_fs"],"assert":"hf_fs로 실제 파일 내용 조회"}
+{"taskId":"HF-05","type":"single","prompt":"이미지 세그멘테이션 데모 Space 인기 있는 거 찾아줘","goldServers":["huggingface"],"goldTools":["hub_repo_search"],"assert":"hub_repo_search를 space 타입으로 호출"}
+{"taskId":"HF-06","type":"single","prompt":"sentence-transformers/all-MiniLM-L6-v2 파라미터 수가 얼마야?","goldServers":["huggingface"],"goldTools":["hub_repo_details"],"assert":"hub_repo_details 호출, 파라미터 규모 제시"}
+{"taskId":"HF-07","type":"single","prompt":"BAAI/bge-m3 리포지토리에 어떤 파일들이 있어?","goldServers":["huggingface"],"goldTools":["hf_fs"],"assert":"hf_fs로 파일 목록 조회"}
+{"taskId":"HF-08","type":"single","prompt":"코드 생성용 7B 이하 오픈 모델 찾아줘","goldServers":["huggingface"],"goldTools":["hub_repo_search"],"assert":"hub_repo_search 호출, 7B 이하 모델 제시"}
+{"taskId":"HF-09","type":"single","prompt":"stabilityai/stable-diffusion-xl-base-1.0 마지막 업데이트가 언제야?","goldServers":["huggingface"],"goldTools":["hub_repo_details"],"assert":"hub_repo_details 호출, 날짜 제시"}
+{"taskId":"HF-10","type":"single","prompt":"HuggingFaceFW/fineweb 데이터셋 규모가 어느 정도야?","goldServers":["huggingface"],"goldTools":["hub_repo_details"],"assert":"hub_repo_details 호출, 규모 제시"}
+{"taskId":"HF-11","type":"single","prompt":"한국어 TTS 모델 있으면 알려줘","goldServers":["huggingface"],"goldTools":["hub_repo_search"],"assert":"hub_repo_search 호출, 한국어 TTS 모델 제시"}
+{"taskId":"HF-12","type":"single","prompt":"google/gemma-2-9b README 앞부분 읽어줘","goldServers":["huggingface"],"goldTools":["hf_fs"],"assert":"hf_fs로 README 내용 조회"}
+{"taskId":"HF-13","type":"rare","prompt":"내가 지금 허깅페이스에 로그인 돼 있어?","goldServers":["huggingface"],"goldTools":["hf_whoami"],"assert":"hf_whoami 호출","lensRisk":"hf_whoami는 사용 빈도가 낮아 Lens가 끄라고 추천할 확률이 높다"}
+{"taskId":"HF-14","type":"rare","prompt":"허깅페이스 계정 정보 확인해줘","goldServers":["huggingface"],"goldTools":["hf_whoami"],"assert":"hf_whoami 호출","lensRisk":"동일"}
+{"taskId":"HF-15","type":"rare","prompt":"지금 허깅페이스에서 어떤 권한으로 접근되고 있는지 알려줘","goldServers":["huggingface"],"goldTools":["hf_whoami"],"assert":"hf_whoami 호출","lensRisk":"동일"}
+{"taskId":"HF-16","type":"chain","prompt":"Qwen3 모델 하나 찾아서, 그 개발 저장소가 뭘 하는 건지도 같이 설명해줘","goldServers":["huggingface","deepwiki"],"goldTools":["hub_repo_search","ask_question"],"assert":"두 서버 모두 호출"}
+{"taskId":"HF-17","type":"chain","prompt":"transformers 라이브러리로 Trainer 쓰는 법 알려주고, 관련 예제 Space도 허깅페이스에서 찾아줘","goldServers":["context7","huggingface"],"goldTools":["query-docs","hub_repo_search"],"assert":"두 서버 모두 호출"}
+{"taskId":"HF-18","type":"chain","prompt":"Azure에서 허깅페이스 모델 배포하는 방법 알려주고 쓸 만한 모델도 하나 골라줘","goldServers":["mslearn","huggingface"],"goldTools":["microsoft_docs_search","hub_repo_search"],"assert":"두 서버 모두 호출"}
+{"taskId":"HF-19","type":"distractor","prompt":"트랜스포머 아키텍처에서 어텐션이 왜 필요한지 설명해줘","goldServers":[],"goldTools":[],"assert":"툴 호출 0건이면 성공","lensRisk":"툴이 많이 켜져 있을 때 불필요 호출이 늘어나는지 확인"}
+{"taskId":"HF-20","type":"distractor","prompt":"파인튜닝이랑 LoRA의 개념적 차이가 뭐야?","goldServers":[],"goldTools":[],"assert":"툴 호출 0건이면 성공","lensRisk":"동일"}
+{"taskId":"AWS-01","type":"single","prompt":"S3 버킷 버저닝 켜는 방법 알려줘","goldServers":["awsknowledge"],"goldTools":["aws___search_documentation"],"assert":"search_documentation 호출, 절차 제시"}
+{"taskId":"AWS-02","type":"single","prompt":"Lambda 함수 최대 실행 시간이 얼마야?","goldServers":["awsknowledge"],"goldTools":["aws___search_documentation"],"assert":"search_documentation 호출, 15분 제시"}
+{"taskId":"AWS-03","type":"single","prompt":"DynamoDB 온디맨드랑 프로비저닝 모드 차이 설명해줘","goldServers":["awsknowledge"],"goldTools":["aws___search_documentation"],"assert":"search_documentation 호출, 두 모드 비교"}
+{"taskId":"AWS-04","type":"single","prompt":"https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html 이 페이지 내용 읽어줘","goldServers":["awsknowledge"],"goldTools":["aws___read_documentation"],"assert":"read_documentation으로 해당 URL 조회"}
+{"taskId":"AWS-05","type":"single","prompt":"ECS Fargate에서 태스크 정의 만드는 법 알려줘","goldServers":["awsknowledge"],"goldTools":["aws___search_documentation"],"assert":"search_documentation 호출"}
+{"taskId":"AWS-06","type":"single","prompt":"CloudFront 캐시 무효화 하는 방법","goldServers":["awsknowledge"],"goldTools":["aws___search_documentation"],"assert":"search_documentation 호출, invalidation 설명"}
+{"taskId":"AWS-07","type":"single","prompt":"RDS 자동 백업 보관 기간 최대가 며칠이야?","goldServers":["awsknowledge"],"goldTools":["aws___search_documentation"],"assert":"search_documentation 호출, 일수 제시"}
+{"taskId":"AWS-08","type":"single","prompt":"IAM 정책에서 조건 키 쓰는 예시 보여줘","goldServers":["awsknowledge"],"goldTools":["aws___search_documentation"],"assert":"search_documentation 호출, Condition 예시 제시"}
+{"taskId":"AWS-09","type":"single","prompt":"SQS FIFO 큐 처리량 제한이 어떻게 돼?","goldServers":["awsknowledge"],"goldTools":["aws___search_documentation"],"assert":"search_documentation 호출, 처리량 수치 제시"}
+{"taskId":"AWS-10","type":"single","prompt":"EKS 클러스터 버전 업그레이드 절차 알려줘","goldServers":["awsknowledge"],"goldTools":["aws___search_documentation"],"assert":"search_documentation 호출"}
+{"taskId":"AWS-11","type":"single","prompt":"Bedrock에서 Claude 모델 호출하는 API 형식 알려줘","goldServers":["awsknowledge"],"goldTools":["aws___search_documentation"],"assert":"search_documentation 호출, InvokeModel 형식 제시"}
+{"taskId":"AWS-12","type":"single","prompt":"VPC 엔드포인트 종류가 뭐뭐 있어?","goldServers":["awsknowledge"],"goldTools":["aws___search_documentation"],"assert":"search_documentation 호출, Gateway/Interface 구분"}
+{"taskId":"AWS-13","type":"rare","prompt":"AWS 리전 전체 목록 뽑아줘","goldServers":["awsknowledge"],"goldTools":["aws___list_regions"],"assert":"list_regions 호출","lensRisk":"list_regions는 호출 빈도가 낮아 Lens 제거 후보"}
+{"taskId":"AWS-14","type":"rare","prompt":"Bedrock을 서울 리전에서 쓸 수 있어?","goldServers":["awsknowledge"],"goldTools":["aws___get_regional_availability"],"assert":"get_regional_availability 호출","lensRisk":"동일"}
+{"taskId":"AWS-15","type":"rare","prompt":"ap-northeast-2에서 사용 가능한 서비스 목록 알려줘","goldServers":["awsknowledge"],"goldTools":["aws___get_regional_availability"],"assert":"get_regional_availability 호출","lensRisk":"동일"}
+{"taskId":"AWS-16","type":"chain","prompt":"Lambda랑 Azure Functions 콜드스타트 특성 비교해줘","goldServers":["awsknowledge","mslearn"],"goldTools":["aws___search_documentation","microsoft_docs_search"],"assert":"두 서버 모두 호출"}
+{"taskId":"AWS-17","type":"chain","prompt":"S3에 파일 올리는 파이썬 코드가 필요해. boto3 최신 문법으로 알려주고 AWS 공식 문서로도 확인해줘","goldServers":["context7","awsknowledge"],"goldTools":["query-docs","aws___search_documentation"],"assert":"두 서버 모두 호출"}
+{"taskId":"AWS-18","type":"chain","prompt":"aws/aws-cdk 저장소가 어떻게 구성돼 있는지 알려주고, CDK로 스택 배포하는 공식 절차도 찾아줘","goldServers":["deepwiki","awsknowledge"],"goldTools":["ask_question","aws___search_documentation"],"assert":"두 서버 모두 호출"}
+{"taskId":"AWS-19","type":"distractor","prompt":"클라우드 컴퓨팅에서 IaaS랑 PaaS 차이가 뭐야?","goldServers":[],"goldTools":[],"assert":"툴 호출 0건이면 성공"}
+{"taskId":"AWS-20","type":"distractor","prompt":"가용영역이라는 개념을 일반론으로 설명해줘","goldServers":[],"goldTools":[],"assert":"툴 호출 0건이면 성공"}
+{"taskId":"MS-01","type":"single","prompt":"Azure Functions에서 타이머 트리거 설정하는 법 알려줘","goldServers":["mslearn"],"goldTools":["microsoft_docs_search"],"assert":"microsoft_docs_search 호출, CRON 표현식 언급"}
+{"taskId":"MS-02","type":"single","prompt":"Entra ID 조건부 액세스 정책이 뭐야?","goldServers":["mslearn"],"goldTools":["microsoft_docs_search"],"assert":"microsoft_docs_search 호출"}
+{"taskId":"MS-03","type":"single","prompt":"Azure Blob Storage 액세스 계층 종류 알려줘","goldServers":["mslearn"],"goldTools":["microsoft_docs_search"],"assert":"microsoft_docs_search 호출, Hot/Cool/Archive 제시"}
+{"taskId":"MS-04","type":"single","prompt":"C#에서 async/await 예외 처리 베스트 프랙티스가 뭐야?","goldServers":["mslearn"],"goldTools":["microsoft_docs_search"],"assert":"microsoft_docs_search 호출"}
+{"taskId":"MS-05","type":"single","prompt":"Azure Container Apps 스케일 규칙 설정하는 법","goldServers":["mslearn"],"goldTools":["microsoft_docs_search"],"assert":"microsoft_docs_search 호출, KEDA 스케일러 언급"}
+{"taskId":"MS-06","type":"single","prompt":"Power BI 데이터셋 새로 고침 횟수 제한이 어떻게 돼?","goldServers":["mslearn"],"goldTools":["microsoft_docs_search"],"assert":"microsoft_docs_search 호출, 횟수 제시"}
+{"taskId":"MS-07","type":"single","prompt":"ASP.NET Core 미들웨어 파이프라인 순서 설명해줘","goldServers":["mslearn"],"goldTools":["microsoft_docs_search"],"assert":"microsoft_docs_search 호출"}
+{"taskId":"MS-08","type":"single","prompt":"Azure Key Vault에서 시크릿 로테이션 하는 법","goldServers":["mslearn"],"goldTools":["microsoft_docs_search"],"assert":"microsoft_docs_search 호출"}
+{"taskId":"MS-09","type":"single","prompt":"Cosmos DB 파티션 키 고르는 기준 알려줘","goldServers":["mslearn"],"goldTools":["microsoft_docs_search"],"assert":"microsoft_docs_search 호출, 카디널리티 언급"}
+{"taskId":"MS-10","type":"single","prompt":"C#으로 Azure Blob에 파일 업로드하는 코드 샘플 보여줘","goldServers":["mslearn"],"goldTools":["microsoft_code_sample_search"],"assert":"code_sample_search 호출, 실제 코드 제시"}
+{"taskId":"MS-11","type":"single","prompt":"Entity Framework Core 마이그레이션 코드 예제 줘","goldServers":["mslearn"],"goldTools":["microsoft_code_sample_search"],"assert":"code_sample_search 호출"}
+{"taskId":"MS-12","type":"single","prompt":"Azure SDK로 Key Vault 시크릿 읽는 파이썬 예제 보여줘","goldServers":["mslearn"],"goldTools":["microsoft_code_sample_search"],"assert":"code_sample_search 호출"}
+{"taskId":"MS-13","type":"rare","prompt":"https://learn.microsoft.com/en-us/azure/azure-functions/functions-scale 이 페이지 전문을 그대로 가져와줘","goldServers":["mslearn"],"goldTools":["microsoft_docs_fetch"],"assert":"docs_fetch로 해당 URL 조회","lensRisk":"docs_fetch는 search에 비해 호출 빈도가 낮아 Lens 제거 후보"}
+{"taskId":"MS-14","type":"rare","prompt":"Azure OpenAI 할당량 문서 원문을 요약 없이 그대로 읽어줘","goldServers":["mslearn"],"goldTools":["microsoft_docs_fetch"],"assert":"docs_fetch 호출","lensRisk":"동일"}
+{"taskId":"MS-15","type":"rare","prompt":"https://learn.microsoft.com/en-us/dotnet/csharp/whats-new/csharp-13 내용을 원문 그대로 보여줘","goldServers":["mslearn"],"goldTools":["microsoft_docs_fetch"],"assert":"docs_fetch 호출","lensRisk":"동일"}
+{"taskId":"MS-16","type":"chain","prompt":"Azure에서 .NET 앱 배포하는 법 알려주고, dotnet/runtime 저장소 구조도 설명해줘","goldServers":["mslearn","deepwiki"],"goldTools":["microsoft_docs_search","ask_question"],"assert":"두 서버 모두 호출"}
+{"taskId":"MS-17","type":"chain","prompt":"Azure OpenAI랑 AWS Bedrock 중에 어느 쪽이 리전 커버리지가 넓어?","goldServers":["mslearn","awsknowledge"],"goldTools":["microsoft_docs_search","aws___get_regional_availability"],"assert":"두 서버 모두 호출"}
+{"taskId":"MS-18","type":"chain","prompt":"TypeScript로 Azure Functions 짜려는데 배포 절차랑 azure-functions 패키지 최신 문법 둘 다 알려줘","goldServers":["mslearn","context7"],"goldTools":["microsoft_docs_search","query-docs"],"assert":"두 서버 모두 호출"}
+{"taskId":"MS-19","type":"distractor","prompt":"OAuth 2.0 인가 코드 흐름이 어떻게 동작해?","goldServers":[],"goldTools":[],"assert":"툴 호출 0건이면 성공"}
+{"taskId":"MS-20","type":"distractor","prompt":"REST랑 gRPC의 근본적 차이 설명해줘","goldServers":[],"goldTools":[],"assert":"툴 호출 0건이면 성공"}
+{"taskId":"C7-01","type":"single","prompt":"Next.js App Router에서 서버 액션 쓰는 법 알려줘","goldServers":["context7"],"goldTools":["resolve-library-id","query-docs"],"assert":"resolve 후 query-docs 호출"}
+{"taskId":"C7-02","type":"single","prompt":"Prisma에서 트랜잭션 쓰는 문법 알려줘","goldServers":["context7"],"goldTools":["resolve-library-id","query-docs"],"assert":"resolve 후 query-docs 호출"}
+{"taskId":"C7-03","type":"single","prompt":"Zod로 중첩 객체 스키마 만드는 법","goldServers":["context7"],"goldTools":["resolve-library-id","query-docs"],"assert":"resolve 후 query-docs 호출"}
+{"taskId":"C7-04","type":"single","prompt":"TanStack Query로 무한 스크롤 구현하는 법","goldServers":["context7"],"goldTools":["resolve-library-id","query-docs"],"assert":"useInfiniteQuery 제시"}
+{"taskId":"C7-05","type":"single","prompt":"Drizzle ORM 마이그레이션 명령어가 뭐야?","goldServers":["context7"],"goldTools":["resolve-library-id","query-docs"],"assert":"resolve 후 query-docs 호출"}
+{"taskId":"C7-06","type":"single","prompt":"Vitest에서 모듈 모킹하는 법 알려줘","goldServers":["context7"],"goldTools":["resolve-library-id","query-docs"],"assert":"vi.mock 제시"}
+{"taskId":"C7-07","type":"single","prompt":"Hono에서 미들웨어 작성하는 법","goldServers":["context7"],"goldTools":["resolve-library-id","query-docs"],"assert":"resolve 후 query-docs 호출"}
+{"taskId":"C7-08","type":"single","prompt":"Tailwind CSS v4에서 설정 파일이 어떻게 바뀌었어?","goldServers":["context7"],"goldTools":["resolve-library-id","query-docs"],"assert":"CSS-first 설정 언급"}
+{"taskId":"C7-09","type":"single","prompt":"Pydantic v2에서 validator 데코레이터 문법 알려줘","goldServers":["context7"],"goldTools":["resolve-library-id","query-docs"],"assert":"field_validator 제시"}
+{"taskId":"C7-10","type":"single","prompt":"FastAPI 의존성 주입 쓰는 법","goldServers":["context7"],"goldTools":["resolve-library-id","query-docs"],"assert":"Depends 제시"}
+{"taskId":"C7-11","type":"single","prompt":"LangGraph에서 체크포인터 설정하는 법","goldServers":["context7"],"goldTools":["resolve-library-id","query-docs"],"assert":"resolve 후 query-docs 호출"}
+{"taskId":"C7-12","type":"single","prompt":"Playwright에서 네트워크 요청 인터셉트하는 법","goldServers":["context7"],"goldTools":["resolve-library-id","query-docs"],"assert":"page.route 제시"}
+{"taskId":"C7-13","type":"rare","prompt":"Context7에서 react 라이브러리 식별자가 뭐야?","goldServers":["context7"],"goldTools":["resolve-library-id"],"assert":"resolve-library-id만 호출해도 성공","lensRisk":"resolve 단독 호출은 드물어 Lens가 query-docs만 남길 수 있다"}
+{"taskId":"C7-14","type":"rare","prompt":"supabase 문서를 찾으려는데 정확한 라이브러리 ID만 알려줘","goldServers":["context7"],"goldTools":["resolve-library-id"],"assert":"resolve-library-id 호출","lensRisk":"동일"}
+{"taskId":"C7-15","type":"rare","prompt":"auth로 검색되는 라이브러리 후보 목록만 뽑아줘","goldServers":["context7"],"goldTools":["resolve-library-id"],"assert":"resolve-library-id 호출, 후보 목록 제시","lensRisk":"동일"}
+{"taskId":"C7-16","type":"chain","prompt":"shadcn/ui 최신 설치법 알려주고 그 GitHub 저장소 구조도 설명해줘","goldServers":["context7","deepwiki"],"goldTools":["query-docs","ask_question"],"assert":"두 서버 모두 호출"}
+{"taskId":"C7-17","type":"chain","prompt":"boto3로 S3 presigned URL 만드는 법을 라이브러리 문서랑 AWS 공식 문서 양쪽에서 확인해줘","goldServers":["context7","awsknowledge"],"goldTools":["query-docs","aws___search_documentation"],"assert":"두 서버 모두 호출"}
+{"taskId":"C7-18","type":"chain","prompt":"transformers로 모델 로드하는 코드 알려주고 쓸 만한 모델도 하나 골라줘","goldServers":["context7","huggingface"],"goldTools":["query-docs","hub_repo_search"],"assert":"두 서버 모두 호출"}
+{"taskId":"C7-19","type":"distractor","prompt":"시맨틱 버저닝 규칙이 뭐야?","goldServers":[],"goldTools":[],"assert":"툴 호출 0건이면 성공"}
+{"taskId":"C7-20","type":"distractor","prompt":"npm이랑 pnpm의 근본적 차이가 뭐야?","goldServers":[],"goldTools":[],"assert":"툴 호출 0건이면 성공"}
+{"taskId":"DW-01","type":"single","prompt":"modelcontextprotocol/servers 저장소는 뭐 하는 거야?","goldServers":["deepwiki"],"goldTools":["ask_question"],"assert":"ask_question 호출, 저장소 실제 내용 반영"}
+{"taskId":"DW-02","type":"single","prompt":"vercel/next.js에서 라우팅이 어디서 처리돼?","goldServers":["deepwiki"],"goldTools":["ask_question"],"assert":"ask_question 호출"}
+{"taskId":"DW-03","type":"single","prompt":"facebook/react의 재조정 알고리즘 설명해줘","goldServers":["deepwiki"],"goldTools":["ask_question"],"assert":"ask_question 호출, fiber 언급"}
+{"taskId":"DW-04","type":"single","prompt":"langchain-ai/langchain 저장소 문서 전체를 읽어줘","goldServers":["deepwiki"],"goldTools":["read_wiki_contents"],"assert":"read_wiki_contents 호출"}
+{"taskId":"DW-05","type":"single","prompt":"pytorch/pytorch에서 autograd가 어떻게 구현돼 있어?","goldServers":["deepwiki"],"goldTools":["ask_question"],"assert":"ask_question 호출"}
+{"taskId":"DW-06","type":"single","prompt":"tailwindlabs/tailwindcss 빌드 파이프라인 설명해줘","goldServers":["deepwiki"],"goldTools":["ask_question"],"assert":"ask_question 호출"}
+{"taskId":"DW-07","type":"single","prompt":"anthropics/anthropic-sdk-python 사용법 문서를 보여줘","goldServers":["deepwiki"],"goldTools":["read_wiki_contents"],"assert":"read_wiki_contents 호출"}
+{"taskId":"DW-08","type":"single","prompt":"denoland/deno의 권한 모델이 어떻게 동작해?","goldServers":["deepwiki"],"goldTools":["ask_question"],"assert":"ask_question 호출"}
+{"taskId":"DW-09","type":"single","prompt":"sqlite/sqlite 저장소 위키 내용 알려줘","goldServers":["deepwiki"],"goldTools":["read_wiki_contents"],"assert":"read_wiki_contents 호출"}
+{"taskId":"DW-10","type":"single","prompt":"microsoft/vscode 확장 API가 어디에 정의돼 있어?","goldServers":["deepwiki"],"goldTools":["ask_question"],"assert":"ask_question 호출"}
+{"taskId":"DW-11","type":"single","prompt":"rust-lang/rust 컴파일러 단계가 어떻게 나뉘어?","goldServers":["deepwiki"],"goldTools":["ask_question"],"assert":"ask_question 호출, HIR/MIR 언급"}
+{"taskId":"DW-12","type":"single","prompt":"ollama/ollama가 모델을 어떻게 로드해?","goldServers":["deepwiki"],"goldTools":["ask_question"],"assert":"ask_question 호출"}
+{"taskId":"DW-13","type":"rare","prompt":"vercel/next.js 위키에 어떤 주제들이 있는지 목차만 뽑아줘","goldServers":["deepwiki"],"goldTools":["read_wiki_structure"],"assert":"read_wiki_structure 호출","lensRisk":"read_wiki_structure는 ask_question에 밀려 Lens 제거 후보"}
+{"taskId":"DW-14","type":"rare","prompt":"kubernetes/kubernetes 문서 구조가 어떻게 돼 있어? 항목 목록만 줘","goldServers":["deepwiki"],"goldTools":["read_wiki_structure"],"assert":"read_wiki_structure 호출","lensRisk":"동일"}
+{"taskId":"DW-15","type":"rare","prompt":"huggingface/transformers 위키 섹션 리스트만 보여줘","goldServers":["deepwiki"],"goldTools":["read_wiki_structure"],"assert":"read_wiki_structure 호출","lensRisk":"동일"}
+{"taskId":"DW-16","type":"chain","prompt":"aws/aws-cdk 저장소 설명해주고 CDK 스택 배포 공식 절차도 찾아줘","goldServers":["deepwiki","awsknowledge"],"goldTools":["ask_question","aws___search_documentation"],"assert":"두 서버 모두 호출"}
+{"taskId":"DW-17","type":"chain","prompt":"dotnet/runtime 저장소 구조 알려주고 .NET GC 공식 문서도 찾아줘","goldServers":["deepwiki","mslearn"],"goldTools":["ask_question","microsoft_docs_search"],"assert":"두 서버 모두 호출"}
+{"taskId":"DW-18","type":"chain","prompt":"huggingface/diffusers 저장소 설명하고 거기서 쓸 만한 모델도 허브에서 찾아줘","goldServers":["deepwiki","huggingface"],"goldTools":["ask_question","hub_repo_search"],"assert":"두 서버 모두 호출"}
+{"taskId":"DW-19","type":"distractor","prompt":"모노레포랑 폴리레포 장단점 비교해줘","goldServers":[],"goldTools":[],"assert":"툴 호출 0건이면 성공"}
+{"taskId":"DW-20","type":"distractor","prompt":"MIT 라이선스랑 Apache 2.0 차이가 뭐야?","goldServers":[],"goldTools":[],"assert":"툴 호출 0건이면 성공"}
+{"taskId":"AMB-01","type":"ambiguous","prompt":"Next.js 관련 문서 좀 찾아줘","goldServers":[],"goldTools":[],"plausibleServers":["context7","deepwiki"],"expectKeywordSearch":true,"assert":"ToolSearch가 키워드 검색으로 2개 이상 로드하면 유효 케이스. 로드-호출 차집합이 정답","lensRisk":"라이브러리 문서와 저장소 Q&A 중 어느 쪽인지 판단이 필요하다"}
+{"taskId":"AMB-02","type":"ambiguous","prompt":"서버리스 함수 만드는 법 알려줘","goldServers":[],"goldTools":[],"plausibleServers":["awsknowledge","mslearn"],"expectKeywordSearch":true,"assert":"동일","lensRisk":"Lambda와 Azure Functions 중 어느 쪽인지 지정되지 않았다"}
+{"taskId":"AMB-03","type":"ambiguous","prompt":"임베딩 모델 관련 자료 찾아줘","goldServers":[],"goldTools":[],"plausibleServers":["huggingface","context7"],"expectKeywordSearch":true,"assert":"동일","lensRisk":"모델 허브와 라이브러리 문서 중 어느 쪽인지 모호하다"}
+{"taskId":"AMB-04","type":"ambiguous","prompt":"클라우드 스토리지 문서 좀 찾아줘","goldServers":[],"goldTools":[],"plausibleServers":["awsknowledge","mslearn"],"expectKeywordSearch":true,"assert":"동일","lensRisk":"S3와 Blob Storage 중 어느 쪽인지 지정되지 않았다"}
+{"taskId":"AMB-05","type":"ambiguous","prompt":"kubernetes 프로젝트가 어떻게 구성돼 있는지 알려줘","goldServers":[],"goldTools":[],"plausibleServers":["deepwiki"],"expectKeywordSearch":true,"assert":"동일","lensRisk":"같은 서버 안에서 ask_question, read_wiki_contents, read_wiki_structure 중 어느 것인지 모호하다"}
+{"taskId":"AMB-06","type":"ambiguous","prompt":"테스트 프레임워크 문서 보여줘","goldServers":[],"goldTools":[],"plausibleServers":["context7","deepwiki"],"expectKeywordSearch":true,"assert":"동일","lensRisk":"대상 프레임워크도 소스도 지정되지 않았다"}
+{"taskId":"AMB-07","type":"ambiguous","prompt":"인증 구현하는 방법에 대한 자료 찾아줘","goldServers":[],"goldTools":[],"plausibleServers":["context7","mslearn","awsknowledge"],"expectKeywordSearch":true,"assert":"동일","lensRisk":"라이브러리, Entra ID, IAM 중 어느 쪽인지 모호하다"}
+{"taskId":"AMB-08","type":"ambiguous","prompt":"벡터 DB 관련 문서 찾아줘","goldServers":[],"goldTools":[],"plausibleServers":["context7","awsknowledge","huggingface"],"expectKeywordSearch":true,"assert":"동일","lensRisk":"OpenSearch, 라이브러리, 데이터셋 중 어느 쪽인지 모호하다"}
+{"taskId":"AMB-09","type":"ambiguous","prompt":"LangChain 최신 정보 알려줘","goldServers":[],"goldTools":[],"plausibleServers":["context7","deepwiki"],"expectKeywordSearch":true,"assert":"동일","lensRisk":"문서와 저장소 구조 중 어느 쪽인지 모호하다"}
+{"taskId":"AMB-10","type":"ambiguous","prompt":"파이썬 SDK 문서 어디서 볼 수 있어?","goldServers":[],"goldTools":[],"plausibleServers":["context7","awsknowledge","mslearn","deepwiki"],"expectKeywordSearch":true,"assert":"동일","lensRisk":"어느 제공자의 SDK인지 전혀 지정되지 않았다"}

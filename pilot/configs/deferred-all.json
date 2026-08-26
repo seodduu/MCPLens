@@ -1,0 +1,7 @@
+{
+  "name": "deferred-all",
+  "purpose": "Row 1 mode detection, Row 2 search-pollution. Harness default: tools loaded on demand via ToolSearch.",
+  "servers": ["huggingface", "awsknowledge", "mslearn", "context7", "deepwiki"],
+  "allowToolSearch": true,
+  "expectedToolCount": 17
+}
