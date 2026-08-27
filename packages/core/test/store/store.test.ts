@@ -118,11 +118,11 @@ describe('LensStore', () => {
   it('preserves the original first_scanned_at across two upserts', async () => {
     const s = await LensStore.open(':memory:');
     s.upsertDefinitions([{ serverName: 'github', toolName: 'a',
-      definitionTokens: 100, scannedAt: '2026-01-01T00:00:00Z',
-      firstScannedAt: '2026-01-01T00:00:00Z' }]);
+      definitionTokens: 100, advertisedTokens: null, estimatorVersion: 'v1',
+      scannedAt: '2026-01-01T00:00:00Z', firstScannedAt: '2026-01-01T00:00:00Z' }]);
     s.upsertDefinitions([{ serverName: 'github', toolName: 'a',
-      definitionTokens: 120, scannedAt: '2026-07-01T00:00:00Z',
-      firstScannedAt: '2026-07-01T00:00:00Z' }]);
+      definitionTokens: 120, advertisedTokens: null, estimatorVersion: 'v1',
+      scannedAt: '2026-07-01T00:00:00Z', firstScannedAt: '2026-07-01T00:00:00Z' }]);
     const [d] = s.allDefinitions();
     expect(d.definitionTokens).toBe(120);              // updated to the newest value
     expect(d.scannedAt).toBe('2026-07-01T00:00:00Z');  // updated to the newest value
@@ -154,12 +154,14 @@ describe('LensStore', () => {
     // upsertScanResult ingests a with its bodies; b gets only definitions through upsertDefinitions
     s.upsertScanResult(
       [{ serverName: 'a', toolName: 'tool', definitionTokens: 10,
+        advertisedTokens: null, estimatorVersion: 'v1',
         scannedAt: '2026-08-01T00:00:00Z', firstScannedAt: '2026-08-01T00:00:00Z' }],
       [{ serverName: 'a', toolName: 'tool', description: 'd', inputSchemaJson: '{}',
         outputSchemaJson: null, definitionTokens: 10, definitionSetHash: 'a'.repeat(64), scannedAt: '2026-08-01T00:00:00Z' }],
       [],
     );
     s.upsertDefinitions([{ serverName: 'b', toolName: 'tool', definitionTokens: 10,
+      advertisedTokens: null, estimatorVersion: 'v1',
       scannedAt: '2026-08-01T00:00:00Z', firstScannedAt: '2026-08-01T00:00:00Z' }]);
     expect([...s.serversWithDefinitionBodies()]).toEqual(['a']);
   });

@@ -6,7 +6,8 @@ const NOW = '2026-08-05T00:00:00.000Z';
 const SINCE = '2000-01-01';
 
 const definition = (serverName: string, toolName: string): ToolDefinition => ({
-  serverName, toolName, definitionTokens: 100, scannedAt: NOW, firstScannedAt: NOW,
+  serverName, toolName, definitionTokens: 100, advertisedTokens: null, estimatorVersion: 'v1',
+  scannedAt: NOW, firstScannedAt: NOW,
 });
 
 /** A collection result holding only the given calls, in one session of the given client. */

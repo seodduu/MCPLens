@@ -188,13 +188,42 @@ export interface LogAdapter {
 }
 
 /** Definition scanner output (the cost axis). */
+/** Which estimator produced a token number. Rows written before the calibrated estimator read as 'v1'. */
+export type EstimatorVersion = 'v1' | 'v2-2026-08-27';
+
 export interface ToolDefinition {
   serverName: string;
   toolName: string;
+  /**
+   * What the client is expected to actually load for this tool, calibrated against measured
+   * context weight (docs/plans/2026-08-27-툴정의-토큰-추정기-v2-구현계획.md section 2).
+   * Every consumer that asks "how much does this tool cost" reads this field.
+   */
   definitionTokens: number;
+  /**
+   * The uncalibrated count: tokens of {name, description, inputSchema} under o200k_base. Kept for
+   * audit. null on rows written before this field existed (estimatorVersion 'v1'): there is no
+   * honest advertised value to backfill for those rows.
+   */
+  advertisedTokens: number | null;
+  estimatorVersion: EstimatorVersion;
   scannedAt: string;
   /** When this definition was first observed (ISO). A candidate window start; never overwritten by upsert. */
   firstScannedAt: string;
+}
+
+/**
+ * Per-server context cost that no single tool owns: the `instructions` string from the
+ * initialize response. Filtering individual tools does not remove it; removing the server does.
+ */
+export interface ServerContextOverhead {
+  serverName: string;
+  /** Calibrated, same factor as ToolDefinition.definitionTokens. 0 when the server publishes none. */
+  instructionsTokens: number;
+  /** null when the server publishes no instructions. Lets a rescan tell "unchanged" from "gone". */
+  instructionsSha256: string | null;
+  estimatorVersion: EstimatorVersion;
+  scannedAt: string;
 }
 
 /** Reliability axis (design ch. 7, feature 1 revision). Zero collection cost: reuses the existing is_error/response_tokens. */

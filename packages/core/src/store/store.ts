@@ -3,9 +3,9 @@ import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync } from '
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type {
-  AdapterResult, ClientId, DependencyAnalysis, DependencyCallRecord, GlobalAction,
-  GlobalActionClient, GlobalActionStatus, InferenceConsent, RegretSignal, ServerIdentity,
-  SessionMeta, ToolCallEvent, ToolDefinition, ToolDefinitionBody, ToolLoadEvent,
+  AdapterResult, ClientId, DependencyAnalysis, DependencyCallRecord, EstimatorVersion, GlobalAction,
+  GlobalActionClient, GlobalActionStatus, InferenceConsent, RegretSignal, ServerContextOverhead,
+  ServerIdentity, SessionMeta, ToolCallEvent, ToolDefinition, ToolDefinitionBody, ToolLoadEvent,
 } from '../types.js';
 import type { ToolObservation } from '../ingest/contracts.js';
 import { adapterResultToObservations } from '../ingest/log-bridge.js';
@@ -59,6 +59,15 @@ function migrate(db: Database): void {
   if (!cols.has('first_scanned_at')) {
     db.exec('ALTER TABLE tool_definitions ADD COLUMN first_scanned_at TEXT');
     db.exec('UPDATE tool_definitions SET first_scanned_at = scanned_at');
+  }
+  // No backfill: a v1 row's definition_tokens included outputSchema and no calibration, so
+  // there is no honest advertised value to write. NULL is exactly "we do not know".
+  if (!cols.has('advertised_tokens')) {
+    db.exec('ALTER TABLE tool_definitions ADD COLUMN advertised_tokens INTEGER');
+  }
+  if (!cols.has('estimator_version')) {
+    db.exec('ALTER TABLE tool_definitions ADD COLUMN estimator_version TEXT');
+    db.exec("UPDATE tool_definitions SET estimator_version = 'v1'");
   }
 
   const bodyCols = new Set<string>();
@@ -271,17 +280,47 @@ export class LensStore {
       for (const d of defs)
         this.run(
           `INSERT INTO tool_definitions(server_name, tool_name, definition_tokens,
-             scanned_at, first_scanned_at)
-           VALUES(?,?,?,?,?)
+             advertised_tokens, estimator_version, scanned_at, first_scanned_at)
+           VALUES(?,?,?,?,?,?,?)
            ON CONFLICT(server_name, tool_name) DO UPDATE
              SET definition_tokens=excluded.definition_tokens,
+                 advertised_tokens=excluded.advertised_tokens,
+                 estimator_version=excluded.estimator_version,
                  scanned_at=excluded.scanned_at,
                  first_scanned_at=COALESCE(tool_definitions.first_scanned_at,
                                            excluded.first_scanned_at)`,
-          [d.serverName, d.toolName, d.definitionTokens, d.scannedAt, d.firstScannedAt]);
+          [d.serverName, d.toolName, d.definitionTokens, d.advertisedTokens,
+            d.estimatorVersion, d.scannedAt, d.firstScannedAt]);
       this.reattributePendingCodexLoads();
       this.reattributeSanitizedCodexToolNames();
     });
+  }
+
+  upsertServerContextOverheads(rows: readonly ServerContextOverhead[]): void {
+    this.transaction(() => {
+      for (const row of rows) this.run(
+        `INSERT INTO server_context_overheads(server_name, instructions_tokens,
+           instructions_sha256, estimator_version, scanned_at)
+         VALUES(?,?,?,?,?)
+         ON CONFLICT(server_name) DO UPDATE SET
+           instructions_tokens=excluded.instructions_tokens,
+           instructions_sha256=excluded.instructions_sha256,
+           estimator_version=excluded.estimator_version,
+           scanned_at=excluded.scanned_at`,
+        [row.serverName, row.instructionsTokens, row.instructionsSha256,
+          row.estimatorVersion, row.scannedAt],
+      );
+    });
+  }
+
+  allServerContextOverheads(): ServerContextOverhead[] {
+    return this.select('SELECT * FROM server_context_overheads', []).map((r) => ({
+      serverName: r.server_name as string,
+      instructionsTokens: r.instructions_tokens as number,
+      instructionsSha256: r.instructions_sha256 as string | null,
+      estimatorVersion: r.estimator_version as EstimatorVersion,
+      scannedAt: r.scanned_at as string,
+    }));
   }
 
   upsertServerIdentities(rows: readonly ServerIdentity[]): void {
@@ -608,7 +647,10 @@ export class LensStore {
   allDefinitions(): ToolDefinition[] {
     return this.select('SELECT * FROM tool_definitions', []).map((r) => ({
       serverName: r.server_name as string, toolName: r.tool_name as string,
-      definitionTokens: r.definition_tokens as number, scannedAt: r.scanned_at as string,
+      definitionTokens: r.definition_tokens as number,
+      advertisedTokens: (r.advertised_tokens as number | null) ?? null,
+      estimatorVersion: (r.estimator_version as EstimatorVersion | null) ?? 'v1',
+      scannedAt: r.scanned_at as string,
       // Defends against rows written before the migration: without a value, scanned_at counts as the first observation
       firstScannedAt: (r.first_scanned_at as string | null) ?? (r.scanned_at as string),
     }));

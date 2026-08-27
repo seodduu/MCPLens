@@ -132,7 +132,8 @@ const codexAction = (overrides: Partial<GlobalAction> = {}): GlobalAction => ({
 });
 
 const definition = (serverName: string, toolName: string): ToolDefinition => ({
-  serverName, toolName, definitionTokens: 100, scannedAt: NOW, firstScannedAt: NOW,
+  serverName, toolName, definitionTokens: 100, advertisedTokens: null, estimatorVersion: 'v1',
+  scannedAt: NOW, firstScannedAt: NOW,
 });
 
 function visibleActionCandidates(store: LensStore) {

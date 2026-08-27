@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { LensStore, StaleWriterError } from '../../src/store/store.js';
 
 const DEF = (tool: string) => ({ serverName: 's', toolName: tool, definitionTokens: 1,
+  advertisedTokens: null, estimatorVersion: 'v1' as const,
   scannedAt: '2026-07-22T00:00:00Z', firstScannedAt: '2026-07-22T00:00:00Z' });
 
 let dir: string; let file: string;

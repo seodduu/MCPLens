@@ -43,7 +43,8 @@ async function writeLegacyDatabase(path: string): Promise<void> {
 }
 
 function definition(toolName: string): ToolDefinition {
-  return { serverName: 'github', toolName, definitionTokens: 10, scannedAt: NOW, firstScannedAt: NOW };
+  return { serverName: 'github', toolName, definitionTokens: 10, advertisedTokens: null,
+    estimatorVersion: 'v1', scannedAt: NOW, firstScannedAt: NOW };
 }
 
 function body(toolName: string, outputSchemaJson: string | null): ToolDefinitionBody {

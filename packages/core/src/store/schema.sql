@@ -27,9 +27,18 @@ CREATE TABLE IF NOT EXISTS tool_definitions (
   server_name       TEXT NOT NULL,
   tool_name         TEXT NOT NULL,
   definition_tokens INTEGER NOT NULL,
+  advertised_tokens INTEGER,
+  estimator_version TEXT,
   scanned_at        TEXT NOT NULL,
   first_scanned_at  TEXT,
   PRIMARY KEY (server_name, tool_name)
+);
+CREATE TABLE IF NOT EXISTS server_context_overheads (
+  server_name         TEXT PRIMARY KEY,
+  instructions_tokens INTEGER NOT NULL,
+  instructions_sha256 TEXT,
+  estimator_version   TEXT NOT NULL,
+  scanned_at          TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS client_servers (
   client      TEXT NOT NULL,
