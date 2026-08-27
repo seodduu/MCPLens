@@ -53,7 +53,7 @@ async function startLocalHttpMcp(): Promise<{ url: string; close: () => Promise<
 }
 
 describe('scanServer — outputSchema accounting', () => {
-  it('records the output schema only for the tool that publishes one, and charges it to the tokens', async () => {
+  it('records the output schema for the tool that publishes one, but does not charge it to the tokens', async () => {
     const { url, close } = await startLocalHttpMcp();
     try {
       const { definitions, bodies } = await scanServer({ name: 'outputtest', url });
@@ -63,10 +63,12 @@ describe('scanServer — outputSchema accounting', () => {
       expect(withOutput.outputSchemaJson).toContain('"echoed"');
       expect(withoutOutput.outputSchemaJson).toBeNull();
 
-      // Both tools share a description and input shape, so the token gap is the outputSchema alone.
+      // The harness never sends outputSchema in the tool definition, so both tools (same
+      // description and input shape) cost the same tokens even though only one publishes an
+      // outputSchema in the stored body.
       const tokensOf = (toolName: string) =>
         definitions.find((row) => row.toolName === toolName)!.definitionTokens;
-      expect(tokensOf('with_output')).toBeGreaterThan(tokensOf('without_output'));
+      expect(tokensOf('with_output')).toBe(tokensOf('without_output'));
       expect(withOutput.definitionTokens).toBe(tokensOf('with_output'));
     } finally {
       await close();

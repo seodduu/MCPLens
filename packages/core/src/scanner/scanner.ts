@@ -1,12 +1,18 @@
+import { createHash } from 'node:crypto';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { countTokens } from '../tokenize.js';
-import type { ToolDefinition, ToolDefinitionBody } from '../types.js';
+import type { ServerContextOverhead, ToolDefinition, ToolDefinitionBody } from '../types.js';
+import { calibrate, ESTIMATOR_VERSION } from './calibration.js';
 import { specTransport, type McpServerSpec } from './configs.js';
 import { storedTokenProvider } from './oauth.js';
 import { canonicalJson, computeDefinitionSetHash, toolToRawBody } from './serverIdentity.js';
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
 
 type AuthProvider = NonNullable<ReturnType<typeof storedTokenProvider>>;
 
@@ -47,7 +53,7 @@ function createTransport(spec: McpServerSpec, authProvider: AuthProvider | undef
 export async function scanServer(
   spec: McpServerSpec,
   timeoutMs = 15000,
-): Promise<{ definitions: ToolDefinition[]; bodies: ToolDefinitionBody[] }> {
+): Promise<{ definitions: ToolDefinition[]; bodies: ToolDefinitionBody[]; overhead: ServerContextOverhead }> {
   // Attach the stored Lens-issued token when present (non-interactive: a redirect throws).
   // Reused for the token-expired hint in the catch block to avoid a second read.
   const authProvider: AuthProvider | undefined = storedTokenProvider(spec) ?? undefined;
@@ -60,24 +66,28 @@ export async function scanServer(
     const now = new Date().toISOString();
     const rawBodies = tools.map(toolToRawBody);
     const definitionSetHash = computeDefinitionSetHash(spec.name, rawBodies);
-    const definitions: ToolDefinition[] = tools.map((t) => ({
-      serverName: spec.name,
-      toolName: t.name,
-      // The client injects the whole tool object into context, outputSchema included. Counting only
-      // name+description+inputSchema under-reports the definition cost and therefore the savings.
-      definitionTokens: countTokens(
+    const definitions: ToolDefinition[] = tools.map((t) => {
+      // The harness only ever sends {name, description, input_schema} in the tool definition
+      // (Anthropic Messages API); outputSchema is not part of that payload, so it is excluded
+      // here even though the row's body keeps it for dependency-tier reads. The name counted is
+      // the fully qualified name the harness actually sends: "mcp__<server>__<tool>".
+      const advertisedTokens = countTokens(
         JSON.stringify({
-          name: t.name,
+          name: `mcp__${spec.name}__${t.name}`,
           description: t.description,
           inputSchema: t.inputSchema,
-          ...((t as { outputSchema?: unknown }).outputSchema === undefined
-            ? {}
-            : { outputSchema: (t as { outputSchema?: unknown }).outputSchema }),
         }),
-      ),
-      scannedAt: now,
-      firstScannedAt: now, // COALESCE on save preserves the existing first value
-    }));
+      );
+      return {
+        serverName: spec.name,
+        toolName: t.name,
+        advertisedTokens,
+        definitionTokens: calibrate(advertisedTokens),
+        estimatorVersion: ESTIMATOR_VERSION,
+        scannedAt: now,
+        firstScannedAt: now, // COALESCE on save preserves the existing first value
+      };
+    });
     const bodies: ToolDefinitionBody[] = definitions.map((definition, index) => ({
       serverName: definition.serverName,
       toolName: definition.toolName,
@@ -90,7 +100,18 @@ export async function scanServer(
       definitionSetHash,
       scannedAt: now,
     }));
-    return { definitions, bodies };
+    // The initialize response's `instructions` string is a per-server cost no single tool owns:
+    // Claude Code puts it in the system prompt, so removing the server removes it but filtering
+    // individual tools does not (docs/plans/2026-08-27-툴정의-토큰-추정기-v2-구현계획.md 3.5절).
+    const instructions = client.getInstructions();
+    const overhead: ServerContextOverhead = {
+      serverName: spec.name,
+      instructionsTokens: instructions ? calibrate(countTokens(instructions)) : 0,
+      instructionsSha256: instructions ? sha256(instructions) : null,
+      estimatorVersion: ESTIMATOR_VERSION,
+      scannedAt: now,
+    };
+    return { definitions, bodies, overhead };
   } catch (err) {
     // An authentication demand is a normal failure; carry the signal so the surface can say "authentication required, skipped".
     if (isAuthRequired(err)) {
