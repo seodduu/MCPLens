@@ -3,7 +3,7 @@
 // responsibilities differ.
 // Design: docs/superpowers/specs/2026-07-21-매트릭스-누적비용-표시-design.md
 // Pure functions: no side effects, no file IO.
-import type { MatrixRow, ToolCallEvent } from '../types.js';
+import type { MatrixRow, Recommendation, ServerContextOverhead, ToolCallEvent } from '../types.js';
 
 /** Same tool key format as the engine (engine.ts:26). If the two diverge, the join fails silently. */
 export function toolCostKey(serverName: string, toolName: string): string {
@@ -26,6 +26,49 @@ export function callSessionCounts(calls: ToolCallEvent[]): Map<string, number> {
   const counts = new Map<string, number>();
   for (const [k, set] of sessions) counts.set(k, set.size);
   return counts;
+}
+
+/**
+ * How much context an action actually takes away (plan
+ * docs/plans/2026-08-27-툴정의-토큰-추정기-v2-구현계획.md section 3.5).
+ * 'server-removal' also drops the server's `instructions` string, because the client stops
+ * connecting to it. 'tool-filter' never does: the server keeps running and keeps sending its
+ * instructions, even when every one of its tools is filtered out.
+ */
+export type SavingScope = 'server-removal' | 'tool-filter';
+
+/**
+ * Only a 'remove' verdict that covers every known tool of the server takes the server down with
+ * it. Anything else (a partial 'remove', any 'filter-server') leaves the connection up, so it is
+ * a tool filter. Deciding here rather than at each call site keeps the two from drifting apart.
+ */
+export function savingScope(
+  action: Recommendation['action'],
+  coversEveryTool: boolean,
+): SavingScope {
+  return action === 'remove' && coversEveryTool ? 'server-removal' : 'tool-filter';
+}
+
+/** definitionTokens plus the instructions overhead, but only for a server removal. */
+export function attributedSaving(
+  definitionTokens: number,
+  instructionsTokens: number,
+  scope: SavingScope,
+): number {
+  return scope === 'server-removal' ? definitionTokens + instructionsTokens : definitionTokens;
+}
+
+/**
+ * server name -> instructions tokens. A server with no overhead row (an unscanned server, or a DB
+ * written before the v2 estimator) is absent from the map and counts as 0: unknown overhead is
+ * never invented into a saving.
+ */
+export function instructionsTokensByServer(
+  overheads: readonly ServerContextOverhead[],
+): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const o of overheads) map.set(o.serverName, o.instructionsTokens);
+  return map;
 }
 
 export interface CumulativeCost {

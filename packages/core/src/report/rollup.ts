@@ -2,8 +2,9 @@
 // EngineInput -> ReportModel aggregation (Task 35). No new verdict logic: action/confidence are
 // read as engine.ts already produced them, and only bucketing, grouping and sorting happen here.
 // Design: docs/designs/2026-07-20-리포트-가독성-설계.md §4-2/§4-3/§4-4/§5.
-import type { ClientId, MatrixRow, SessionMeta } from '../types.js';
+import type { ClientId, MatrixRow, ServerContextOverhead, SessionMeta } from '../types.js';
 import { buildMatrix, splitByClient, visibleMatrixRows, type EngineInput } from '../engine/engine.js';
+import { attributedSaving, instructionsTokensByServer, savingScope } from '../engine/cost.js';
 import type {
   ClientReport, ReportBucket, ReportGroup, ReportModel, ReportOptions, ReportTool, ReportTotals,
 } from './model.js';
@@ -28,7 +29,7 @@ export function buildReport(input: EngineInput, opts: ReportOptions): ReportMode
   const splits = splitByClient(input);
   const rollups = splits.map(({ client, input: sub }) => {
     const all = buildMatrix(sub);
-    return rollupClient(client, sub.sessions, all, opts.conflictedServers);
+    return rollupClient(client, sub.sessions, all, opts.conflictedServers, sub.serverOverheads);
   });
   return assembleModel(rollups, opts);
 }
@@ -36,6 +37,8 @@ export function buildReport(input: EngineInput, opts: ReportOptions): ReportMode
 const ZERO_TOTALS: ReportTotals = {
   actPerSessionTokens: 0,
   candidatePerSessionTokens: 0,
+  actSavingTokens: 0,
+  candidateSavingTokens: 0,
   actServerCount: 0,
   actToolCount: 0,
   candidateServerCount: 0,
@@ -64,6 +67,8 @@ function addTotals(a: ReportTotals, b: ReportTotals): ReportTotals {
   return {
     actPerSessionTokens: a.actPerSessionTokens + b.actPerSessionTokens,
     candidatePerSessionTokens: a.candidatePerSessionTokens + b.candidatePerSessionTokens,
+    actSavingTokens: a.actSavingTokens + b.actSavingTokens,
+    candidateSavingTokens: a.candidateSavingTokens + b.candidateSavingTokens,
     actServerCount: a.actServerCount + b.actServerCount,
     actToolCount: a.actToolCount + b.actToolCount,
     candidateServerCount: a.candidateServerCount + b.candidateServerCount,
@@ -90,7 +95,14 @@ export function rollupClient(
   sessions: SessionMeta[],
   rows: MatrixRow[],
   conflictedServers: ReadonlySet<string> = new Set(),
+  serverOverheads: readonly ServerContextOverhead[] = [],
 ): ClientRollup {
+  // Attribution context (plan section 3.5). The tool count comes from every row of the server,
+  // not just the visible ones: a group only removes the server when it accounts for all of them.
+  const attribution: AttributionContext = {
+    instructionsTokens: instructionsTokensByServer(serverOverheads),
+    toolCountByServer: countToolsByServer(rows),
+  };
   const visible = visibleMatrixRows(rows, sessions);
   const hiddenToolCount = rows.length - visible.length;
   const unmeasuredToolCount = visible.filter((r) => r.recommendation.action === 'unknown').length;
@@ -103,10 +115,10 @@ export function rollupClient(
   }
 
   const buckets: Record<ReportBucket, ReportGroup[]> = {
-    act: groupRows(rowsByBucket.act),
-    candidate: groupRows(rowsByBucket.candidate),
-    inspect: groupRows(rowsByBucket.inspect),
-    healthy: groupRows(rowsByBucket.healthy),
+    act: groupRows(rowsByBucket.act, attribution),
+    candidate: groupRows(rowsByBucket.candidate, attribution),
+    inspect: groupRows(rowsByBucket.inspect, attribution),
+    healthy: groupRows(rowsByBucket.healthy, attribution),
   };
 
   const collapsed = buckets.act.length === 0 && buckets.inspect.length === 0 && buckets.candidate.length > 0;
@@ -146,6 +158,11 @@ export function rollupClient(
   const totals: ReportTotals = {
     actPerSessionTokens: sumDefinitionTokens(actRowsForTotals),
     candidatePerSessionTokens: sumDefinitionTokens(candidateRowsForTotals),
+    // Summed over groups, not rows: the instructions overhead belongs to the server, and only the
+    // group that removes the whole server may claim it. One server yields at most one such group,
+    // so no overhead is counted twice.
+    actSavingTokens: sumSavingTokens(actGroupsForTotals),
+    candidateSavingTokens: sumSavingTokens(candidateGroupsForTotals),
     actServerCount: actGroupsForTotals.length,
     actToolCount: actRowsForTotals.length,
     candidateServerCount: candidateGroupsForTotals.length,
@@ -174,8 +191,24 @@ function sumDefinitionTokens(rows: MatrixRow[]): number {
   return rows.reduce((s, r) => s + (r.definitionTokens ?? 0), 0);
 }
 
+function sumSavingTokens(groups: ReportGroup[]): number {
+  return groups.reduce((s, g) => s + g.savingTokens, 0);
+}
+
+/** What buildGroup needs to attribute the per-server instructions overhead. */
+interface AttributionContext {
+  instructionsTokens: ReadonlyMap<string, number>;
+  toolCountByServer: ReadonlyMap<string, number>;
+}
+
+function countToolsByServer(rows: MatrixRow[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const r of rows) counts.set(r.serverName, (counts.get(r.serverName) ?? 0) + 1);
+  return counts;
+}
+
 /** Groups by (serverName, action, confidence) and sorts descending by perSessionTokens. */
-function groupRows(rows: MatrixRow[]): ReportGroup[] {
+function groupRows(rows: MatrixRow[], attribution: AttributionContext): ReportGroup[] {
   const map = new Map<string, MatrixRow[]>();
   for (const row of rows) {
     const key = `${row.serverName}\0${row.recommendation.action}\0${row.recommendation.confidence}`;
@@ -183,19 +216,34 @@ function groupRows(rows: MatrixRow[]): ReportGroup[] {
     if (bucket) bucket.push(row);
     else map.set(key, [row]);
   }
-  return [...map.values()].map(buildGroup).sort((a, b) => b.perSessionTokens - a.perSessionTokens);
+  return [...map.values()]
+    .map((rowsForKey) => buildGroup(rowsForKey, attribution))
+    .sort((a, b) => b.perSessionTokens - a.perSessionTokens);
 }
 
-function buildGroup(rowsForKey: MatrixRow[]): ReportGroup {
+function buildGroup(rowsForKey: MatrixRow[], attribution: AttributionContext): ReportGroup {
   const first = rowsForKey[0];
   const tools = rowsForKey.map(toReportTool).sort((a, b) => (b.perSessionTokens ?? 0) - (a.perSessionTokens ?? 0));
+  const perSessionTokens = sumDefinitionTokens(rowsForKey);
+  const instructionsTokens = attribution.instructionsTokens.get(first.serverName) ?? 0;
+  const coversEveryTool =
+    rowsForKey.length === (attribution.toolCountByServer.get(first.serverName) ?? rowsForKey.length);
+  const action = first.recommendation.action;
+  const scope = savingScope(action, coversEveryTool);
+  const savingTokens = attributedSaving(perSessionTokens, instructionsTokens, scope);
+  // Only a group the user could act on can "leave instructions behind". A keep/inspect group is
+  // not a saving proposal, so it reports no retained overhead rather than a number to compare.
+  const proposesSaving = action === 'remove' || action === 'filter-server';
   return {
     serverName: first.serverName,
     action: first.recommendation.action,
     confidence: first.recommendation.confidence,
     headline: first.recommendation.reasonParts.serverBasis ?? null,
     caveat: modeOf(rowsForKey.map((r) => r.recommendation.reasonParts.caveat)),
-    perSessionTokens: sumDefinitionTokens(rowsForKey),
+    perSessionTokens,
+    instructionsTokens,
+    savingTokens,
+    retainedInstructionsTokens: proposesSaving && scope === 'tool-filter' ? instructionsTokens : 0,
     totalObservedCost: rowsForKey.reduce((s, r) => s + (r.recommendation.evidence.totalObservedCost ?? 0), 0),
     hasUnmeasured: rowsForKey.some((r) => r.definitionTokens == null),
     tools,

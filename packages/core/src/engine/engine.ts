@@ -1,6 +1,7 @@
 // packages/core/src/engine/engine.ts
 import type { ClientId, LoadPattern, MatrixRow, Recommendation, RecommendationReason,
-  SessionMeta, ToolCallEvent, ToolDefinition, ToolLoadEvent } from '../types.js';
+  ServerContextOverhead, SessionMeta, ToolCallEvent, ToolDefinition,
+  ToolLoadEvent } from '../types.js';
 import { buildEvidenceContext, confidenceCaveat, EMPTY_EVIDENCE, inspectConfidence,
   removeConfidence, toolEvidence, type EvidenceContext } from './evidence.js';
 import { formatTokens } from './format.js';
@@ -22,6 +23,13 @@ export interface EngineInput {
    * a DB that has never been scanned.
    */
   serversByClient?: Map<ClientId, Set<string>>;
+  /**
+   * Per-server `instructions` overhead (store.allServerContextOverheads()).
+   * Optional: a DB scanned before the v2 estimator has none, and then every server's overhead is
+   * 0, which is the pre-existing behaviour. Only the saving attribution (plan section 3.5) reads
+   * it; no tool row owns these tokens, so the matrix does not change.
+   */
+  serverOverheads?: ServerContextOverhead[];
 }
 
 // Verdict thresholds (design doc ch. 7, feature 1 revision)
@@ -281,6 +289,9 @@ export function splitByClient(
         sessions: input.sessions.filter((s) => s.client === client),
         lastCallByTool: input.lastCallByTool,
         serversByClient: input.serversByClient,
+        // Server-scoped and client-independent, like definitions: passed through whole and looked
+        // up by server name, so a client that does not use a server never reads its overhead.
+        serverOverheads: input.serverOverheads,
       },
     };
   });

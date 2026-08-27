@@ -270,6 +270,9 @@ describe('rollupClient — totals', () => {
     const expected: ReportTotals = {
       actPerSessionTokens: 100,
       candidatePerSessionTokens: 50,
+      // No server context overheads were passed, so the savings equal the definition sums.
+      actSavingTokens: 100,
+      candidateSavingTokens: 50,
       actServerCount: 1,
       actToolCount: 1,
       candidateServerCount: 1,
@@ -341,7 +344,8 @@ describe('assembleModel', () => {
     };
   }
   const zeroTotals: ReportTotals = {
-    actPerSessionTokens: 0, candidatePerSessionTokens: 0, actServerCount: 0, actToolCount: 0,
+    actPerSessionTokens: 0, candidatePerSessionTokens: 0, actSavingTokens: 0,
+    candidateSavingTokens: 0, actServerCount: 0, actToolCount: 0,
     candidateServerCount: 0, candidateToolCount: 0, inspectToolCount: 0, inspectWastedTokens: 0,
     healthyToolCount: 0, healthyResponseTokens: 0,
   };

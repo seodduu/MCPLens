@@ -38,6 +38,22 @@ export interface ReportGroup {
   caveat: string | null;
   /** Sum of perSessionTokens in the group (null counts as 0). */
   perSessionTokens: number;
+  /**
+   * The server's `instructions` overhead, per session (0 when the server publishes none or was
+   * never scanned by the v2 estimator). It belongs to no single tool.
+   */
+  instructionsTokens: number;
+  /**
+   * What acting on this group really saves per session: perSessionTokens, plus instructionsTokens
+   * only when the group removes the whole server (plan section 3.5). Filtering tools, even all of
+   * them, leaves the instructions loaded.
+   */
+  savingTokens: number;
+  /**
+   * The instructions tokens this group does NOT save. Non-zero exactly when filtering is chosen
+   * over removal, and it is how much more removing the server would save.
+   */
+  retainedInstructionsTokens: number;
   totalObservedCost: number;
   /** Whether any tool has a null perSessionTokens; the renderer shows "partly unmeasured". */
   hasUnmeasured: boolean;
@@ -67,6 +83,14 @@ export interface ClientReport {
 export interface ReportTotals {
   actPerSessionTokens: number;
   candidatePerSessionTokens: number;
+  /**
+   * actPerSessionTokens plus the instructions overhead of the servers that are removed outright.
+   * Greater than actPerSessionTokens only where a whole server goes away, which is what makes the
+   * gap between "remove the server" and "filter its tools" visible in the totals.
+   */
+  actSavingTokens: number;
+  /** Same rule as actSavingTokens, for the candidate bucket. */
+  candidateSavingTokens: number;
   actServerCount: number;
   actToolCount: number;
   candidateServerCount: number;
