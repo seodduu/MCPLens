@@ -25,6 +25,13 @@ const result = {
     definitionSetHash: 'a'.repeat(64),
     scannedAt: '2026-08-03T00:00:00.000Z',
   }],
+  overhead: {
+    serverName: 'srv',
+    instructionsTokens: 50,
+    instructionsSha256: 'd'.repeat(64),
+    estimatorVersion: 'v2-2026-08-27',
+    scannedAt: '2026-08-03T00:00:00.000Z',
+  },
 };
 const identities = [{
   client: 'codex',
@@ -90,7 +97,7 @@ describe('maybeAutoScan', () => {
       save,
     } as any, vi.fn());
 
-    expect(upsertScanResult).toHaveBeenCalledWith(result.definitions, result.bodies, identities);
+    expect(upsertScanResult).toHaveBeenCalledWith(result.definitions, result.bodies, identities, result.overhead);
     expect(upsertDefinitions).not.toHaveBeenCalled();
     expect(upsertClientServers).toHaveBeenCalledOnce();
   });
@@ -110,7 +117,7 @@ describe('maybeAutoScan', () => {
       save,
     } as any, vi.fn());
 
-    expect(upsertScanResult).toHaveBeenCalledWith(result.definitions, result.bodies, identities);
+    expect(upsertScanResult).toHaveBeenCalledWith(result.definitions, result.bodies, identities, result.overhead);
   });
 });
 

@@ -34,6 +34,27 @@ describe('scanOneServer', () => {
     expect(result).toEqual({ ok: true, toolCount: 2, totalTokens: 15 });
   });
 
+  // T4: scanServer's overhead must reach store.upsertScanResult, otherwise a rescan never
+  // updates server_context_overheads and the report keeps using stale (or missing) instructions
+  // tokens for that server.
+  it('passes the scan overhead through to store.upsertScanResult', async () => {
+    const { store, mocks } = fakeStore();
+    const overhead = {
+      serverName: 'srv', instructionsTokens: 42, instructionsSha256: 'a'.repeat(64),
+      estimatorVersion: 'v2-2026-08-27', scannedAt: '2026-08-05T00:00:00.000Z',
+    };
+    const scan = vi.fn(async (): Promise<ScanResult> => ({
+      definitions: [{ definitionTokens: 10 }],
+      bodies: [],
+      overhead,
+    } as unknown as ScanResult));
+
+    await scanOneServer(store, spec, '2026-08-05T00:00:00.000Z', identities, scan);
+
+    expect(mocks.upsertScanResult).toHaveBeenCalledWith(
+      [{ definitionTokens: 10 }], [], [], overhead);
+  });
+
   it('records auth-required exceptions as auth-required', async () => {
     const { store, mocks } = fakeStore();
     const scan = vi.fn(async (): Promise<ScanResult> => {

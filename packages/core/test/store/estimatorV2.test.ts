@@ -101,4 +101,23 @@ describe('estimator v2 store contract', () => {
     }));
     store.close();
   });
+
+  // T4: the scan-result write path (store.upsertScanResult, called from cli/extension after a
+  // scan) must also persist the overhead it receives, not just the standalone
+  // upsertServerContextOverheads setter exercised above.
+  it('persists a server context overhead passed through upsertScanResult', async () => {
+    const store = await LensStore.open(':memory:');
+    store.upsertScanResult([definition()], [], [], overhead());
+
+    expect(store.allServerContextOverheads()).toEqual([overhead()]);
+    store.close();
+  });
+
+  it('upsertScanResult with no overhead argument leaves overheads untouched', async () => {
+    const store = await LensStore.open(':memory:');
+    store.upsertScanResult([definition()], [], []);
+
+    expect(store.allServerContextOverheads()).toEqual([]);
+    store.close();
+  });
 });

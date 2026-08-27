@@ -37,6 +37,7 @@ async function runScan(store: LensStore, targets: McpServerSpec[],
         result.definitions,
         result.bodies,
         identities.filter((identity) => identity.serverName === spec.name),
+        result.overhead,
       );
       store.recordServerScanStatus(spec.name, 'ok', observedAt);
       tools += result.definitions.length;
@@ -106,7 +107,7 @@ export async function maybeAuthPrompt(
           openUrl: async (url) => { await vscode.env.openExternal(vscode.Uri.parse(url)); },
         });
         const result = await scanServer(spec);
-        store.upsertScanResult(result.definitions, result.bodies, []);
+        store.upsertScanResult(result.definitions, result.bodies, [], result.overhead);
         // Apply the same classification as runScan here. Otherwise a successful login still leaves
         // Setup Status showing 'sign in to scan', and that state survives a restart.
         store.recordServerScanStatus(spec.name, 'ok', observedAt);

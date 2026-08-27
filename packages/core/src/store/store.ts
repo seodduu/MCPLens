@@ -362,15 +362,23 @@ export class LensStore {
     });
   }
 
+  /**
+   * overhead is optional so existing callers (pre-v2 scans, or auth-only rescans that never got
+   * a fresh overhead reading) keep compiling unchanged. When present it is stored alongside the
+   * definitions in the same transaction, so a rescan's overhead is never left stale relative to
+   * its tool definitions.
+   */
   upsertScanResult(
     definitions: readonly ToolDefinition[],
     bodies: readonly ToolDefinitionBody[],
     identities: readonly ServerIdentity[],
+    overhead?: ServerContextOverhead,
   ): void {
     this.transaction(() => {
       this.upsertDefinitions(definitions);
       this.upsertDefinitionBodies(bodies);
       this.upsertServerIdentities(identities);
+      if (overhead) this.upsertServerContextOverheads([overhead]);
     });
   }
 

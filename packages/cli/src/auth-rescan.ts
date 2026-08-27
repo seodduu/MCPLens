@@ -28,7 +28,7 @@ export async function runAuthRescan(
 ): Promise<void> {
   try {
     const result = await scan(spec);
-    store.upsertScanResult(result.definitions, result.bodies, []);
+    store.upsertScanResult(result.definitions, result.bodies, [], result.overhead);
     store.recordServerScanStatus(spec.name, 'ok', scannedAt);
     const total = result.definitions.reduce((n, d) => n + d.definitionTokens, 0);
     console.log(`${spec.name}: login complete, ${result.definitions.length} tools · ${total} tokens`);

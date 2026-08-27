@@ -41,8 +41,10 @@ describe('dashboard HTTP contract', () => {
   beforeAll(async () => {
     store = await LensStore.open(':memory:');
     store.upsertDefinitions([
-      { serverName: 'github', toolName: 'search_issues', definitionTokens: 500, scannedAt: FIXED_ISO, firstScannedAt: FIXED_ISO },
-      { serverName: 'github', toolName: 'create_issue', definitionTokens: 300, scannedAt: FIXED_ISO, firstScannedAt: FIXED_ISO },
+      { serverName: 'github', toolName: 'search_issues', definitionTokens: 500,
+        advertisedTokens: null, estimatorVersion: 'v1', scannedAt: FIXED_ISO, firstScannedAt: FIXED_ISO },
+      { serverName: 'github', toolName: 'create_issue', definitionTokens: 300,
+        advertisedTokens: null, estimatorVersion: 'v1', scannedAt: FIXED_ISO, firstScannedAt: FIXED_ISO },
     ]);
     store.ingest(fakeResult());
 
@@ -163,7 +165,8 @@ describe('dashboard with :memory: store (no watchFile → no reload path)', () =
   it('serves the API normally and never tries to reload the file', async () => {
     const memStore = await LensStore.open(':memory:');
     memStore.upsertDefinitions([
-      { serverName: 'github', toolName: 'search_issues', definitionTokens: 500, scannedAt: FIXED_ISO, firstScannedAt: FIXED_ISO },
+      { serverName: 'github', toolName: 'search_issues', definitionTokens: 500,
+        advertisedTokens: null, estimatorVersion: 'v1', scannedAt: FIXED_ISO, firstScannedAt: FIXED_ISO },
     ]);
     memStore.ingest(fakeResult());
     // no watchFile, so the stat/reopen path is never taken

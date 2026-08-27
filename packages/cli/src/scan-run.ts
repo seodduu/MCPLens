@@ -28,6 +28,7 @@ export async function scanOneServer(
       result.definitions,
       result.bodies,
       identities.filter((identity) => identity.serverName === spec.name),
+      result.overhead,
     );
     store.recordServerScanStatus(spec.name, 'ok', scannedAt);
     const totalTokens = result.definitions.reduce((n, d) => n + d.definitionTokens, 0);
