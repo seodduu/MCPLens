@@ -3,6 +3,7 @@
 // read as engine.ts already produced them, and only bucketing, grouping and sorting happen here.
 // Design: docs/designs/2026-07-20-리포트-가독성-설계.md §4-2/§4-3/§4-4/§5.
 import type { ClientId, MatrixRow, ServerContextOverhead, SessionMeta } from '../types.js';
+import { incompleteScans, type IncompleteScan } from './incompleteScans.js';
 import { buildMatrix, splitByClient, visibleMatrixRows, type EngineInput } from '../engine/engine.js';
 import { attributedSaving, instructionsTokensByServer, savingScope } from '../engine/cost.js';
 import type {
@@ -31,7 +32,7 @@ export function buildReport(input: EngineInput, opts: ReportOptions): ReportMode
     const all = buildMatrix(sub);
     return rollupClient(client, sub.sessions, all, opts.conflictedServers, sub.serverOverheads);
   });
-  return assembleModel(rollups, opts);
+  return assembleModel(rollups, opts, incompleteScans(input.scanStatuses));
 }
 
 const ZERO_TOTALS: ReportTotals = {
@@ -50,7 +51,9 @@ const ZERO_TOTALS: ReportTotals = {
 };
 
 /** Sorts and sums the per-client rollups into the final ReportModel. Pure and exported so tests can call it directly. */
-export function assembleModel(rollups: ClientRollup[], opts: ReportOptions): ReportModel {
+export function assembleModel(
+  rollups: ClientRollup[], opts: ReportOptions, incompleteServers: IncompleteScan[] = [],
+): ReportModel {
   const clients = rollups.map((r) => r.report).sort(compareClients);
   const totals = rollups.reduce((acc, r) => addTotals(acc, r.totals), { ...ZERO_TOTALS });
   const conflictedServers = [...new Set(rollups.flatMap((r) => [...(r.excludedServers ?? [])]))].sort();
@@ -59,6 +62,7 @@ export function assembleModel(rollups: ClientRollup[], opts: ReportOptions): Rep
     days: opts.days,
     clients,
     totals,
+    incompleteServers,
     conflictedServers,
   };
 }

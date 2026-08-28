@@ -1,4 +1,4 @@
-import type { MatrixRow } from '@mcp-lens/core';
+import { incompleteScanLines, type IncompleteScan, type MatrixRow } from '@mcp-lens/core';
 
 export interface Savings {
   potentialTokens: number;
@@ -8,20 +8,35 @@ export interface Savings {
 
 export type ReportFormat = 'table' | 'ai' | 'json';
 
-export function formatReport(rows: MatrixRow[], savings: Savings, format: ReportFormat): string {
+/** Prefixes the rendered report with one line per incomplete scan; unchanged when there are none. */
+function withWarnings(body: string, incomplete: readonly IncompleteScan[]): string {
+  if (incomplete.length === 0) return body;
+  return [...incompleteScanLines(incomplete).map((l) => `! ${l}.`), '', body].join('\n');
+}
+
+export function formatReport(
+  rows: MatrixRow[], savings: Savings, format: ReportFormat,
+  // Servers whose last scan did not complete. Their rows below were joined from call history, so
+  // their token totals are a lower bound; the reader has to be told before reading the table.
+  incomplete: readonly IncompleteScan[] = [],
+): string {
   switch (format) {
     case 'json':
-      return formatJson(rows, savings);
+      return formatJson(rows, savings, incomplete);
     case 'ai':
-      return formatAi(rows, savings);
+      return withWarnings(formatAi(rows, savings), incomplete);
     case 'table':
     default:
-      return formatTable(rows, savings);
+      return withWarnings(formatTable(rows, savings), incomplete);
   }
 }
 
-function formatJson(rows: MatrixRow[], savings: Savings): string {
-  return JSON.stringify({ rows, savings }, null, 2);
+function formatJson(
+  rows: MatrixRow[], savings: Savings, incomplete: readonly IncompleteScan[],
+): string {
+  // Always present, empty array included: a consumer that never sees the key cannot tell
+  // "every scan is ok" from "this build does not report scan health".
+  return JSON.stringify({ rows, savings, incompleteServers: incomplete }, null, 2);
 }
 
 const COLUMNS = ['server', 'tool', 'defTokens', 'calls', 'respTokens', 'loaded/sessions', 'errorRate', 'errorTokens', 'action', 'confidence', 'reason'] as const;

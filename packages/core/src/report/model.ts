@@ -2,6 +2,7 @@
 // Data model of the action-first report. The contract between aggregation (rollup) and
 // rendering (markdown). Design: docs/designs/2026-07-20-리포트-가독성-설계.md
 import type { ClientId, Recommendation, RecommendationConfidence } from '../types.js';
+import type { IncompleteScan } from './incompleteScans.js';
 
 /**
  * Action bucket: the primary sort key of the report. Rows are ordered by
@@ -107,6 +108,12 @@ export interface ReportModel {
   /** collapsed=false first, then descending by sessionCount. */
   clients: ClientReport[];
   totals: ReportTotals;
+  /**
+   * Servers whose last scan did not complete (failed or authentication required). Their tool rows
+   * come from call history alone, so their token totals are a lower bound. Empty when every
+   * scanned server is ok, and also when the caller passed no scan statuses.
+   */
+  incompleteServers?: IncompleteScan[];
   /** Servers left out of the waste totals because of an identity conflict. Empty when there are none. */
   conflictedServers: string[];
 }

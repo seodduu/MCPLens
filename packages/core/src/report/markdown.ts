@@ -11,6 +11,7 @@ import type {
   ClientReport,
 } from './model.js';
 import { SUMMARY_TOOL_LIMIT, NEVER_TRUNCATED } from './model.js';
+import { incompleteScanLines } from './incompleteScans.js';
 
 const BUCKET_ORDER: readonly ReportBucket[] = ['act', 'candidate', 'inspect', 'healthy'];
 
@@ -257,6 +258,17 @@ export function renderReport(model: ReportModel, opts: ReportOptions): string {
   );
   lines.push(`| 🔧 Needs inspection | ${plural(t.inspectToolCount, 'tool')} | ${tok(t.inspectWastedTokens)} wasted on failed responses |`);
   lines.push(`| 👍 In healthy use | ${plural(t.healthyToolCount, 'tool')} | — |`);
+
+  // A server whose scan did not complete is listed before the conflict note: its rows below come
+  // from call history alone, so its totals understate it. Saying nothing would let a two-row
+  // server read as cheap when its 13 definitions were simply never measured.
+  // Tolerates a model built before this field existed (hand-made fixtures, older callers): an
+  // absent list means "nothing to say", never a crash in the renderer.
+  const incomplete = model.incompleteServers ?? [];
+  if (incomplete.length > 0) {
+    lines.push('');
+    for (const line of incompleteScanLines(incomplete)) lines.push(`> ${line}.`);
+  }
 
   if (model.conflictedServers.length > 0) {
     lines.push(

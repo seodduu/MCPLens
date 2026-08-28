@@ -1,4 +1,5 @@
 // packages/core/src/engine/engine.ts
+import type { ServerScanStatus } from '../store/store.js';
 import type { ClientId, LoadPattern, MatrixRow, Recommendation, RecommendationReason,
   ServerContextOverhead, SessionMeta, ToolCallEvent, ToolDefinition,
   ToolLoadEvent } from '../types.js';
@@ -30,6 +31,13 @@ export interface EngineInput {
    * it; no tool row owns these tokens, so the matrix does not change.
    */
   serverOverheads?: ServerContextOverhead[];
+  /**
+   * server -> last scan status (store.serverScanStatuses()).
+   * Optional. Nothing in the matrix reads it: a failed scan changes what the report can *claim*,
+   * not what was observed. Report surfaces read it to say which servers are only partly accounted
+   * for, instead of presenting a call-history-only row count as the whole tool list.
+   */
+  scanStatuses?: ReadonlyMap<string, ServerScanStatus>;
 }
 
 // Verdict thresholds (design doc ch. 7, feature 1 revision)

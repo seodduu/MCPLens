@@ -5,3 +5,4 @@
 export * from './model.js';
 export { buildReport } from './rollup.js';
 export { renderReport } from './markdown.js';
+export { incompleteScans, incompleteScanLines, type IncompleteScan } from './incompleteScans.js';

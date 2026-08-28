@@ -363,7 +363,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
       loads: store!.loadsSince(since), sessions: store!.sessionsSince(since),
       lastCallByTool: store!.lastCallByTool(),
       serversByClient: serversByClientOrUndefined(),
-      serverOverheads: store!.allServerContextOverheads() };
+      serverOverheads: store!.allServerContextOverheads(),
+      scanStatuses: store!.serverScanStatuses() };
     // totals are unaffected by detail (tool list truncation), so minimal opts suffice.
     const totals = buildReport(input, {
       days: reportDays(), detail: 'summary', conflictedServers: conflictedServerNames(),
@@ -731,7 +732,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
         loads: store!.loadsSince(since), sessions: store!.sessionsSince(since),
         lastCallByTool: store!.lastCallByTool(),
         serversByClient: serversByClientOrUndefined(),
-        serverOverheads: store!.allServerContextOverheads() };
+        serverOverheads: store!.allServerContextOverheads(),
+      scanStatuses: store!.serverScanStatuses() };
       const opts = reportOptions({
         reportDays: vscode.workspace.getConfiguration('mcpLens').get<number>('reportDays', 30),
         reportDetail: vscode.workspace.getConfiguration('mcpLens').get<'summary' | 'full'>('reportDetail'),

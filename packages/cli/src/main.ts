@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // packages/cli/src/main.ts
 import { readFileSync } from 'node:fs';
-import { LensStore, LogWatcher, buildMatrix, sessionSavings, dbPath,
+import { LensStore, LogWatcher, buildMatrix, sessionSavings, dbPath, incompleteScans,
   ClaudeAdapter, CodexAdapter, GeminiAdapter,
   collectAllSpecs, configSources, collectFromSource,
   authenticateServer, clearStoredOAuth, readOAuthClients, oauthClientsFile,
@@ -112,8 +112,13 @@ async function runReport(args: string[]) {
       loads: store.loadsSince(since),
       sessions: store.sessionsSince(since),
       lastCallByTool: store.lastCallByTool(),
+      // A failed scan does not change the matrix, but it does change what the numbers can claim:
+      // that server's rows came from call history alone. The formatter says so.
+      scanStatuses: store.serverScanStatuses(),
     };
-    console.log(formatReport(buildMatrix(input), sessionSavings(input), format.value));
+    console.log(formatReport(
+      buildMatrix(input), sessionSavings(input), format.value, incompleteScans(input.scanStatuses),
+    ));
     console.error(`(${files} session files backfilled)`);
     store.close();
   } finally {

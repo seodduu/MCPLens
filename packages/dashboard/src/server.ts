@@ -7,6 +7,7 @@ import {
   LensStore,
   buildMatrix,
   sessionSavings,
+  incompleteScans,
   type EngineInput,
 } from '@mcp-lens/core';
 
@@ -41,6 +42,9 @@ function loadEngineInput(store: LensStore, since: string): EngineInput {
     sessions: store.sessionsSince(since),
     // Pass the last-call map too, so the dashboard uses the same evidence as the CLI report.
     lastCallByTool: store.lastCallByTool(),
+    // Same reason as the CLI: a server whose scan failed shows only the tools that were called,
+    // and the surface has to say so instead of presenting that as the whole list.
+    scanStatuses: store.serverScanStatuses(),
   };
 }
 
@@ -153,7 +157,10 @@ function handleApi(store: LensStore, url: URL, pathname: string, res: ServerResp
     if (pathname === '/api/matrix') {
       const since = sinceIso(parseDays(url, 30));
       const input = loadEngineInput(store, since);
-      sendJson(res, 200, { rows: buildMatrix(input), savings: sessionSavings(input) });
+      sendJson(res, 200, {
+        rows: buildMatrix(input), savings: sessionSavings(input),
+        incompleteServers: incompleteScans(input.scanStatuses),
+      });
       return;
     }
 
