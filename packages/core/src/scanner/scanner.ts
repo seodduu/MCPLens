@@ -44,6 +44,52 @@ function createTransport(spec: McpServerSpec, authProvider: AuthProvider | undef
   throw new Error(`unknown transport: ${spec.name}`);
 }
 
+/** Hard stop on the number of tools/list pages read, so a server that keeps handing out fresh
+ *  cursors cannot spin the scan forever. */
+const MAX_TOOL_PAGES = 50;
+
+/** Why a tools/list walk stopped before the server said it was done. */
+export interface ToolListTruncation {
+  reason: 'repeated-cursor' | 'page-limit';
+  pagesRead: number;
+}
+
+/**
+ * Reads every page of tools/list, following `nextCursor` until the server stops sending one.
+ * A single page is only the first slice: a server advertising more tools than its page size
+ * (observed on @modelcontextprotocol/server-everything, 15 tools reported as 13) would otherwise
+ * have its definition tokens under-counted and its unseen tools left out of the recommendations.
+ * Stops early on a repeated cursor or at MAX_TOOL_PAGES and reports that instead of cutting silently.
+ */
+async function listAllTools(
+  client: Client,
+  serverName: string,
+): Promise<{ tools: Awaited<ReturnType<Client['listTools']>>['tools']; truncation?: ToolListTruncation }> {
+  const tools: Awaited<ReturnType<Client['listTools']>>['tools'] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+  for (let pagesRead = 1; ; pagesRead += 1) {
+    const page = await client.listTools(cursor === undefined ? undefined : { cursor });
+    tools.push(...page.tools);
+    const next = page.nextCursor;
+    if (next === undefined) return { tools };
+    let truncation: ToolListTruncation | undefined;
+    if (seenCursors.has(next)) truncation = { reason: 'repeated-cursor', pagesRead };
+    else if (pagesRead >= MAX_TOOL_PAGES) truncation = { reason: 'page-limit', pagesRead };
+    if (truncation) {
+      // No logger in core, so the one channel that reaches every caller is stderr; the returned
+      // field carries the same fact to callers that render it.
+      console.warn(
+        `mcp-lens: tools/list for "${serverName}" stopped after ${pagesRead} page(s) ` +
+          `(${truncation.reason}); ${tools.length} tool(s) collected, the list may be incomplete`,
+      );
+      return { tools, truncation };
+    }
+    seenCursors.add(next);
+    cursor = next;
+  }
+}
+
 /**
  * Starts the given MCP server over stdio or streamable http, queries tools/list and computes the
  * definition tokens. stdio spawns a process and http uses the network, so real-device resource
@@ -53,7 +99,13 @@ function createTransport(spec: McpServerSpec, authProvider: AuthProvider | undef
 export async function scanServer(
   spec: McpServerSpec,
   timeoutMs = 15000,
-): Promise<{ definitions: ToolDefinition[]; bodies: ToolDefinitionBody[]; overhead: ServerContextOverhead }> {
+): Promise<{
+  definitions: ToolDefinition[];
+  bodies: ToolDefinitionBody[];
+  overhead: ServerContextOverhead;
+  /** Set only when the tools/list walk stopped early, so the caller can say the list is partial. */
+  truncation?: ToolListTruncation;
+}> {
   // Attach the stored Lens-issued token when present (non-interactive: a redirect throws).
   // Reused for the token-expired hint in the catch block to avoid a second read.
   const authProvider: AuthProvider | undefined = storedTokenProvider(spec) ?? undefined;
@@ -62,7 +114,7 @@ export async function scanServer(
   const timer = setTimeout(() => transport.close(), timeoutMs);
   try {
     await client.connect(transport);
-    const { tools } = await client.listTools();
+    const { tools, truncation } = await listAllTools(client, spec.name);
     const now = new Date().toISOString();
     const rawBodies = tools.map(toolToRawBody);
     const definitionSetHash = computeDefinitionSetHash(spec.name, rawBodies);
@@ -111,7 +163,7 @@ export async function scanServer(
       estimatorVersion: ESTIMATOR_VERSION,
       scannedAt: now,
     };
-    return { definitions, bodies, overhead };
+    return { definitions, bodies, overhead, ...(truncation ? { truncation } : {}) };
   } catch (err) {
     // An authentication demand is a normal failure; carry the signal so the surface can say "authentication required, skipped".
     if (isAuthRequired(err)) {
