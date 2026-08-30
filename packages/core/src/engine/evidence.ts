@@ -129,6 +129,7 @@ export function toolEvidence(
   toolName: string,
   definitionTokens: number | null,
   ctx: EvidenceContext,
+  mode: SessionMeta['mode'] = 'UPFRONT',
 ): RecommendationEvidence {
   const k = key(serverName, toolName);
   const toolFirstScanned = ms(ctx.firstScanned.get(k));
@@ -167,10 +168,20 @@ export function toolEvidence(
   // store.sessionsSince returns sessions with a null startedAt regardless of the window, so if
   // high confidence came from those alone, it would rest on "N sessions of unknown date".
   let datedObservedSessions = 0;
+  // Every in-window session, counted before the mode gate: the sessions in which this tool
+  // existed at all. Under deferred loading it is the divisor that turns "pulled in N times" into
+  // a per-session figure (design 2026-08-31 3.2).
+  let windowSessions = 0;
   if (windowStart != null) {
     const loaded = ctx.loadedSessions.get(k);
     for (const s of ctx.sessions) {
-      // Mode gate first: a session only observes this tool if its definition could have reached
+      const at = ms(s.startedAt);
+      // A session without startedAt cannot be placed in the window, so it is included (prevents undercounting; a documented limitation)
+      const inWindow = at == null
+        || (at >= windowStart && (windowEnd == null || at <= windowEnd));
+      if (!inWindow) continue;
+      windowSessions++;
+      // Mode gate: a session only observes this tool if its definition could have reached
       // the model. UPFRONT sends every definition each session. In deferred modes the definition
       // enters context only on a load event, so a session without one never saw the tool and must
       // not count toward "observed" (day-04 pilot: 36 never-loaded tools graded remove/medium off
@@ -180,13 +191,8 @@ export function toolEvidence(
         if (s.mode === 'DEFERRED_OPAQUE') continue;
         if (loaded === undefined || !loaded.has(s.sessionId)) continue;
       }
-      const at = ms(s.startedAt);
-      // A session without startedAt cannot be placed in the window, so it is included (prevents undercounting; a documented limitation)
-      if (at == null) { observedSessions++; continue; }
-      if (at < windowStart) continue;
-      if (windowEnd != null && at > windowEnd) continue;
       observedSessions++;
-      datedObservedSessions++;
+      if (at != null) datedObservedSessions++;
     }
   }
 
@@ -204,12 +210,20 @@ export function toolEvidence(
     : allTime == null ? inScope
     : (ms(allTime) ?? 0) > (ms(inScope) ?? 0) ? allTime : inScope;
 
-  const costPerSession = definitionTokens;
+  // Under deferred loading the definition only enters context in the sessions that loaded it, so
+  // the per-session charge is the definition amortised over the window. DEFERRED_OPAQUE is not
+  // amortised: it carries no load evidence at all, so it keeps the upfront figure (it is
+  // "not measurable" anyway).
+  const deferred = mode === 'DEFERRED_MEASURABLE' || mode === 'DEFERRED_ESTIMATED';
+  const costPerSession =
+    definitionTokens == null ? null
+    : !deferred ? definitionTokens
+    : windowSessions === 0 ? null
+    : Math.round(definitionTokens * observedSessions / windowSessions);
   return {
     observedSessions,
     datedObservedSessions,
-    // T1 replaces this with the pre-gate count (design 2026-08-31 §3.2)
-    windowSessions: observedSessions,
+    windowSessions,
     observedDays,
     lastCalledAt,
     costPerSession,
@@ -217,7 +231,7 @@ export function toolEvidence(
     // (null) too. Emitting 0 would read as "0 tokens of cost" in the UI and be indistinguishable
     // from EMPTY_EVIDENCE.
     totalObservedCost:
-      costPerSession == null || windowStart == null ? null : costPerSession * observedSessions,
+      definitionTokens == null || windowStart == null ? null : definitionTokens * observedSessions,
   };
 }
 

@@ -186,20 +186,38 @@ function recommend(
   mode: SessionMeta['mode'],
   ctx: EvidenceContext,
 ): Recommendation {
-  const evidence = toolEvidence(row.serverName, row.toolName, row.definitionTokens, ctx);
+  const evidence = toolEvidence(row.serverName, row.toolName, row.definitionTokens, ctx, mode);
   const evidenceLabel =
     mode === 'DEFERRED_MEASURABLE' ? 'measured' :
     mode === 'DEFERRED_ESTIMATED' ? 'lower-bound estimate' :
     mode === 'UPFRONT' ? 'assumed full load' : 'not measurable';
+  const deferred = mode === 'DEFERRED_MEASURABLE' || mode === 'DEFERRED_ESTIMATED';
   const sizePhrase = (t: number) =>
     mode === 'UPFRONT'
       ? `about ${formatTokens(t)} tokens saved per session when removed`
-      : `small savings, but cleans up the search space`;
+      : deferred
+        ? `pulled in by search in ${evidence.observedSessions} of ${evidence.windowSessions} sessions, `
+          + `about ${formatTokens(t)} tokens each time. Removing saves about `
+          + `${formatTokens(evidence.costPerSession ?? 0)} tokens per session and cleans up the search space`
+        : `small savings, but cleans up the search space`;
 
-  const pollutionSuffix = row.loadPattern === 'search-pollution'
+  // Deferred wording already says the tool is pulled in by search and never called, so the
+  // suffix would repeat it.
+  const pollutionSuffix = row.loadPattern === 'search-pollution' && !deferred
     ? ' (loaded but never called, so it pollutes the search space)' : '';
 
   if (row.callCount === 0 && row.definitionTokens != null) {
+    // Under deferred loading a definition that never loaded never reached the model, so there is
+    // no evidence to remove it on (design 2026-08-31 3.1).
+    if (deferred && row.loadedSessionCount === 0) {
+      const reasonParts: RecommendationReason = {
+        basis: `never loaded in ${evidence.windowSessions} sessions under deferred loading, `
+          + `so there is no evidence yet`,
+        serverBasis: null, effect: null, caveat: null,
+      };
+      return { action: 'unobserved', confidence: 'low', reason: joinReason(reasonParts), reasonParts,
+        evidenceLabel, evidence };
+    }
     // Low confidence never demotes the verdict; the surface renders it as a "candidate" (spec decision 2)
     const confidence = removeConfidence(evidence);
     const caveat = confidenceCaveat(confidence, evidence);
