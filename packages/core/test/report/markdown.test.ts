@@ -59,6 +59,7 @@ function client(over: Partial<ClientReport> = {}): ClientReport {
     collapsedSummary: null,
     hiddenToolCount: 0,
     unmeasuredToolCount: 0,
+    unobservedToolCount: 0,
     ...over,
   };
 }
@@ -520,5 +521,40 @@ describe('renderReport - conflicted servers excluded from totals', () => {
   it('says nothing about exclusions when there are none', () => {
     const out = renderReport(model({ conflictedServers: [] }), OPTS);
     expect(out).not.toContain('Excluded from the totals');
+  });
+});
+
+describe('server verdicts and unobserved tools (design 2026-08-31)', () => {
+  const verdict = {
+    serverName: 'jira',
+    action: 'remove-server' as const,
+    confidence: 'high' as const,
+    evidence: {
+      configuredSessions: 10, datedConfiguredSessions: 10, observedDays: 9,
+      loadedSessions: 0, calledSessions: 0, lastActivityAt: null,
+    },
+    measuredPerSessionTokens: 120,
+    unmeasuredNameListEntries: 3,
+    reason: 'never loaded or called in 10 sessions/9d. Removing saves about 120tok per session '
+      + 'plus 3 name-list entries (unmeasured)',
+  };
+
+  it('renders the servers-never-used section', () => {
+    const out = renderReport(model({ serverVerdicts: [verdict] }), OPTS);
+    expect(out).toContain('## Servers never used');
+    expect(out).toContain('- **jira**: never loaded or called in 10 sessions/9d');
+    expect(out).toContain('(high)');
+  });
+
+  it('omits the section when empty', () => {
+    expect(renderReport(model({ serverVerdicts: [] }), OPTS)).not.toContain('Servers never used');
+    expect(renderReport(model(), OPTS)).not.toContain('Servers never used');
+  });
+
+  it('footnotes unobserved tools', () => {
+    const out = renderReport(model({ clients: [client({ unobservedToolCount: 4 })] }), OPTS);
+    expect(out).toContain('_4 tools never loaded under deferred loading are not yet judged_');
+    const none = renderReport(model({ clients: [client()] }), OPTS);
+    expect(none).not.toContain('never loaded under deferred loading');
   });
 });

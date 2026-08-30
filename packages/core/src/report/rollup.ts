@@ -2,9 +2,10 @@
 // EngineInput -> ReportModel aggregation (Task 35). No new verdict logic: action/confidence are
 // read as engine.ts already produced them, and only bucketing, grouping and sorting happen here.
 // Design: docs/designs/2026-07-20-리포트-가독성-설계.md §4-2/§4-3/§4-4/§5.
-import type { ClientId, MatrixRow, ServerContextOverhead, SessionMeta } from '../types.js';
+import type { ClientId, MatrixRow, ServerContextOverhead, ServerVerdict, SessionMeta } from '../types.js';
 import { incompleteScans, type IncompleteScan } from './incompleteScans.js';
 import { buildMatrix, splitByClient, visibleMatrixRows, type EngineInput } from '../engine/engine.js';
+import { buildServerVerdicts } from '../engine/serverVerdict.js';
 import { attributedSaving, instructionsTokensByServer, savingScope } from '../engine/cost.js';
 import type {
   ClientReport, ReportBucket, ReportGroup, ReportModel, ReportOptions, ReportTool, ReportTotals,
@@ -32,7 +33,10 @@ export function buildReport(input: EngineInput, opts: ReportOptions): ReportMode
     const all = buildMatrix(sub);
     return rollupClient(client, sub.sessions, all, opts.conflictedServers, sub.serverOverheads);
   });
-  return assembleModel(rollups, opts, incompleteScans(input.scanStatuses));
+  // Server-level evidence, computed on the whole input rather than per client: only the servers
+  // with nothing to keep them are carried, since 'keep' verdicts say nothing the tool rows do not.
+  const serverVerdicts = buildServerVerdicts(input).filter((v) => v.action === 'remove-server');
+  return assembleModel(rollups, opts, incompleteScans(input.scanStatuses), serverVerdicts);
 }
 
 const ZERO_TOTALS: ReportTotals = {
@@ -53,6 +57,7 @@ const ZERO_TOTALS: ReportTotals = {
 /** Sorts and sums the per-client rollups into the final ReportModel. Pure and exported so tests can call it directly. */
 export function assembleModel(
   rollups: ClientRollup[], opts: ReportOptions, incompleteServers: IncompleteScan[] = [],
+  serverVerdicts: ServerVerdict[] = [],
 ): ReportModel {
   const clients = rollups.map((r) => r.report).sort(compareClients);
   const totals = rollups.reduce((acc, r) => addTotals(acc, r.totals), { ...ZERO_TOTALS });
@@ -64,6 +69,7 @@ export function assembleModel(
     totals,
     incompleteServers,
     conflictedServers,
+    serverVerdicts,
   };
 }
 
@@ -110,7 +116,11 @@ export function rollupClient(
   const visible = visibleMatrixRows(rows, sessions);
   const hiddenToolCount = rows.length - visible.length;
   const unmeasuredToolCount = visible.filter((r) => r.recommendation.action === 'unknown').length;
-  const bucketable = visible.filter((r) => r.recommendation.action !== 'unknown');
+  const unobservedToolCount = visible.filter((r) => r.recommendation.action === 'unobserved').length;
+  // 'unobserved' rows carry no evidence either way, so they are counted and then left out of the
+  // buckets and the totals, exactly like 'unknown'.
+  const bucketable = visible.filter(
+    (r) => r.recommendation.action !== 'unknown' && r.recommendation.action !== 'unobserved');
 
   const rowsByBucket: Record<ReportBucket, MatrixRow[]> = { act: [], candidate: [], inspect: [], healthy: [] };
   for (const row of bucketable) {
@@ -141,6 +151,7 @@ export function rollupClient(
     collapsedSummary,
     hiddenToolCount,
     unmeasuredToolCount,
+    unobservedToolCount,
   };
 
   // A conflicted server's row stays in the buckets/groups above (so the tool list still shows it),
@@ -183,6 +194,8 @@ export function rollupClient(
 /** Bucket assignment (design §4-3). action='unknown' is already filtered out by the caller. */
 function assignBucket(row: MatrixRow): ReportBucket | null {
   const { action, confidence } = row.recommendation;
+  // Never loaded under deferred loading: no bucket, no total. It is a footnote, not an action.
+  if (action === 'unobserved') return null;
   if (action === 'remove' || action === 'filter-server') {
     return confidence === 'low' ? 'candidate' : 'act';
   }

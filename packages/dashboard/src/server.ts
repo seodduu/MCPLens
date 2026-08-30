@@ -8,6 +8,7 @@ import {
   buildMatrix,
   sessionSavings,
   incompleteScans,
+  buildServerVerdicts,
   type EngineInput,
 } from '@mcp-lens/core';
 
@@ -160,6 +161,9 @@ function handleApi(store: LensStore, url: URL, pathname: string, res: ServerResp
       sendJson(res, 200, {
         rows: buildMatrix(input), savings: sessionSavings(input),
         incompleteServers: incompleteScans(input.scanStatuses),
+        // Server-level evidence, carried whole (keep included): the tool rows cannot express
+        // "this server never loaded at all" under deferred loading.
+        servers: buildServerVerdicts(input),
       });
       return;
     }

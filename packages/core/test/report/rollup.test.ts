@@ -377,3 +377,22 @@ describe('assembleModel', () => {
     expect(model.totals.actToolCount).toBe(2);
   });
 });
+
+describe('unobserved rows (design 2026-08-31)', () => {
+  it('unobserved rows are counted, not bucketed', () => {
+    const rows = [
+      mkRow({ serverName: 's', toolName: 'a', definitionTokens: 100, action: 'remove', confidence: 'high' }),
+      mkRow({ serverName: 's', toolName: 'b', definitionTokens: 100, callCount: 2, action: 'keep', confidence: 'high' }),
+      mkRow({ serverName: 's', toolName: 'c', definitionTokens: 100, action: 'unobserved', confidence: 'low' }),
+    ];
+    const { report, totals } = rollupClient('claude-code', [mkSession('UPFRONT')], rows);
+    expect(report.unobservedToolCount).toBe(1);
+    const bucketed = [...report.buckets.act, ...report.buckets.candidate,
+      ...report.buckets.inspect, ...report.buckets.healthy];
+    expect(bucketed.flatMap((g) => g.tools).map((t) => t.toolName)).not.toContain('c');
+    expect(totals.actToolCount).toBe(1);
+    expect(totals.actPerSessionTokens).toBe(100);
+    expect(totals.candidateToolCount).toBe(0);
+    expect(totals.healthyToolCount).toBe(1);
+  });
+});

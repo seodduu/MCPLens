@@ -230,6 +230,14 @@ function renderClient(c: ClientReport, opts: ReportOptions): string[] {
     );
   }
 
+  // Under deferred loading a definition that never loaded never reached the model, so there is no
+  // evidence to act on. Saying nothing would let these tools read as "healthy".
+  if (c.unobservedToolCount > 0) {
+    lines.push(
+      `_${plural(c.unobservedToolCount, 'tool')} never loaded under deferred loading are not yet judged_`,
+    );
+  }
+
   return lines;
 }
 
@@ -275,6 +283,17 @@ export function renderReport(model: ReportModel, opts: ReportOptions): string {
       '',
       `> Excluded from the totals: ${plural(model.conflictedServers.length, 'server')} defined under the same name by more than one client (${model.conflictedServers.join(', ')}).`,
     );
+  }
+
+  // Server-level evidence stands on its own: under deferred loading none of these servers' tools
+  // ever loaded, so no tool row can carry the finding. Placed above the client sections, after the
+  // summary table, so the heading does not swallow the table.
+  const serverVerdicts = model.serverVerdicts ?? [];
+  if (serverVerdicts.length > 0) {
+    lines.push('', '## Servers never used', '');
+    for (const v of serverVerdicts) {
+      lines.push(`- **${v.serverName}**: ${v.reason} (${v.confidence})`);
+    }
   }
 
   if (t.actToolCount === 0 && t.inspectToolCount === 0) {

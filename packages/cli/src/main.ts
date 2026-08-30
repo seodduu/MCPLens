@@ -2,6 +2,7 @@
 // packages/cli/src/main.ts
 import { readFileSync } from 'node:fs';
 import { LensStore, LogWatcher, buildMatrix, sessionSavings, dbPath, incompleteScans,
+  buildServerVerdicts,
   ClaudeAdapter, CodexAdapter, GeminiAdapter,
   collectAllSpecs, configSources, collectFromSource,
   authenticateServer, clearStoredOAuth, readOAuthClients, oauthClientsFile,
@@ -118,6 +119,7 @@ async function runReport(args: string[]) {
     };
     console.log(formatReport(
       buildMatrix(input), sessionSavings(input), format.value, incompleteScans(input.scanStatuses),
+      buildServerVerdicts(input),
     ));
     console.error(`(${files} session files backfilled)`);
     store.close();

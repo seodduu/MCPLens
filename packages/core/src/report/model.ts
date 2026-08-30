@@ -1,7 +1,7 @@
 // packages/core/src/report/model.ts
 // Data model of the action-first report. The contract between aggregation (rollup) and
 // rendering (markdown). Design: docs/designs/2026-07-20-리포트-가독성-설계.md
-import type { ClientId, Recommendation, RecommendationConfidence } from '../types.js';
+import type { ClientId, Recommendation, RecommendationConfidence, ServerVerdict } from '../types.js';
 import type { IncompleteScan } from './incompleteScans.js';
 
 /**
@@ -79,6 +79,11 @@ export interface ClientReport {
   hiddenToolCount: number;
   /** Number of action='unknown' tools (definition tokens unavailable); shown only as a footnote. */
   unmeasuredToolCount: number;
+  /**
+   * Number of action='unobserved' tools: under deferred loading their definition never reached the
+   * model, so they are not judged. Counted here instead of bucketed, and left out of the totals.
+   */
+  unobservedToolCount: number;
 }
 
 export interface ReportTotals {
@@ -116,6 +121,12 @@ export interface ReportModel {
   incompleteServers?: IncompleteScan[];
   /** Servers left out of the waste totals because of an identity conflict. Empty when there are none. */
   conflictedServers: string[];
+  /**
+   * Servers with no load and no call anywhere in the window ('remove-server' verdicts only).
+   * Server-level evidence, counted separately from the tool rows, so it survives deferred loading
+   * where no definition ever entered context. Absent on models built before this field existed.
+   */
+  serverVerdicts?: ServerVerdict[];
 }
 
 export interface ReportOptions {

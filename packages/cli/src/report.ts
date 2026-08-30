@@ -1,4 +1,5 @@
-import { incompleteScanLines, type IncompleteScan, type MatrixRow } from '@mcp-lens/core';
+import { incompleteScanLines, type IncompleteScan, type MatrixRow,
+  type ServerVerdict } from '@mcp-lens/core';
 
 export interface Savings {
   potentialTokens: number;
@@ -8,10 +9,22 @@ export interface Savings {
 
 export type ReportFormat = 'table' | 'ai' | 'json';
 
-/** Prefixes the rendered report with one line per incomplete scan; unchanged when there are none. */
-function withWarnings(body: string, incomplete: readonly IncompleteScan[]): string {
-  if (incomplete.length === 0) return body;
-  return [...incompleteScanLines(incomplete).map((l) => `! ${l}.`), '', body].join('\n');
+/**
+ * Prefixes the rendered report with one line per incomplete scan and one per never-used server;
+ * unchanged when there are neither. A server with no load and no call anywhere in the window is
+ * server-level evidence: under deferred loading no tool row can carry it, so it is said here.
+ */
+function withWarnings(
+  body: string, incomplete: readonly IncompleteScan[], servers: readonly ServerVerdict[],
+): string {
+  const warnings = [
+    ...incompleteScanLines(incomplete).map((l) => `! ${l}.`),
+    ...servers
+      .filter((v) => v.action === 'remove-server')
+      .map((v) => `! server ${v.serverName}: ${v.reason} (${v.confidence})`),
+  ];
+  if (warnings.length === 0) return body;
+  return [...warnings, '', body].join('\n');
 }
 
 export function formatReport(
@@ -19,24 +32,28 @@ export function formatReport(
   // Servers whose last scan did not complete. Their rows below were joined from call history, so
   // their token totals are a lower bound; the reader has to be told before reading the table.
   incomplete: readonly IncompleteScan[] = [],
+  // Every server verdict, keep included. json carries them all; the human formats print only the
+  // removable ones.
+  servers: readonly ServerVerdict[] = [],
 ): string {
   switch (format) {
     case 'json':
-      return formatJson(rows, savings, incomplete);
+      return formatJson(rows, savings, incomplete, servers);
     case 'ai':
-      return withWarnings(formatAi(rows, savings), incomplete);
+      return withWarnings(formatAi(rows, savings), incomplete, servers);
     case 'table':
     default:
-      return withWarnings(formatTable(rows, savings), incomplete);
+      return withWarnings(formatTable(rows, savings), incomplete, servers);
   }
 }
 
 function formatJson(
   rows: MatrixRow[], savings: Savings, incomplete: readonly IncompleteScan[],
+  servers: readonly ServerVerdict[],
 ): string {
   // Always present, empty array included: a consumer that never sees the key cannot tell
   // "every scan is ok" from "this build does not report scan health".
-  return JSON.stringify({ rows, savings, incompleteServers: incomplete }, null, 2);
+  return JSON.stringify({ rows, savings, incompleteServers: incomplete, servers }, null, 2);
 }
 
 const COLUMNS = ['server', 'tool', 'defTokens', 'calls', 'respTokens', 'loaded/sessions', 'errorRate', 'errorTokens', 'action', 'confidence', 'reason'] as const;
