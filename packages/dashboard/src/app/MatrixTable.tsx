@@ -7,6 +7,7 @@ const ACTION_COLOR: Record<MatrixRow['recommendation']['action'], string> = {
   inspect: '#7a5cc4', // purple (inspect)
   keep: '#2e9e5b', // green
   unknown: '#8a8a8a',
+  unobserved: '#9a9a9a',
 };
 
 const ACTION_LABEL: Record<MatrixRow['recommendation']['action'], string> = {
@@ -15,6 +16,7 @@ const ACTION_LABEL: Record<MatrixRow['recommendation']['action'], string> = {
   inspect: 'inspect',
   keep: 'keep',
   unknown: 'unknown',
+  unobserved: 'unobserved',
 };
 
 /** tool, definition tokens, calls, response tokens, loaded sessions, total sessions, recommendation */

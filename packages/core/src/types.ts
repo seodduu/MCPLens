@@ -268,14 +268,55 @@ export interface RecommendationEvidence {
    * only the grade stays honest).
    */
   datedObservedSessions: number;
+  /**
+   * Sessions inside the window before the mode gate: every session in which this tool existed,
+   * whether or not its definition reached the model. Under deferred loading this is the divisor
+   * that turns "pulled in N times" into a per-session figure. 0 when there is no window.
+   */
+  windowSessions: number;
   /** Observation window length in days. null when it cannot be computed. */
   observedDays: number | null;
   /** Last call timestamp (ISO). null when there is no call history at all. */
   lastCalledAt: string | null;
-  /** Tokens charged per session (= definitionTokens, null when unavailable). */
+  /**
+   * Tokens charged per session. Upfront: definitionTokens. Deferred: definitionTokens amortised
+   * over the window (definitionTokens x observedSessions / windowSessions), because the definition
+   * only enters context in the sessions that loaded it. null when unavailable.
+   */
   costPerSession: number | null;
   /** Accumulated cost over the observation period (= costPerSession x observedSessions). */
   totalObservedCost: number | null;
+}
+
+/** Observation evidence for one server, counted on the server's own terms (see design 2026-08-31 §3.3). */
+export interface ServerEvidence {
+  /** Sessions inside the window in which the server was configured (OPAQUE sessions excluded). */
+  configuredSessions: number;
+  /** Of those, sessions with a valid startedAt confirmed inside the window. */
+  datedConfiguredSessions: number;
+  /** Sessions with at least one load of any tool of this server. */
+  loadedSessions: number;
+  /** Sessions with at least one call of any tool of this server. */
+  calledSessions: number;
+  observedDays: number | null;
+  /** Latest call or load of any tool of this server, all-time. null when there is none. */
+  lastActivityAt: string | null;
+}
+
+export interface ServerVerdict {
+  serverName: string;
+  action: 'remove-server' | 'keep';
+  confidence: RecommendationConfidence;
+  evidence: ServerEvidence;
+  /**
+   * What removing the server measurably saves per session: the sum of its definition tokens plus
+   * its instructions overhead under upfront loading; the instructions overhead alone under
+   * deferred loading, where definitions are not in context.
+   */
+  measuredPerSessionTokens: number;
+  /** Deferred only: name-list entries that go away with the server but have no token estimate yet. 0 under upfront. */
+  unmeasuredNameListEntries: number;
+  reason: string;
 }
 
 /**
@@ -296,7 +337,7 @@ export interface RecommendationReason {
 }
 
 export interface Recommendation {
-  action: 'remove' | 'filter-server' | 'keep' | 'unknown' | 'inspect';
+  action: 'remove' | 'filter-server' | 'keep' | 'unknown' | 'inspect' | 'unobserved';
   /** An axis orthogonal to action: action is "what to do", confidence is "how much to trust it". */
   confidence: RecommendationConfidence;
   /** Mode-aware label: "N tokens saved per session" under upfront, "cleans up the search space" under deferred. */

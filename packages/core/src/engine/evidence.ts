@@ -15,7 +15,7 @@ const INSPECT_HIGH_CALLS = 10;
 const MS_PER_DAY = 86_400_000;
 
 export const EMPTY_EVIDENCE: RecommendationEvidence = {
-  observedSessions: 0, datedObservedSessions: 0, observedDays: null, lastCalledAt: null,
+  observedSessions: 0, datedObservedSessions: 0, windowSessions: 0, observedDays: null, lastCalledAt: null,
   costPerSession: null, totalObservedCost: null,
 };
 
@@ -208,6 +208,8 @@ export function toolEvidence(
   return {
     observedSessions,
     datedObservedSessions,
+    // T1 replaces this with the pre-gate count (design 2026-08-31 §3.2)
+    windowSessions: observedSessions,
     observedDays,
     lastCalledAt,
     costPerSession,

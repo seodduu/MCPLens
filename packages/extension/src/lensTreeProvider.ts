@@ -4,6 +4,7 @@ import type { LensNode } from './matrixTree.js';
 
 const ACTION_ICON: Record<string, string> = {
   inspect: 'warning', remove: 'trash', 'filter-server': 'filter', keep: 'check',
+  unobserved: 'eye-closed',
 };
 
 /** Icon accent colour: keep (check) blue, inspect (danger) red. Everything else uses the default. */
