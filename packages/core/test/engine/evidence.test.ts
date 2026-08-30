@@ -77,6 +77,60 @@ describe('observation window calculation', () => {
   });
 });
 
+describe('deferred-mode observation gating', () => {
+  const modal = (n: number, mode: SessionMeta['mode'], from = 0): SessionMeta[] =>
+    Array.from({ length: n }, (_, i) => ({
+      sessionId: `s${from + i}`, client: 'claude-code' as const,
+      filePath: `/f/${from + i}`, startedAt: iso(from + i), mode }));
+
+  it('counts a deferred session only when the tool was loaded in it', () => {
+    const loads = [load('s1', 'github', 't'), load('s4', 'github', 't'), load('s8', 'github', 't')];
+    const ctx = buildEvidenceContext([def(iso(0))], [], loads, modal(10, 'DEFERRED_MEASURABLE'));
+    const ev = toolEvidence('github', 't', 800, ctx);
+    expect(ev.observedSessions).toBe(3);
+    expect(ev.datedObservedSessions).toBe(3);
+  });
+
+  it('grades a never-loaded tool in deferred sessions as unobserved (low confidence)', () => {
+    // Another tool keeps the window alive; tool B itself was never loaded.
+    const loads = [load('s0', 'github', 'other')];
+    const ctx = buildEvidenceContext(
+      [defOf('github', 'b', iso(0))], [], loads, modal(10, 'DEFERRED_MEASURABLE'));
+    const ev = toolEvidence('github', 'b', 800, ctx);
+    expect(ev.observedSessions).toBe(0);
+    expect(ev.observedDays).toBeNull();
+    expect(removeConfidence(ev)).toBe('low');
+  });
+
+  it('keeps counting every UPFRONT session with no load events (regression)', () => {
+    const ctx = buildEvidenceContext([def(iso(0))], [], [], sessions(10));
+    expect(toolEvidence('github', 't', 800, ctx).observedSessions).toBe(10);
+  });
+
+  it('mixes modes: all UPFRONT sessions plus only the loaded deferred ones', () => {
+    const mixed = [...sessions(5), ...modal(5, 'DEFERRED_MEASURABLE', 5)];
+    const loads = [load('s6', 'github', 't'), load('s9', 'github', 't')];
+    const ctx = buildEvidenceContext([def(iso(0))], [], loads, mixed);
+    expect(toolEvidence('github', 't', 800, ctx).observedSessions).toBe(7);
+  });
+
+  it('never counts DEFERRED_OPAQUE sessions, even with a load event', () => {
+    const loads = [load('s2', 'github', 't')];
+    const ctx = buildEvidenceContext([def(iso(0))], [], loads, modal(10, 'DEFERRED_OPAQUE'));
+    expect(toolEvidence('github', 't', 800, ctx).observedSessions).toBe(0);
+  });
+
+  it('applies the mode gate to sessions with a null startedAt too', () => {
+    const withNull: SessionMeta[] = [...modal(3, 'DEFERRED_MEASURABLE'),
+      { sessionId: 'sx', client: 'claude-code', filePath: '/f/x',
+        startedAt: null, mode: 'DEFERRED_MEASURABLE' }];
+    const loads = [load('s0', 'github', 't')];
+    const ctx = buildEvidenceContext([def(iso(0))], [], loads, withNull);
+    // sx has no load, so the null-startedAt inclusion rule does not rescue it
+    expect(toolEvidence('github', 't', 800, ctx).observedSessions).toBe(1);
+  });
+});
+
 describe('confidence grading rules', () => {
   const ev = (observedSessions: number, observedDays: number | null,
     lastCalledAt: string | null = null) => ({

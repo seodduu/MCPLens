@@ -46,6 +46,8 @@ export interface EvidenceContext {
   lastCallAllTime: Map<string, string>;
   /** "server tool" → firstScannedAt */
   firstScanned: Map<string, string>;
+  /** "server tool" -> sessionIds holding a load event for that tool. */
+  loadedSessions: Map<string, Set<string>>;
   /**
    * "server tool" -> startedAt of the earliest session with that tool's own activity.
    * Stands in for firstScannedAt on tools with no definition (load-only). Using server-level
@@ -79,7 +81,15 @@ export function buildEvidenceContext(
     earliest(toolFirstActivity, key(server, tool), at);
   };
   for (const c of calls) noteActivity(c.serverName, c.toolName, c.sessionId);
-  for (const l of loads) noteActivity(l.serverName, l.toolName, l.sessionId);
+  const loadedSessions = new Map<string, Set<string>>();
+  for (const l of loads) {
+    noteActivity(l.serverName, l.toolName, l.sessionId);
+    if (l.serverName == null) continue; // unjoined loads cannot be keyed to a tool
+    const k = key(l.serverName, l.toolName);
+    let set = loadedSessions.get(k);
+    if (set === undefined) { set = new Set(); loadedSessions.set(k, set); }
+    set.add(l.sessionId);
+  }
 
   let windowEnd: string | null = null;
   for (const s of sessions) {
@@ -111,7 +121,7 @@ export function buildEvidenceContext(
   }
 
   return { sessions, serverFirstActivity, serverScanEpoch, windowEnd, lastCallInScope,
-    lastCallAllTime, firstScanned, toolFirstActivity };
+    lastCallAllTime, firstScanned, loadedSessions, toolFirstActivity };
 }
 
 export function toolEvidence(
@@ -158,7 +168,18 @@ export function toolEvidence(
   // high confidence came from those alone, it would rest on "N sessions of unknown date".
   let datedObservedSessions = 0;
   if (windowStart != null) {
+    const loaded = ctx.loadedSessions.get(k);
     for (const s of ctx.sessions) {
+      // Mode gate first: a session only observes this tool if its definition could have reached
+      // the model. UPFRONT sends every definition each session. In deferred modes the definition
+      // enters context only on a load event, so a session without one never saw the tool and must
+      // not count toward "observed" (day-04 pilot: 36 never-loaded tools graded remove/medium off
+      // 10 deferred sessions). DEFERRED_OPAQUE yields no MCP evidence at all, so it never counts
+      // ("the lower side wins").
+      if (s.mode !== 'UPFRONT') {
+        if (s.mode === 'DEFERRED_OPAQUE') continue;
+        if (loaded === undefined || !loaded.has(s.sessionId)) continue;
+      }
       const at = ms(s.startedAt);
       // A session without startedAt cannot be placed in the window, so it is included (prevents undercounting; a documented limitation)
       if (at == null) { observedSessions++; continue; }
