@@ -78,6 +78,17 @@ describe('dashboard HTTP contract', () => {
     expect(typeof body.savings.potentialTokens).toBe('number');
   });
 
+  it('GET /api/matrix returns servers', async () => {
+    const res = await fetch(`${baseUrl}/api/matrix?days=30`);
+    const body = await res.json();
+    expect(Array.isArray(body.servers)).toBe(true);
+    expect(body.servers.length).toBeGreaterThan(0);
+    const github = body.servers.find((v: { serverName: string }) => v.serverName === 'github');
+    expect(github.action).toBeDefined();
+    expect(github.confidence).toBeDefined();
+    expect(typeof github.reason).toBe('string');
+  });
+
   it('GET /api/matrix defaults days to 30 when omitted', async () => {
     const res = await fetch(`${baseUrl}/api/matrix`);
     expect(res.status).toBe(200);

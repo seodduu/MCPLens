@@ -166,6 +166,55 @@ body {
   font-size: 12.5px;
 }
 
+/* Servers never used */
+
+.server-verdicts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.server-verdict {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.server-verdict-name {
+  font-weight: 600;
+}
+
+.server-verdict-reason {
+  color: var(--muted);
+  word-break: keep-all;
+}
+
+.confidence-badge {
+  display: inline-block;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  padding: 1px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.confidence-high {
+  background: #2e9e5b;
+}
+
+.confidence-medium {
+  background: #e08a2e;
+}
+
+.confidence-low {
+  background: #8a8a8a;
+}
+
 /* Timeline */
 
 .timeline-controls {

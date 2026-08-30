@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { MatrixRow, SessionMeta, ToolCallEvent } from '@mcp-lens/core';
+import type { MatrixRow, ServerVerdict, SessionMeta, ToolCallEvent } from '@mcp-lens/core';
 import { MatrixTable } from './MatrixTable.js';
 import { Timeline } from './Timeline.js';
 
@@ -8,6 +8,29 @@ const POLL_INTERVAL_MS = 5000;
 interface MatrixResponse {
   rows: MatrixRow[];
   savings: { potentialTokens: number; actualTokens: number; savedTokens: number };
+  /** Server-level verdicts, keep included. Absent on a server build older than this field. */
+  servers?: ServerVerdict[];
+}
+
+/**
+ * Servers with no load and no call anywhere in the window. Their tool rows cannot carry the
+ * finding under deferred loading, where no definition ever entered context, so the verdict is
+ * shown on its own.
+ */
+function ServersNeverUsed({ servers }: { servers: ServerVerdict[] }) {
+  const unused = servers.filter((v) => v.action === 'remove-server');
+  if (unused.length === 0) return <p>No server has gone unused in the window.</p>;
+  return (
+    <ul className="server-verdicts">
+      {unused.map((v) => (
+        <li key={v.serverName} className="server-verdict">
+          <span className="server-verdict-name">{v.serverName}</span>
+          <span className={`confidence-badge confidence-${v.confidence}`}>{v.confidence}</span>
+          <span className="server-verdict-reason">{v.reason}</span>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 export default function App() {
@@ -88,6 +111,11 @@ export default function App() {
         ) : (
           <p>Loading…</p>
         )}
+      </section>
+
+      <section>
+        <h2>Servers never used</h2>
+        {matrix ? <ServersNeverUsed servers={matrix.servers ?? []} /> : <p>Loading…</p>}
       </section>
 
       <section>
