@@ -131,6 +131,43 @@ describe('deferred-mode observation gating', () => {
   });
 });
 
+describe('deferred basis (design 2026-08-31)', () => {
+  const modal = (n: number, mode: SessionMeta['mode'], from = 0): SessionMeta[] =>
+    Array.from({ length: n }, (_, i) => ({
+      sessionId: `s${from + i}`, client: 'claude-code' as const,
+      filePath: `/f/${from + i}`, startedAt: iso(from + i), mode }));
+
+  it('windowSessions counts every in-window session before the mode gate', () => {
+    const loads = [load('s1', 'github', 't'), load('s4', 'github', 't'), load('s8', 'github', 't')];
+    const ctx = buildEvidenceContext([def(iso(0))], [], loads, modal(10, 'DEFERRED_MEASURABLE'));
+    const ev = toolEvidence('github', 't', 800, ctx, 'DEFERRED_MEASURABLE');
+    expect(ev.windowSessions).toBe(10);
+    expect(ev.observedSessions).toBe(3);
+  });
+
+  it('deferred costPerSession amortises the definition over the window', () => {
+    const loads = [load('s1', 'github', 't'), load('s4', 'github', 't'), load('s8', 'github', 't')];
+    const ctx = buildEvidenceContext([def(iso(0))], [], loads, modal(10, 'DEFERRED_MEASURABLE'));
+    const ev = toolEvidence('github', 't', 800, ctx, 'DEFERRED_MEASURABLE');
+    expect(ev.costPerSession).toBe(240);      // 800 x 3 / 10
+    expect(ev.totalObservedCost).toBe(2400);
+  });
+
+  it('upfront costPerSession stays the definition size', () => {
+    const ctx = buildEvidenceContext([def(iso(0))], [], [], sessions(10));
+    const ev = toolEvidence('github', 't', 800, ctx, 'UPFRONT');
+    expect(ev.costPerSession).toBe(800);
+    expect(ev.totalObservedCost).toBe(8000);
+  });
+
+  it('deferred tool with no window has null costPerSession', () => {
+    const ctx = buildEvidenceContext([def(iso(0))], [], [], modal(10, 'DEFERRED_MEASURABLE'));
+    const ev = toolEvidence('github', 'nodef', null, ctx, 'DEFERRED_MEASURABLE');
+    expect(ev.windowSessions).toBe(0);
+    expect(ev.costPerSession).toBeNull();
+  });
+});
+
 describe('confidence grading rules', () => {
   const ev = (observedSessions: number, observedDays: number | null,
     lastCalledAt: string | null = null) => ({

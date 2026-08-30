@@ -26,14 +26,14 @@ describe('buildMatrix', () => {
     expect(row.recommendation.evidenceLabel).toBe('assumed full load');
   });
 
-  it('keeps the same verdict with different wording in a deferred-loading session', () => {
+  it('leaves a never-loaded tool unobserved in a deferred-loading session', () => {
     const input: EngineInput = {
       definitions: [def('unused_tool', 800)], calls: [], loads: [],
       sessions: [session('DEFERRED_MEASURABLE')],
     };
     const [row] = buildMatrix(input);
-    expect(row.recommendation.action).toBe('remove');
-    expect(row.recommendation.reason).toContain('search space');
+    expect(row.recommendation.action).toBe('unobserved');
+    expect(row.recommendation.reason).toContain('never loaded');
     expect(row.recommendation.evidenceLabel).toBe('measured');
   });
 
@@ -103,7 +103,7 @@ describe('load patterns (inherited from v1)', () => {
     expect(buildMatrix(input)[0].loadPattern).toBe('always-load-candidate');
   });
 
-  it('marks search-pollution with the pollution wording in the reason when loaded but never called', () => {
+  it('marks search-pollution and says the tool is pulled in by search when loaded but never called', () => {
     const input: EngineInput = {
       definitions: [def('noise', 600)], calls: [],
       loads: [{ sessionId: 's1', serverName: 'github', toolName: 'noise', loadedTokens: null }],
@@ -111,7 +111,8 @@ describe('load patterns (inherited from v1)', () => {
     };
     const [row] = buildMatrix(input);
     expect(row.loadPattern).toBe('search-pollution');
-    expect(row.recommendation.reason).toContain('pollutes the search space');
+    expect(row.recommendation.reason).toContain('pulled in by search in 1 of 1 sessions');
+    expect(row.recommendation.reason).toContain('cleans up the search space');
   });
 });
 
@@ -603,5 +604,75 @@ describe('splitByClient definition filtering', () => {
     const codex = splitByClient(input).find((p) => p.client === 'codex')!;
     const rows = buildMatrix(codex.input);
     expect(rows.some((r) => r.serverName === 'notion' && r.loadedSessionCount === 1)).toBe(true);
+  });
+});
+
+describe('deferred basis (design 2026-08-31)', () => {
+  const DAY = 86_400_000;
+  const at = (dayOffset: number) =>
+    new Date(Date.parse('2026-07-01T00:00:00Z') + dayOffset * DAY).toISOString();
+  const defAt = (tool: string, tokens: number, firstScannedAt = at(0)) => ({
+    serverName: 'github', toolName: tool, definitionTokens: tokens,
+    scannedAt: at(9), firstScannedAt });
+  const deferredSessions = (n: number) => Array.from({ length: n }, (_, i) => ({
+    sessionId: `s${i}`, client: 'claude-code' as const, filePath: `/f/${i}`,
+    startedAt: at(i), mode: 'DEFERRED_MEASURABLE' as const }));
+  const upfrontSessions = (n: number) => Array.from({ length: n }, (_, i) => ({
+    sessionId: `s${i}`, client: 'claude-code' as const, filePath: `/f/${i}`,
+    startedAt: at(i), mode: 'UPFRONT' as const }));
+  const loadIn = (sessionId: string, toolName: string) => ({
+    sessionId, serverName: 'github', toolName, loadedTokens: null });
+
+  it('never-loaded tool under deferred loading is unobserved, not remove', () => {
+    const input: EngineInput = {
+      definitions: [defAt('unused_tool', 800)], calls: [], loads: [],
+      sessions: deferredSessions(10),
+    };
+    const [row] = buildMatrix(input);
+    expect(row.recommendation.action).toBe('unobserved');
+    expect(row.recommendation.confidence).toBe('low');
+    expect(row.recommendation.reason).toContain('never loaded in 10 sessions');
+  });
+
+  it('loaded-but-uncalled tool under deferred loading is remove graded by loaded sessions', () => {
+    const input: EngineInput = {
+      definitions: [defAt('polluter', 800)], calls: [],
+      loads: ['s1', 's4', 's8'].map((id) => loadIn(id, 'polluter')),
+      sessions: deferredSessions(10),
+    };
+    const [row] = buildMatrix(input);
+    expect(row.recommendation.action).toBe('remove');
+    expect(row.recommendation.confidence).toBe('low');   // 3 loaded sessions < 5
+    expect(row.recommendation.evidence.observedSessions).toBe(3);
+    expect(row.recommendation.reason).toContain('pulled in by search in 3 of 10 sessions');
+
+    const wider: EngineInput = {
+      ...input,
+      loads: ['s1', 's2', 's4', 's6', 's8', 's9'].map((id) => loadIn(id, 'polluter')),
+    };
+    expect(buildMatrix(wider)[0].recommendation.confidence).toBe('medium');
+  });
+
+  it('upfront rule unchanged', () => {
+    const input: EngineInput = {
+      definitions: [defAt('unused_tool', 800)], calls: [], loads: [],
+      sessions: upfrontSessions(10),
+    };
+    expect(buildMatrix(input)[0].recommendation.action).toBe('remove');
+  });
+
+  it('filter-server still applies under deferred loading when the server is wide', () => {
+    const defs = Array.from({ length: 12 }, (_, i) => defAt(`t${i}`, 100));
+    const input: EngineInput = {
+      definitions: defs,
+      calls: [{ sessionId: 's0', serverName: 'github', toolName: 't0',
+        calledAt: at(0), durationMs: 10, isError: false,
+        responseTokens: 100, responseText: null }],
+      loads: [loadIn('s3', 't1')],
+      sessions: deferredSessions(10),
+    };
+    const rows = buildMatrix(input);
+    expect(rows.find((r) => r.toolName === 't1')!.recommendation.action).toBe('filter-server');
+    expect(rows.find((r) => r.toolName === 't2')!.recommendation.action).toBe('unobserved');
   });
 });
