@@ -196,9 +196,10 @@ function recommend(
     mode === 'UPFRONT'
       ? `about ${formatTokens(t)} tokens saved per session when removed`
       : deferred
-        ? `pulled in by search in ${evidence.observedSessions} of ${evidence.windowSessions} sessions, `
-          + `about ${formatTokens(t)} tokens each time. Removing saves about `
-          + `${formatTokens(evidence.costPerSession ?? 0)} tokens per session and cleans up the search space`
+        ? `in context in ${evidence.observedSessions} of ${evidence.windowSessions} sessions `
+          + `(${row.loadedSessionCount} pulled in by search), about ${formatTokens(t)} tokens each time. `
+          + `Removing saves about ${formatTokens(evidence.costPerSession ?? 0)} tokens per session `
+          + `and cleans up the search space`
         : `small savings, but cleans up the search space`;
 
   // Deferred wording already says the tool is pulled in by search and never called, so the
@@ -207,9 +208,10 @@ function recommend(
     ? ' (loaded but never called, so it pollutes the search space)' : '';
 
   if (row.callCount === 0 && row.definitionTokens != null) {
-    // Under deferred loading a definition that never loaded never reached the model, so there is
-    // no evidence to remove it on (design 2026-08-31 3.1).
-    if (deferred && row.loadedSessionCount === 0) {
+    // Under deferred loading a definition the model never saw carries no evidence to remove it on
+    // (design 2026-08-31 3.1). The test is observedSessions, not loads: an upfront session in a
+    // mixed window did put the definition in context, so it is observation even with 0 loads.
+    if (deferred && evidence.observedSessions === 0) {
       const reasonParts: RecommendationReason = {
         basis: `never loaded in ${evidence.windowSessions} sessions under deferred loading, `
           + `so there is no evidence yet`,

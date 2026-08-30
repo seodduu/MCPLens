@@ -111,7 +111,7 @@ describe('load patterns (inherited from v1)', () => {
     };
     const [row] = buildMatrix(input);
     expect(row.loadPattern).toBe('search-pollution');
-    expect(row.recommendation.reason).toContain('pulled in by search in 1 of 1 sessions');
+    expect(row.recommendation.reason).toContain('in context in 1 of 1 sessions (1 pulled in by search)');
     expect(row.recommendation.reason).toContain('cleans up the search space');
   });
 });
@@ -644,13 +644,30 @@ describe('deferred basis (design 2026-08-31)', () => {
     expect(row.recommendation.action).toBe('remove');
     expect(row.recommendation.confidence).toBe('low');   // 3 loaded sessions < 5
     expect(row.recommendation.evidence.observedSessions).toBe(3);
-    expect(row.recommendation.reason).toContain('pulled in by search in 3 of 10 sessions');
+    expect(row.recommendation.reason).toContain('in context in 3 of 10 sessions (3 pulled in by search)');
 
     const wider: EngineInput = {
       ...input,
       loads: ['s1', 's2', 's4', 's6', 's8', 's9'].map((id) => loadIn(id, 'polluter')),
     };
     expect(buildMatrix(wider)[0].recommendation.confidence).toBe('medium');
+  });
+
+  it('a tool seen in upfront sessions but never loaded under deferred loading is remove, not unobserved', () => {
+    // A mixed window: the 4 upfront sessions did put the definition in context, so there is
+    // evidence even though nothing was ever pulled in by search.
+    const mixed = [
+      ...deferredSessions(6),
+      ...Array.from({ length: 4 }, (_, i) => ({
+        sessionId: `u${i}`, client: 'claude-code' as const, filePath: `/f/u${i}`,
+        startedAt: at(6 + i), mode: 'UPFRONT' as const })),
+    ];
+    const input: EngineInput = {
+      definitions: [defAt('unused_tool', 800)], calls: [], loads: [], sessions: mixed,
+    };
+    const [row] = buildMatrix(input);
+    expect(row.recommendation.action).toBe('remove');
+    expect(row.recommendation.evidence.observedSessions).toBe(4);
   });
 
   it('upfront rule unchanged', () => {

@@ -210,9 +210,13 @@ export function buildServerVerdicts(input: EngineInput): ServerVerdict[] {
           + `Removing saves about ${formatTokens(measuredPerSessionTokens)} tokens per session${plus}` };
     }
     // Any evidence of use is self-evident, so a keep is pinned high.
+    // With nothing inside the window, the only thing keeping the server is older history, so the
+    // reason says when that was instead of claiming "loaded in 0 sessions".
     const reason = calledSessions > 0
       ? `called in ${calledSessions} sessions`
-      : `loaded in ${loadedSessions} sessions, never called`;
+      : loadedSessions > 0
+        ? `loaded in ${loadedSessions} sessions, never called`
+        : `last active ${(lastActivityAt ?? '').slice(0, 10)}, before the window`;
     return { serverName: server, action: 'keep', confidence: 'high', evidence,
       measuredPerSessionTokens, unmeasuredNameListEntries, reason };
   });

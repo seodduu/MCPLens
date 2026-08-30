@@ -102,6 +102,13 @@ describe('buildServerVerdicts (design 2026-08-31 section 3.3)', () => {
     expect(v.evidence.lastActivityAt).toBe(iso(-40));
   });
 
+  it('activity before the window keeps the server and names the date', () => {
+    const [v] = buildServerVerdicts(input({
+      lastCallByTool: new Map([['jira t1', '2026-05-20T09:00:00.000Z']]) }));
+    expect(v.action).toBe('keep');
+    expect(v.reason).toBe('last active 2026-05-20, before the window');
+  });
+
   it('configured sessions follow serversByClient when present', () => {
     const mixed = sessions(10).map((s, i) =>
       i >= 6 ? { ...s, client: 'codex' as ClientId } : s);
