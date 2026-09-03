@@ -135,6 +135,8 @@ export async function scanServer(
         toolName: t.name,
         advertisedTokens,
         definitionTokens: calibrate(advertisedTokens),
+        // T1 fills this from the name-list estimator (plan 2026-09-03 section 5)
+        nameListTokens: null,
         estimatorVersion: ESTIMATOR_VERSION,
         scannedAt: now,
         firstScannedAt: now, // COALESCE on save preserves the existing first value

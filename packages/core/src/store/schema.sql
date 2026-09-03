@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS tool_definitions (
   tool_name         TEXT NOT NULL,
   definition_tokens INTEGER NOT NULL,
   advertised_tokens INTEGER,
+  name_list_tokens  INTEGER,
   estimator_version TEXT,
   scanned_at        TEXT NOT NULL,
   first_scanned_at  TEXT,

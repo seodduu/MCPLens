@@ -7,7 +7,7 @@ const NOW = '2026-08-05T00:00:00.000Z';
 const SINCE = '2000-01-01';
 
 const definition = (serverName: string, toolName: string): ToolDefinition => ({
-  serverName, toolName, definitionTokens: 100, advertisedTokens: null, estimatorVersion: 'v1',
+  serverName, toolName, definitionTokens: 100, advertisedTokens: null, nameListTokens: null, estimatorVersion: 'v1',
   scannedAt: NOW, firstScannedAt: NOW,
 });
 

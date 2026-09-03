@@ -136,7 +136,7 @@ export function buildServerVerdicts(input: EngineInput): ServerVerdict[] {
     if (windowStartMs == null) {
       return { serverName: server, action: 'keep', confidence: 'high',
         evidence: { ...EMPTY_SERVER_EVIDENCE }, measuredPerSessionTokens,
-        unmeasuredNameListEntries, reason: 'no observation window' };
+        nameListTokens: null, unmeasuredNameListEntries, reason: 'no observation window' };
     }
 
     // A session with no startedAt cannot be placed in the window, so it is included (prevents
@@ -205,7 +205,7 @@ export function buildServerVerdicts(input: EngineInput): ServerVerdict[] {
         ? ` plus ${unmeasuredNameListEntries} name-list entries (unmeasured)` : '';
       return { serverName: server, action: 'remove-server',
         confidence: serverRemoveConfidence(evidence), evidence, measuredPerSessionTokens,
-        unmeasuredNameListEntries,
+        nameListTokens: null, unmeasuredNameListEntries,
         reason: `never loaded or called in ${configuredSessions} sessions${days}. `
           + `Removing saves about ${formatTokens(measuredPerSessionTokens)} tokens per session${plus}` };
     }
@@ -218,6 +218,6 @@ export function buildServerVerdicts(input: EngineInput): ServerVerdict[] {
         ? `loaded in ${loadedSessions} sessions, never called`
         : `last active ${(lastActivityAt ?? '').slice(0, 10)}, before the window`;
     return { serverName: server, action: 'keep', confidence: 'high', evidence,
-      measuredPerSessionTokens, unmeasuredNameListEntries, reason };
+      measuredPerSessionTokens, nameListTokens: null, unmeasuredNameListEntries, reason };
   });
 }

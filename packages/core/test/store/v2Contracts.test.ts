@@ -29,7 +29,7 @@ afterEach(() => {
 
 const definition: ToolDefinition = {
   serverName: 'github', toolName: 'get_issue', definitionTokens: 120,
-  advertisedTokens: null, estimatorVersion: 'v1',
+  advertisedTokens: null, nameListTokens: null, estimatorVersion: 'v1',
   scannedAt: NOW, firstScannedAt: NOW,
 };
 
