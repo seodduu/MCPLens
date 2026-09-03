@@ -79,15 +79,15 @@ export function buildMatrix(input: EngineInput): MatrixRow[] {
   // Union of defined tools, call-only tools and load-only tools (M4).
   // Dropping load-only tools would hide "loaded but never called" (search-space pollution).
   const rows = new Map<string, MatrixRow>();
-  for (const d of definitions) rows.set(key(d.serverName, d.toolName), baseRow(d.serverName, d.toolName, d.definitionTokens));
+  for (const d of definitions) rows.set(key(d.serverName, d.toolName), baseRow(d.serverName, d.toolName, d.definitionTokens, d.nameListTokens));
   for (const c of calls) {
     const k = key(c.serverName, c.toolName);
-    if (!rows.has(k)) rows.set(k, baseRow(c.serverName, c.toolName, null));
+    if (!rows.has(k)) rows.set(k, baseRow(c.serverName, c.toolName, null, null));
   }
   for (const l of loads) {
     if (l.serverName == null) continue; // loads with no server attribution (code-mode search aggregates) get no row
     const k = key(l.serverName, l.toolName);
-    if (!rows.has(k)) rows.set(k, baseRow(l.serverName, l.toolName, null));
+    if (!rows.has(k)) rows.set(k, baseRow(l.serverName, l.toolName, null, null));
   }
 
   for (const [k, row] of rows) {
@@ -130,9 +130,10 @@ export function sessionSavings(input: EngineInput) {
     savedTokens: Math.max(0, potentialTokens - actualTokens) };
 }
 
-function baseRow(serverName: string, toolName: string, definitionTokens: number | null): MatrixRow {
+function baseRow(serverName: string, toolName: string, definitionTokens: number | null,
+  nameListTokens: number | null): MatrixRow {
   const reasonParts: RecommendationReason = { basis: '', serverBasis: null, effect: null, caveat: null };
-  return { serverName, toolName, definitionTokens, callCount: 0, responseTokens: 0,
+  return { serverName, toolName, definitionTokens, nameListTokens, callCount: 0, responseTokens: 0,
     loadedSessionCount: 0, sessionCount: 0,
     recommendation: { action: 'unknown', confidence: 'low', reason: joinReason(reasonParts),
       reasonParts, evidenceLabel: 'not measurable', evidence: EMPTY_EVIDENCE },

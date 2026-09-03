@@ -43,7 +43,7 @@ async function writeLegacyDatabase(path: string): Promise<void> {
 function definition(overrides: Partial<ToolDefinition> = {}): ToolDefinition {
   return {
     serverName: 'github', toolName: 'get_issue', definitionTokens: 193,
-    advertisedTokens: 120, estimatorVersion: 'v2-2026-08-27',
+    advertisedTokens: 120, nameListTokens: null, estimatorVersion: 'v2-2026-08-27',
     scannedAt: NOW, firstScannedAt: NOW,
     ...overrides,
   };
@@ -76,6 +76,15 @@ describe('estimator v2 store contract', () => {
     const [row] = store.allDefinitions();
     expect(row.estimatorVersion).toBe('v1');
     expect(row.advertisedTokens).toBeNull();
+    store.close();
+  });
+
+  it('reads a pre-migration row with nameListTokens null', async () => {
+    const path = temporaryDatabase();
+    await writeLegacyDatabase(path);
+
+    const store = await LensStore.open(path);
+    expect(store.allDefinitions()[0].nameListTokens).toBeNull();
     store.close();
   });
 

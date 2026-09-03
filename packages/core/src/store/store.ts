@@ -65,6 +65,10 @@ function migrate(db: Database): void {
   if (!cols.has('advertised_tokens')) {
     db.exec('ALTER TABLE tool_definitions ADD COLUMN advertised_tokens INTEGER');
   }
+  // No backfill either: rows scanned before the name-list estimator have no honest stub size.
+  if (!cols.has('name_list_tokens')) {
+    db.exec('ALTER TABLE tool_definitions ADD COLUMN name_list_tokens INTEGER');
+  }
   if (!cols.has('estimator_version')) {
     db.exec('ALTER TABLE tool_definitions ADD COLUMN estimator_version TEXT');
     db.exec("UPDATE tool_definitions SET estimator_version = 'v1'");
@@ -280,17 +284,18 @@ export class LensStore {
       for (const d of defs)
         this.run(
           `INSERT INTO tool_definitions(server_name, tool_name, definition_tokens,
-             advertised_tokens, estimator_version, scanned_at, first_scanned_at)
-           VALUES(?,?,?,?,?,?,?)
+             advertised_tokens, name_list_tokens, estimator_version, scanned_at, first_scanned_at)
+           VALUES(?,?,?,?,?,?,?,?)
            ON CONFLICT(server_name, tool_name) DO UPDATE
              SET definition_tokens=excluded.definition_tokens,
                  advertised_tokens=excluded.advertised_tokens,
+                 name_list_tokens=excluded.name_list_tokens,
                  estimator_version=excluded.estimator_version,
                  scanned_at=excluded.scanned_at,
                  first_scanned_at=COALESCE(tool_definitions.first_scanned_at,
                                            excluded.first_scanned_at)`,
           [d.serverName, d.toolName, d.definitionTokens, d.advertisedTokens,
-            d.estimatorVersion, d.scannedAt, d.firstScannedAt]);
+            d.nameListTokens, d.estimatorVersion, d.scannedAt, d.firstScannedAt]);
       this.reattributePendingCodexLoads();
       this.reattributeSanitizedCodexToolNames();
     });
@@ -657,6 +662,7 @@ export class LensStore {
       serverName: r.server_name as string, toolName: r.tool_name as string,
       definitionTokens: r.definition_tokens as number,
       advertisedTokens: (r.advertised_tokens as number | null) ?? null,
+      nameListTokens: (r.name_list_tokens as number | null) ?? null,
       estimatorVersion: (r.estimator_version as EstimatorVersion | null) ?? 'v1',
       scannedAt: r.scanned_at as string,
       // Defends against rows written before the migration: without a value, scanned_at counts as the first observation

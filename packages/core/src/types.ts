@@ -206,6 +206,12 @@ export interface ToolDefinition {
    * honest advertised value to backfill for those rows.
    */
   advertisedTokens: number | null;
+  /**
+   * What the tool costs when the client defers it: the calibrated size of its name-list stub
+   * (the line the harness keeps in context so the model can ToolSearch for it). Snapshot taken
+   * at scan time. null on rows scanned before the name-list estimator existed.
+   */
+  nameListTokens: number | null;
   estimatorVersion: EstimatorVersion;
   scannedAt: string;
   /** When this definition was first observed (ISO). A candidate window start; never overwritten by upsert. */
@@ -246,6 +252,8 @@ export interface MatrixRow {
   serverName: string;
   toolName: string;
   definitionTokens: number | null; // null when the scanner does not cover it
+  /** Name-list stub cost under deferred loading (ToolDefinition.nameListTokens). null when unknown. */
+  nameListTokens: number | null;
   callCount: number;
   responseTokens: number;
   loadedSessionCount: number; // sessions where the definition was loaded, under DEFERRED
@@ -309,12 +317,16 @@ export interface ServerVerdict {
   confidence: RecommendationConfidence;
   evidence: ServerEvidence;
   /**
-   * What removing the server measurably saves per session: the sum of its definition tokens plus
-   * its instructions overhead under upfront loading; the instructions overhead alone under
-   * deferred loading, where definitions are not in context.
+   * What removing the server measurably saves per session: definitions plus instructions under
+   * upfront loading; instructions plus the name-list stubs (nameListTokens) under deferred loading.
    */
   measuredPerSessionTokens: number;
-  /** Deferred only: name-list entries that go away with the server but have no token estimate yet. 0 under upfront. */
+  /**
+   * Deferred only: sum of nameListTokens over the server's defined tools that carry an estimate.
+   * 0 under upfront loading. null when no tool of the server carries an estimate.
+   */
+  nameListTokens: number | null;
+  /** Deferred only: defined tools whose nameListTokens is null (scanned before the estimator). 0 under upfront. */
   unmeasuredNameListEntries: number;
   reason: string;
 }

@@ -17,7 +17,7 @@ const sessions = (n: number, mode: AccountingMode = 'DEFERRED_MEASURABLE',
 
 const def = (serverName: string, toolName: string, firstScannedAt = iso(0),
   definitionTokens = 800): ToolDefinition => ({
-  serverName, toolName, definitionTokens, advertisedTokens: null, estimatorVersion: 'v2',
+  serverName, toolName, definitionTokens, advertisedTokens: null, nameListTokens: null, estimatorVersion: 'v2',
   scannedAt: iso(9), firstScannedAt });
 
 const jiraDefs = (firstScannedAt = iso(0)) =>

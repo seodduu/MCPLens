@@ -132,7 +132,7 @@ const codexAction = (overrides: Partial<GlobalAction> = {}): GlobalAction => ({
 });
 
 const definition = (serverName: string, toolName: string): ToolDefinition => ({
-  serverName, toolName, definitionTokens: 100, advertisedTokens: null, estimatorVersion: 'v1',
+  serverName, toolName, definitionTokens: 100, advertisedTokens: null, nameListTokens: null, estimatorVersion: 'v1',
   scannedAt: NOW, firstScannedAt: NOW,
 });
 
