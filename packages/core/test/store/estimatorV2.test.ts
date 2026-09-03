@@ -68,6 +68,14 @@ describe('estimator v2 store contract', () => {
     store.close();
   });
 
+  it('round-trips nameListTokens', async () => {
+    const store = await LensStore.open(':memory:');
+    store.upsertDefinitions([definition({ nameListTokens: 37 })]);
+
+    expect(store.allDefinitions()[0].nameListTokens).toBe(37);
+    store.close();
+  });
+
   it('reads a pre-migration row as estimator version v1', async () => {
     const path = temporaryDatabase();
     await writeLegacyDatabase(path);

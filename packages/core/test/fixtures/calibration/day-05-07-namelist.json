@@ -1,0 +1,659 @@
+{
+  "source": "claude-code-deferred-pilot-day-05-07",
+  "chosenRule": "json",
+  "factor": 0.4149,
+  "meanAbsError": 0.2318,
+  "maxAbsError": 0.4839,
+  "servers": [
+    {
+      "server": "arxiv",
+      "toolCount": 4,
+      "measured": 217,
+      "raw": 270,
+      "predicted": 112,
+      "error": 0.4839,
+      "tools": [
+        {
+          "name": "arxiv_get_metadata",
+          "description": "Get full metadata for one or more arXiv papers by ID. Use when you have known IDs from citations, prior search results, or memory."
+        },
+        {
+          "name": "arxiv_list_categories",
+          "description": "List arXiv category codes and names. Useful for discovering valid category filters for arxiv_search. Lists subject classes only; arxiv_search also accepts a bare archive code (the part before the dot, e.g. \"astro-ph\" or \"cs\") to search a whole archive at once."
+        },
+        {
+          "name": "arxiv_read_paper",
+          "description": "Fetch the full text of an arXiv paper. Tries arxiv.org/html first, falls back to ar5iv.labs.arxiv.org, and falls back again to text extracted from the PDF when neither has an HTML render — check the source field to know which one answered. Page through long papers with start and max_characters, or pass max_characters null to get the entire body in one call."
+        },
+        {
+          "name": "arxiv_search",
+          "description": "Search arXiv papers by query with category and sort filters. Returns paper metadata including title, authors, abstract, categories, and links."
+        }
+      ]
+    },
+    {
+      "server": "astronomy",
+      "toolCount": 5,
+      "measured": 320,
+      "raw": 1063,
+      "predicted": 440,
+      "error": 0.375,
+      "tools": [
+        {
+          "name": "astronomy_find_events",
+          "description": "Search forward from a start time for the next occurrences of one sky-event class, selected by the `event` enum: solar_eclipse, lunar_eclipse, equinox, solstice, moon_quarter, opposition, conjunction, max_elongation, or perigee_apogee. Only solar_eclipse takes an observer: pass latitude and longitude to get local circumstances (contact times plus `local_visible`). Every other class is geocentric and needs no location — a lunar eclipse is the same event everywhere the Moon is up, so it returns contact times and no `local_visible`. The body-relative events (opposition, conjunction, max_elongation, perigee_apogee) require a `body`: opposition applies to the superior planets (mars through pluto), conjunction to any planet, max_elongation to mercury and venus, and perigee_apogee to the moon (perigee/apogee), earth, or a planet (perihelion/aphelion). Returns the next `count` occurrences (default 1). Start defaults to now; pass an IANA `timezone` for observer-local timestamps."
+        },
+        {
+          "name": "astronomy_get_moon_phase",
+          "description": "Report the Moon phase for an instant: illuminated fraction, phase name, synodic age in days since the new moon, phase angle, and the next four quarter phases (new, first quarter, full, last quarter) with timestamps. Answers \"what is the moon phase tonight\" and \"when is the next full moon\" in one call without iteration. The time defaults to now; pass an IANA `timezone` to also receive observer-local timestamps. The phase is geocentric — no observer location is needed."
+        },
+        {
+          "name": "astronomy_get_rise_set",
+          "description": "Compute rise, set, and culmination (transit) times for a body at an observer location, plus the maximum altitude at culmination. For the Sun, also returns the three twilight pairs (civil −6°, nautical −12°, astronomical −18°) so a single call answers \"when does the sun set and when is it truly dark.\" Searches forward from `start` (default today) and returns the next `count` cycles (default 1). When the body is already above the horizon at `start`, the first cycle is the interval in progress: its `set` is the imminent one and its `rise` is null, since that rise precedes the search — so a set is never reported earlier than the rise beside it. Circumpolar or never-rises situations are reported as null rise/set fields with an explanatory note rather than an error — the fact is the answer. Default elevation is 0 m; pass an IANA `timezone` for observer-local times. This server does not geocode — resolve coordinates upstream first."
+        },
+        {
+          "name": "astronomy_get_sky_position",
+          "description": "Compute the apparent topocentric position of one solar-system body (sun, moon, mercury through neptune, pluto) or a named bright star for an observer location and instant. Returns equatorial (RA/Dec), refraction-corrected horizontal (altitude/azimuth), and ecliptic coordinates, plus distance, apparent magnitude, angular diameter, phase angle, illuminated fraction, and the constellation it falls in. For a solar-system body it also returns that body card — classification, mean radius, naked-eye visibility — the same values served at astronomy://body/{body}, so a client without resource support does not need a second surface to reach them; a catalog star has no card and the field is absent. Positions are parallax- and aberration-corrected for the given observer; default elevation is 0 m and the default time is now. Supply `star` (e.g. \"Sirius\", \"Polaris\") instead of `body` to target a catalog star; `body` is ignored when `star` is set. Pass an IANA `timezone` to also receive the observer-local time. This server does not geocode — resolve a place name to latitude/longitude upstream first."
+        },
+        {
+          "name": "astronomy_list_visible",
+          "description": "The one-call \"what is up right now\" answer. For an observer location and instant, iterate every naked-eye solar-system body (and, with include_stars, the bundled bright stars), compute altitude and azimuth, keep those above the horizon, rank them brightest-and-highest first, and attach a plain-language visibility note to each. The whole sky is gated by the Sun's altitude into daylight / civil / nautical / astronomical twilight / dark, returned alongside the list. `time` is a single evaluation instant, not a window — for \"tonight\" pass a time after astronomical dusk (use astronomy_get_rise_set on the sun to find it). Default elevation 0 m; use min_altitude to skip objects grazing the horizon. This server does not geocode — resolve coordinates upstream first; pass an IANA timezone for observer-local times on each body."
+        }
+      ]
+    },
+    {
+      "server": "better-auth",
+      "toolCount": 2,
+      "measured": 172,
+      "raw": 558,
+      "predicted": 231,
+      "error": 0.343,
+      "tools": [
+        {
+          "name": "get_doc",
+          "description": "Get Better Auth documentation content. Returns the latest documentation index if no path is provided, or the full content for a specific page or version index.\n\nUse this tool when you need to:\n- Browse all pages in the latest documentation (call without path)\n- Read the complete guide for a specific topic found via search_docs\n- Get code examples and configuration details for a feature\n\n<examples>\nget_doc() → returns the latest documentation index (/docs/llms.txt)\nget_doc(path=\"/llms.txt\") → returns the index of available documentation versions\nget_doc(path=\"/docs/concepts/session-management\") → full session management guide\nget_doc(path=\"/docs/plugins/2fa\") → two-factor authentication plugin docs\n</examples>\n\n<hints>\n- Call without path to browse the latest documentation.\n- Use path=\"/llms.txt\" to match a user-specified or installed Better Auth version to a supported documentation version.\n- Use search_docs before fetching a page — do not guess documentation paths.\n- Versioned paths returned by search_docs are supported.\n- Anchors and a trailing .md suffix are accepted, but the full page is returned.\n</hints>"
+        },
+        {
+          "name": "search_docs",
+          "description": "Search Better Auth documentation and return matching snippets.\n\nUse this tool when you need to:\n- Find setup guides for authentication providers (email, OAuth, passkeys)\n- Look up plugin configuration (two-factor, admin, organization)\n- Find API references for client or server methods\n- Troubleshoot errors or configuration issues\n\n<examples>\n- \"session management\" → finds docs about session handling, expiration, refresh\n- \"two-factor\" → finds two-factor authentication plugin setup\n- \"nextjs middleware\" → finds Next.js integration guides\nBad queries: avoid single generic words like 'auth' or 'config' — be specific.\n</examples>\n\n<hints>\n- Resolve an explicit or installed Better Auth version with get_doc(path=\"/llms.txt\") before searching.\n- Treat version identifiers from /llms.txt as opaque values; do not infer their format.\n- If the project version is unavailable, omit version to search the latest documentation.\n- Returns snippets only. Use get_doc(path) to read the full page content.\n- Pass the result path to get_doc unchanged so it reads the same documentation version.\n- Results are grouped by page — one result per documentation page.\n- IMPORTANT: Do not call this tool more than 3 times per question.\n</hints>"
+        }
+      ]
+    },
+    {
+      "server": "datetime",
+      "toolCount": 4,
+      "measured": 57,
+      "raw": 90,
+      "predicted": 37,
+      "error": 0.3509,
+      "tools": [
+        {
+          "name": "get-current-time",
+          "description": "Get the current time in the configured local timezone"
+        },
+        {
+          "name": "get-current-timezone",
+          "description": "Get the current system timezone"
+        },
+        {
+          "name": "get-time-in-timezone",
+          "description": "Get the current time in a specific timezone"
+        },
+        {
+          "name": "list-timezones",
+          "description": "List all available timezones"
+        }
+      ]
+    },
+    {
+      "server": "internet-archive",
+      "toolCount": 5,
+      "measured": 196,
+      "raw": 531,
+      "predicted": 219,
+      "error": 0.1173,
+      "tools": [
+        {
+          "name": "ia_find_snapshots",
+          "description": "Find Wayback Machine snapshots of a URL. Mode \"closest\" returns the single nearest capture to a given timestamp via the Availability API (fast, one result). Mode \"history\" returns the full capture list via the CDX API — filterable by date range, HTTP status code, and MIME type, collapsed by default to one capture per day (collapse=timestamp:8). Use history mode to survey how a page changed over time; use closest mode when you need the snapshot nearest a specific date. history mode supports resume-key pagination for URLs with very large capture histories."
+        },
+        {
+          "name": "ia_get_item",
+          "description": "Retrieve full metadata and the complete file manifest for an Internet Archive item by identifier. Returns title, creator, description, subjects, collections, license, language, and every file with its format, size, and direct download URL. The primary tool to act on a search result from ia_search_items. Use ia_get_text to retrieve the readable text of a text item."
+        },
+        {
+          "name": "ia_get_snapshot",
+          "description": "Fetch the archived content of a URL at a specific Wayback Machine timestamp. Resolves to the nearest available capture when the exact timestamp has no snapshot. Returns the archived page as readable plain text (HTML stripped) and the canonical replay URL for browser access. Use ia_find_snapshots first to discover valid timestamps for a URL."
+        },
+        {
+          "name": "ia_get_text",
+          "description": "Retrieve the readable text content of a text item (OCR DjVuTXT or plain-text file) from the Internet Archive, with length-aware truncation and a continuation pointer for pagination. Suited for public-domain books, documents, scanned periodicals, and transcripts. Use max_chars and char_offset to page through long documents. Use ia_get_item first to confirm the item has a text file and to find its mediatype."
+        },
+        {
+          "name": "ia_search_items",
+          "description": "Search the Internet Archive library (40M+ items) using the Advanced Search (Solr) API. Filter by media type (texts, audio, movies, software, image, etc.), collection, creator, date range, and language. Sort by relevance, date, or downloads. Supports pagination via page/rows. Returns identifiers, titles, creators, media types, dates, download counts, total_found, and current page/rows for pagination context. Use ia_get_item with a returned identifier to get full metadata and file manifests."
+        }
+      ]
+    },
+    {
+      "server": "met-museum",
+      "toolCount": 3,
+      "measured": 210,
+      "raw": 292,
+      "predicted": 121,
+      "error": 0.4238,
+      "tools": [
+        {
+          "name": "met_get_object",
+          "description": "Fetch full records for one or more Met Museum object IDs. Accepts up to 20 IDs per call and returns partial success — a single 404 does not fail the whole batch; per-ID failures are reported separately. Object IDs come from met_search_collections. Non-public-domain objects return empty image URLs. The constituents array is null for anonymous or unattributed works; tags is null for untagged objects."
+        },
+        {
+          "name": "met_list_departments",
+          "description": "Return the 19 curatorial departments at The Metropolitan Museum of Art, each with its numeric departmentId and display name — the valid values for the met_search_collections departmentId filter."
+        },
+        {
+          "name": "met_search_collections",
+          "description": "Search the Metropolitan Museum of Art collection by keyword and optional filters. Returns the total match count and a page of matching object IDs, which met_get_object resolves to full records. Relevance is keyword-based, not semantic; department and geographic filters narrow results more than a longer query. The medium parameter maps to the classification field (pass \"Paintings\", \"Drawings\", etc., not material descriptions like \"Oil on canvas\"). isPublicDomain guarantees CC0-licensed images; hasImages also includes copyrighted works. isOnView restricts results to works currently on display in a Met gallery."
+        }
+      ]
+    },
+    {
+      "server": "musicbrainz",
+      "toolCount": 10,
+      "measured": 499,
+      "raw": 1280,
+      "predicted": 532,
+      "error": 0.0661,
+      "tools": [
+        {
+          "name": "musicbrainz_browse_entities",
+          "description": "Paginate the COMPLETE set of entities linked to a parent MBID — every release-group by an artist, every release on a label, every recording of a work, every release in a release-group. This is the only complete-enumeration path: the get_* tools embed at most one page (25) of any linked list, so use this tool whenever a linked set may exceed a page (a prolific artist, a major label with thousands of releases, a heavily-covered work). Provide exactly ONE link MBID matching a valid parent→child relationship for the target_type. Pages arbitrarily deep via offset; totalCount is the true upstream total."
+        },
+        {
+          "name": "musicbrainz_get_artist",
+          "description": "Artist profile by MBID: type (person/group/…), country, life span, gender, area, aliases, tags/genres, plus the discography (release-groups) and band-membership / collaboration relationships and external links (Wikidata QID, Discogs, official site — surfaced as url-rels chainable to those servers). The 80% artist-detail call. Discography and relationships are capped at one page (25); for a prolific artist's complete release-group list, call musicbrainz_browse_entities with target_type=release-group and the artist link."
+        },
+        {
+          "name": "musicbrainz_get_cover_art",
+          "description": "Cover Art Archive images for a release or release-group MBID: front/back flags, image types, full-resolution URLs, and 250/500/1200px thumbnail URLs. Returns an empty image set (NOT an error) when the entity has no art — absence of art is information. Art is served at the release level; a release-group MBID resolves to a representative release's art automatically. URLs are linked, never rehosted — image copyright stays with the rights holders (only MusicBrainz core metadata is CC0)."
+        },
+        {
+          "name": "musicbrainz_get_label",
+          "description": "Label by MBID: type (Original Production, Reissue, Imprint, …), country, life span, label code (the LC number), area, aliases, tags, and external links (url-rels — Wikidata, Discogs, official site). A label's releases are a potentially huge linked set (a major label can have tens of thousands), so they are NOT embedded here — enumerate them with musicbrainz_browse_entities (target_type=release, link.label)."
+        },
+        {
+          "name": "musicbrainz_get_recording",
+          "description": "Recording (a specific performance/track, distinct from the abstract work) by MBID: length, artist credits, ISRCs, the releases it appears on, the work(s) it performs (work-rels — chain to musicbrainz_get_work), and performance/production relationships (who played, produced, engineered, conducted — each with the role and the credited artist MBID). Relationships are capped at one page; for a heavily-covered recording call musicbrainz_browse_entities with target_type=recording and link.work."
+        },
+        {
+          "name": "musicbrainz_get_release",
+          "description": "One edition's full detail by MBID: the tracklist (media → tracks → recordings with lengths and recording MBIDs), label + catalog number, barcode, country, release date, format, packaging, text representation (language/script), and a cover-art availability stub. Track lengths are rendered m:ss (stored as milliseconds upstream). For the actual cover image URLs, call musicbrainz_get_cover_art with this release MBID."
+        },
+        {
+          "name": "musicbrainz_get_release_group",
+          "description": "Release-group (\"the album\" above specific pressings) by MBID: primary type (Album/Single/EP) and secondary types (Live/Compilation), first-release date, artist credit, the list of releases (editions), tags/genres, and a cover-art availability flag from the WS/2 payload (use musicbrainz_get_cover_art for actual image URLs). The embedded releases list is capped at one page (25); for the complete set of editions, call musicbrainz_browse_entities with target_type=release and link.release-group. For a specific edition's tracklist, take a release MBID from the releases list and call musicbrainz_get_release."
+        },
+        {
+          "name": "musicbrainz_get_work",
+          "description": "Work (a composition — the song as written, distinct from any specific recording) by MBID: type, language(s), ISWCs (the work-level standard identifier), writer/composer/lyricist relationships (with the credited artist MBID), aliases, tags, and the recordings that perform it. The recording relationships are returned in full (the work lookup does not page them)."
+        },
+        {
+          "name": "musicbrainz_lookup_identifier",
+          "description": "Resolve a standard identifier to MusicBrainz entities without a name search — the deterministic path when you already hold an ID. id_type=isrc → recordings (a recording-level code, often shared by several recordings); id_type=iswc → works (a composition-level code); id_type=barcode → releases (UPC/EAN). ISRC and ISWC hit dedicated exact endpoints; barcode is a Lucene search filter so results are ranked (exact match scores 100). The output kind field tells you which entity type came back."
+        },
+        {
+          "name": "musicbrainz_search_entities",
+          "description": "Full-text search across a MusicBrainz entity type (artist, release-group, release, recording, work, label) using a Lucene query string. Returns ranked matches with MBID, name/title, disambiguation, type, and a 0–100 relevance score (100 = exact). Starting point when resolving a name to an MBID — chain the returned MBID into the matching musicbrainz_get_* tool. Results are in MusicBrainz score-descending order. Supports field-scoped Lucene syntax (e.g. `artist:radiohead AND country:GB`)."
+        }
+      ]
+    },
+    {
+      "server": "nist-nvd",
+      "toolCount": 5,
+      "measured": 341,
+      "raw": 630,
+      "predicted": 262,
+      "error": 0.2317,
+      "tools": [
+        {
+          "name": "nvd_audit_cpe",
+          "description": "Find all CVEs affecting a specific product and version using CPE (Common Platform Enumeration). Requires either an exact CPE name (cpeName) or a partial match string (virtualMatchString) with optional version range bounds. With cpeName, NVD scopes results to configurations where the product is directly vulnerable, not merely referenced as a dependency. Use nvd_search_cpes first to resolve the correct CPE string for a product. Returns full CVE records."
+        },
+        {
+          "name": "nvd_get_cve",
+          "description": "Fetch one or more CVEs by ID from the NIST National Vulnerability Database. Returns CVSS scores across all available versions (v2.0, v3.0, v3.1, v4.0), CWE weakness classifications, affected CPE configurations, CISA KEV fields, and references. Up to 100 CVE IDs per call. For bulk lookups of more than 10 IDs, use brief: true — full records for 100 CVEs can exceed 1MB and exhaust context budgets."
+        },
+        {
+          "name": "nvd_get_cve_history",
+          "description": "Retrieve the change history for a single CVE — CVSS score revisions, reference additions, status transitions (e.g., \"Received\" → \"Analyzed\"), and CPE configuration updates. Use when tracking a CVE's escalation or investigating when a score changed. Events are returned newest-first by default; pass order=\"oldest\" for the CVE's earliest events. For the current record, call nvd_get_cve instead. The NVD history endpoint is significantly slower than other NVD endpoints, especially without an API key — set NVD_API_KEY for reliable operation."
+        },
+        {
+          "name": "nvd_search_cpes",
+          "description": "Search the NVD CPE (Common Platform Enumeration) dictionary by product keyword or partial match string. Returns CPE names, human-readable titles, and deprecation status. Use before nvd_audit_cpe to resolve the correct CPE name for a product — CPE strings are precise identifiers (e.g., cpe:2.3:a:apache:http_server:2.4.51:*:*:*:*:*:*:*) and must match exactly to audit the right product."
+        },
+        {
+          "name": "nvd_search_cves",
+          "description": "Search CVEs by keyword, severity, CWE, date range, or CISA KEV status. The primary discovery tool for vulnerability surveillance and triage workflows. pubDays and lastModDays are convenience shorthands that expand to date pairs; values over 120 days are clamped to the NVD maximum and reported in the response enrichment. Returns brief summaries — call nvd_get_cve for full detail on specific IDs. At least one filter is recommended; omitting all filters returns CVEs in default NVD index order (oldest first by CVE ID)."
+        }
+      ]
+    },
+    {
+      "server": "npm-registry",
+      "toolCount": 9,
+      "measured": 143,
+      "raw": 326,
+      "predicted": 136,
+      "error": 0.049,
+      "tools": [
+        {
+          "name": "check_vulnerabilities",
+          "description": "Check if a specific version of an npm package has known security vulnerabilities."
+        },
+        {
+          "name": "compare_packages",
+          "description": "Compare two npm packages side by side: downloads, maintenance, quality, dependencies and more."
+        },
+        {
+          "name": "get_changelog",
+          "description": "Get release notes for an npm package. Optionally filter between two versions. Falls back to CHANGELOG.md if no GitHub releases exist."
+        },
+        {
+          "name": "get_dependents",
+          "description": "Find packages that depend on a given npm package, ranked by popularity. Shows total dependent count and top dependents."
+        },
+        {
+          "name": "get_download_stats",
+          "description": "Get download statistics for an npm package over a given period."
+        },
+        {
+          "name": "get_package_info",
+          "description": "Get detailed info about an npm package: description, latest version, license, maintainers, repository, dependencies and more."
+        },
+        {
+          "name": "get_package_readme",
+          "description": "Fetch the full README of an npm package. Useful for understanding how to install, configure and use a package."
+        },
+        {
+          "name": "get_package_versions",
+          "description": "List all published versions of an npm package with their publish dates."
+        },
+        {
+          "name": "search_packages",
+          "description": "Search for npm packages by keyword. Returns name, description, version, downloads and quality score."
+        }
+      ]
+    },
+    {
+      "server": "openfoodfacts",
+      "toolCount": 4,
+      "measured": 311,
+      "raw": 793,
+      "predicted": 329,
+      "error": 0.0579,
+      "tools": [
+        {
+          "name": "off_browse_taxonomy",
+          "description": "Resolve a human term to the canonical Open Food Facts tag ID that off_search_products filters on. Covers categories, labels/certifications, allergens, additives, countries, NOVA groups, and Nutri-Score grades. Pass a search term to resolve against the Open Food Facts vocabulary, which holds tens of thousands of tags; omitting it returns only a small reference list for each facet except NOVA groups and Nutri-Score grades, which are complete. Most tag IDs use the \"en:\" prefix (e.g. \"en:organic\", \"en:gluten-free\", \"en:milk\"); NOVA groups return bare digits \"1\"-\"4\" and Nutri-Score grades bare letters \"a\"-\"e\". Pass the id through to off_search_products exactly as returned. Category tags are frequently plural (\"kombucha\" resolves to \"en:kombuchas\"), so use the returned id rather than constructing one."
+        },
+        {
+          "name": "off_compare_products",
+          "description": "Side-by-side nutrition and scoring comparison for 2–10 products by barcode. Returns a normalized table of energy (kcal/100g), fat, saturated fat, sugars, salt, protein, fiber, Nutri-Score, NOVA group, and Green-Score. Designed for \"which of these cereals is healthiest?\" or \"compare these pasta brands\" workflows. Missing nutrition data for any product is preserved as absent — comparisons are not imputed. A batch is not all-or-nothing: barcodes that resolve are returned even when others fail, with confirmed-missing barcodes listed in not_found and failed fetches listed separately in failed. Scores carry regional formula caveats. Data under ODbL 1.0 — cite Open Food Facts in downstream use."
+        },
+        {
+          "name": "off_get_product",
+          "description": "Fetch a packaged food product by barcode (EAN-13 or UPC) from Open Food Facts. Returns the product name, brand, quantity, ingredients (raw text and parsed list), allergens, additives, computed scores (Nutri-Score a–e, NOVA 1–4, Green-Score), nutrition per 100g and per serving, categories, labels, packaging, origins, image URL, and data completeness. Open Food Facts is a crowd-sourced database — a missing field means \"not yet entered by contributors,\" not that the attribute is absent from the actual product. Computed scores carry regional formula caveats and are indicators, not absolute rankings. Data is under ODbL 1.0 — cite Open Food Facts in downstream use."
+        },
+        {
+          "name": "off_search_products",
+          "description": "Search Open Food Facts by full-text query, structured tag filters, or both at once. Returns a summary list with barcodes, product names, brands, Nutri-Score, NOVA group, and categories — enough for triage and selection, not full label data. Use off_get_product on the returned barcodes for complete details. A text query and tag filters combine: results match the query text and satisfy every filter provided (e.g. query \"dark chocolate\" with labels_tag \"en:organic\" and countries_tag \"en:france\" returns organic chocolate sold in France); additives_tag is the one exception, filtering only on searches with no text query. Tag filter values must be canonical tag IDs (e.g. \"en:organic\", \"en:gluten-free\") — use off_browse_taxonomy to resolve human terms to tag IDs. At least one search parameter is required. Data is crowd-sourced; result count reflects contributed products, not all products in the market. Data under ODbL 1.0 — cite Open Food Facts in downstream use."
+        }
+      ]
+    },
+    {
+      "server": "openlibrary",
+      "toolCount": 10,
+      "measured": 517,
+      "raw": 1088,
+      "predicted": 450,
+      "error": 0.1296,
+      "tools": [
+        {
+          "name": "openlibrary_get_author",
+          "description": "Fetch author detail by Open Library Author ID (OL…A). Returns bio, birth/death dates, photo IDs, and linked identifiers from Wikidata, VIAF, ISNI, Goodreads, and LibraryThing. Use openlibrary_search_authors to find an author ID first."
+        },
+        {
+          "name": "openlibrary_get_author_works",
+          "description": "List works by an author. Returns titles, cover IDs, and work OLIDs for drilling into editions or details. Use openlibrary_get_author for author bio and details, or openlibrary_get_editions to explore specific printings."
+        },
+        {
+          "name": "openlibrary_get_cover_url",
+          "description": "Resolve a cover image URL for a book or author photo. Returns a direct HTTPS URL in the requested size (S/M/L). The Covers API always returns HTTP 200 — missing covers return a 1×1 placeholder GIF, not a 404 — so the identifier format is validated locally first: \"id\" must be numeric, \"isbn\" 10 or 13 digits, \"olid\" an edition OLID (OL…M) for target \"book\" and an author OLID (OL…A) for target \"author\". Identifiers with path separators or control characters, and author-by-ISBN lookups, are rejected before any request. URLs can be embedded in markdown as ![cover](url)."
+        },
+        {
+          "name": "openlibrary_get_edition",
+          "description": "Resolve one or more editions by identifier: ISBN-10, ISBN-13, OCLC, LCCN, or Open Library Edition ID (OL…M). Every identifier in a call shares one id_type — pass id_type \"isbn\" for both ISBN-10 and ISBN-13. Up to 50 identifiers resolve in a single upstream request, so a bibliography or shelf export costs one call rather than one per book; a large batch is a large response, so ask for what you need. Returns full edition metadata including authors, publisher, language, all identifier types, and the parent work ID, with author names inline and no secondary lookup; when the edition record itself lists no authors, they are recovered from the parent work and marked as such. Partial success is the norm — identifiers that resolve come back in editions, the rest are listed in unresolved with a reason, and the call fails only when nothing resolved."
+        },
+        {
+          "name": "openlibrary_get_editions",
+          "description": "List editions of a work — different publishers, languages, formats, and print runs. Returns ISBNs, publisher, language, page count, and edition OLIDs. Use after openlibrary_get_work or openlibrary_search_books to find a specific printing."
+        },
+        {
+          "name": "openlibrary_get_subject",
+          "description": "Browse works by subject. Returns matching works with edition counts and cover IDs, plus the total work count for the subject. Case and spacing are normalized before lookup, so \"Science Fiction\" and \"science_fiction\" are the same request. Subject tags are user-contributed and the vocabulary varies — when a subject returns no works, try a different word form (singular/plural), a synonym, or a broader term."
+        },
+        {
+          "name": "openlibrary_get_work",
+          "description": "Fetch a work by Open Library Work ID (OL…W). Returns title, description, subjects, cover IDs, and linked author IDs for follow-up lookups. Works represent the abstract book concept independent of any specific edition. Note: author names are not included — use openlibrary_get_author or openlibrary_search_books for names."
+        },
+        {
+          "name": "openlibrary_search_authors",
+          "description": "Search Open Library authors by name. Returns Open Library Author IDs, names, birth/death dates, top works, and subject associations. Use author IDs for openlibrary_get_author (bio, remote IDs) or openlibrary_get_author_works (list of works)."
+        },
+        {
+          "name": "openlibrary_search_books",
+          "description": "Full-text book search across Open Library works. Supports field filters (title, author, subject, publisher, ISBN, language) and returns work-level records with edition counts, cover IDs, and reading availability. Use query for general search or combine specific field filters. Results are work-level — drill into editions via openlibrary_get_editions."
+        },
+        {
+          "name": "openlibrary_search_inside",
+          "description": "Search the full text of books scanned by the Internet Archive — the \"which book contains this passage?\" lookup that the metadata tools cannot answer. Quote a phrase for an exact-phrase match; bare terms match anywhere in the text. Each result is an Internet Archive item with the matching passages as snippets, plus a relevance score. The full-text index is an order of magnitude slower than the metadata endpoints (seconds, not milliseconds), so reach for it when the passage is the question, not as a general book search — use openlibrary_search_books for title, author, or subject. Results key on Internet Archive items rather than Open Library works: chain the returned ia_identifier to archive.org, or match it against the ia_identifiers on openlibrary_search_books results to reach the catalogue record."
+        }
+      ]
+    },
+    {
+      "server": "stackexchange",
+      "toolCount": 5,
+      "measured": 314,
+      "raw": 526,
+      "predicted": 217,
+      "error": 0.3089,
+      "tools": [
+        {
+          "name": "stackexchange_get_tag_faq",
+          "description": "Fetch the highest-voted answered questions for a tag on a Stack Exchange site — the canonical \"best answers in X\" list. Returns a question list without bodies; use stackexchange_get_thread to read the full body and answers for any result. Use this tool to find the authoritative community resources on a topic (e.g. tag \"javascript\" on stackoverflow). Use stackexchange_search_questions for free-text search rather than tag-based browsing."
+        },
+        {
+          "name": "stackexchange_get_thread",
+          "description": "Fetch a complete Q&A thread — question body and all answers, accepted answer first then sorted by score, rendered as clean markdown with fenced code blocks. Accepts an integer question ID or a full Stack Exchange question URL (e.g. \"https://stackoverflow.com/questions/11227809/why-is-processing-a-sorted-array-faster\" or \"11227809\"). HTML is normalized to markdown automatically; attribution (author + link) included per CC BY-SA 4.0. Get question IDs from stackexchange_search_questions or stackexchange_get_tag_faq."
+        },
+        {
+          "name": "stackexchange_get_user",
+          "description": "Fetch a Stack Exchange user profile by numeric user ID: reputation, badge counts, top tags by answer score, and account metadata. Useful for credibility context on an answer author — pass the authorUserId from any question or answer in stackexchange_get_thread output. Returns profile fields plus up to 10 top tags by answer score."
+        },
+        {
+          "name": "stackexchange_list_sites",
+          "description": "Enumerate all sites in the Stack Exchange network — name, api_site_parameter, audience, and URL. The api_site_parameter value is what other tools accept as the `site` input (e.g. \"stackoverflow\", \"superuser\", \"serverfault\"). Results are fetched live and optionally filtered by name. Use this tool to discover valid site parameters before calling other stackexchange_* tools."
+        },
+        {
+          "name": "stackexchange_search_questions",
+          "description": "Search questions across a Stack Exchange site. Returns ranked questions with title, score, answer count, accepted status, tags, and excerpt — no bodies at this stage. Results supply question_id values for stackexchange_get_thread, which fetches the full question body and all answers. Use the `site` parameter to target a specific community (e.g. \"stackoverflow\", \"superuser\", \"unix\"); call stackexchange_list_sites to discover valid site values."
+        }
+      ]
+    },
+    {
+      "server": "usgs-quakes",
+      "toolCount": 3,
+      "measured": 52,
+      "raw": 135,
+      "predicted": 56,
+      "error": 0.0769,
+      "tools": [
+        {
+          "name": "count-earthquakes",
+          "description": "Count earthquakes matching the given search parameters, without returning the events themselves. Useful for sizing a query before running it."
+        },
+        {
+          "name": "find-earthquake-details",
+          "description": "Get detailed information about a single earthquake, including origin quality metrics, by its USGS event id (e.g. 'us6000d3zh')."
+        },
+        {
+          "name": "find-earthquakes",
+          "description": "Search the USGS earthquake catalog by time, location, magnitude, and depth. Returns a summary of each matching event."
+        }
+      ]
+    }
+  ],
+  "day08": {
+    "measured": 4021,
+    "predicted": 2388,
+    "error": -0.4061,
+    "serverCount": 10,
+    "toolCount": 47,
+    "tools": [
+      {
+        "server": "awsknowledge",
+        "name": "aws___get_regional_availability",
+        "description": "AWS resource availability per region.\n\n- Max 10 regions; multi-region needs `filters`; single-region supports `next_token`.\n- Status: isAvailableIn | isNotAvailableIn | isPlannedIn | Not Found.\n- Response key: products | service_apis | cfn_resources.\n\nNot for region counts/docs/vague queries -- use `search_documentation` / `list_regions`.\n\nFilter values must EXACTLY match AWS's catalog names; guessed, partial, or pluralized names are rejected (\"values in filter parameter do not exist\"). If unsure of the exact name, first call once for a single region with resource_type set and NO filters to list all valid names, then re-call filtering on the exact match."
+      },
+      {
+        "server": "awsknowledge",
+        "name": "aws___list_regions",
+        "description": "Retrieve a list of all AWS regions."
+      },
+      {
+        "server": "awsknowledge",
+        "name": "aws___read_documentation",
+        "description": "Fetch full AWS doc pages as markdown. `search_documentation` already returns verbatim page chunks, so don't re-read a URL whose chunk you already have to \"confirm\" or \"round out\" an answer -- the chunk is the real page text; treat it as authoritative.\n\nReading the full page is justified ONLY when the chunks genuinely lack the content:\n- an enumeration or aggregation (\"list all X\", \"how many X\") needs the complete set and the chunks show only part of it;\n- no search result is on-topic after refining the query, and a known doc URL would have the answer.\nOtherwise, answer from the chunks. Use exact URLs from `search_documentation`; don't guess slugs.\n\nInput: `requests: [{url, max_length?, start_index?}]`. Batch 2-5.\n- `max_length` default 10000.\n- `start_index` default 0; use prior `end_index` to continue, TOC offset to jump.\n\nAllow-listed prefixes: docs.aws.amazon.com; aws.amazon.com (not /marketplace); repost.aws/knowledge-center; docs.amplify.aws; ui.docs.amplify.aws; github.com/{aws-cloudformation/aws-cloudformation-templates, aws-samples/{aws-cdk-examples, generative-ai-cdk-constructs-samples, serverless-patterns}, awsdocs/aws-cdk-guide, awslabs/aws-solutions-constructs, cdklabs/cdk-nag} (README on `main`); constructs.dev/packages/{@aws-cdk-containers, @aws-cdk, @cdk-cloudformation, aws-analytics-reference-architecture, aws-cdk-lib, cdk-amazon-chime-resources, cdk-aws-lambda-powertools-layer, cdk-ecr-deployment, cdk-lambda-powertools-python-layer, cdk-serverless-clamscan, cdk8s, cdk8s-plus-33}; strandsagents.com/latest/documentation/docs/; karpenter.sh/docs/; Amazon Braket: {amazon-braket-sdk-python, amazon-braket-schemas-python, amazon-braket-default-simulator-python, amazon-braket-pennylane-plugin-python, amazon-braket-algorithm-library, qiskit-braket-provider, autoqasm, qirtoqasm}.readthedocs.io and github.com/amazon-braket/* (blob/tree/raw).\n\nOutput: SUCCESS -- markdown + `total_length, start_index, end_index, truncated, redirected_url?` (truncated includes TOC with char ranges). ERROR -- `error_code` in {not_found, invalid_url, throttled, downstream_error, validation_error}."
+      },
+      {
+        "server": "awsknowledge",
+        "name": "aws___retrieve_skill",
+        "description": "Retrieve an AWS skill (workflows, references). Returns SKILL.md, or `file` if given.\n\nCall `search_documentation` FIRST and copy `skill_name` verbatim -- it is an opaque registry ID. Never guess or fabricate `skill_name` or `file`."
+      },
+      {
+        "server": "awsknowledge",
+        "name": "aws___search_documentation",
+        "description": "AWS docs search. Each result's `context` is verbatim page text -- a real chunk of the actual page, not a short snippet -- and usually already contains the answer, so answer directly from it. Use `read_documentation` only when the chunks genuinely lack the needed detail.\n\nPick ONE topic. Add a 2nd ONLY if query genuinely spans domains. Extra topics dilute ranking.\n\n- reference_documentation -- API/SDK/CLI specs, config params\n- current_awareness -- new/released/announced\n- troubleshooting -- errors, \"how to fix\" (NOT for conceptual/feature questions)\n- amplify_docs -- Amplify (+ language)\n- cdk_docs -- CDK concepts/guides\n- cdk_constructs -- CDK code samples, L3\n- cloudformation -- CFN/SAM templates\n- strands_docs -- Strands Agents SDK (its Skills/agents concepts go here, NOT agent_skills)\n- agent_skills -- this tool's guided skills (load via `retrieve_skill`)\n- general (default) -- architecture, best practices, tutorials, feature behavior\n\nResults: rank_order (lower=better), url, title, context (verbatim page chunk -- answer directly from it)."
+      },
+      {
+        "server": "cloudflare-docs",
+        "name": "migrate_pages_to_workers_guide",
+        "description": "ALWAYS read this guide before migrating Pages projects to Workers."
+      },
+      {
+        "server": "cloudflare-docs",
+        "name": "search_cloudflare_documentation",
+        "description": "Search the Cloudflare documentation.\n\n\t\tThis tool should be used to answer any question about Cloudflare products or features, including:\n\t\t- Workers, Pages, R2, Images, Stream, D1, Durable Objects, KV, Workflows, Hyperdrive, Queues\n\t\t- AI Search, Workers AI, Vectorize, AI Gateway, Browser Run\n\t\t- Zero Trust, Access, Tunnel, Gateway, Browser Isolation, WARP, DDOS, Magic Transit, Magic WAN\n\t\t- CDN, Cache, DNS, Zaraz, Argo, Rulesets, Terraform, Account and Billing\n\n\t\tResults are returned as semantically similar chunks to the query.\n\t\t"
+      },
+      {
+        "server": "context7",
+        "name": "query-docs",
+        "description": "Retrieves and queries up-to-date documentation and code examples from Context7 for any programming library or framework.\n\nYou must call 'Resolve Context7 Library ID' tool first to obtain the exact Context7-compatible library ID required to use this tool, UNLESS the user explicitly provides a library ID in the format '/org/project' or '/org/project/version' in their query.\n\nDo not call this tool more than 3 times per question."
+      },
+      {
+        "server": "context7",
+        "name": "resolve-library-id",
+        "description": "Resolves a package/product name to a Context7-compatible library ID and returns matching libraries.\n\nYou MUST call this function before 'Query Documentation' tool to obtain a valid Context7-compatible library ID UNLESS the user explicitly provides a library ID in the format '/org/project' or '/org/project/version' in their query.\n\nEach result includes:\n- Library ID: Context7-compatible identifier (format: /org/project)\n- Name: Library or package name\n- Description: Short summary\n- Code Snippets: Number of available code examples\n- Source Reputation: Authority indicator (High, Medium, Low, or Unknown)\n- Benchmark Score: Quality indicator (100 is the highest score)\n- Versions: List of versions if available. Use one of those versions if the user provides a version in their query. The format of the version is /org/project/version.\n\nFor best results, select libraries based on name match, source reputation, snippet coverage, benchmark score, and relevance to your use case.\n\nSelection Process:\n1. Analyze the query to understand what library/package the user is looking for\n2. Return the most relevant match based on:\n- Name similarity to the query (exact matches prioritized)\n- Description relevance to the query's intent\n- Documentation coverage (prioritize libraries with higher Code Snippet counts)\n- Source reputation (consider libraries with High or Medium reputation more authoritative)\n- Benchmark Score: Quality indicator (100 is the highest score)\n\nResponse Format:\n- Return the selected library ID in a clearly marked section\n- Provide a brief explanation for why this library was chosen\n- If multiple good matches exist, acknowledge this but proceed with the most relevant one\n- If no good matches exist, clearly state this and suggest query refinements\n\nFor ambiguous queries, request clarification before proceeding with a best-guess match.\n\nIMPORTANT: Do not call this tool more than 3 times per question. If you cannot find what you need after 3 calls, use the best result you have."
+      },
+      {
+        "server": "deepwiki",
+        "name": "ask_question",
+        "description": "Ask any question about a GitHub repository and get an AI-powered, context-grounded response."
+      },
+      {
+        "server": "deepwiki",
+        "name": "read_wiki_contents",
+        "description": "View documentation about a GitHub repository."
+      },
+      {
+        "server": "deepwiki",
+        "name": "read_wiki_structure",
+        "description": "Get a list of documentation topics for a GitHub repository."
+      },
+      {
+        "server": "filesystem",
+        "name": "create_directory",
+        "description": "Create a new directory or ensure a directory exists. Can create multiple nested directories in one operation. If the directory already exists, this operation will succeed silently. Perfect for setting up directory structures for projects or ensuring required paths exist. Only works within allowed directories."
+      },
+      {
+        "server": "filesystem",
+        "name": "directory_tree",
+        "description": "Get a recursive tree view of files and directories as a JSON structure. Each entry includes 'name', 'type' (file/directory), and 'children' for directories. Files have no children array, while directories always have a children array (which may be empty). The output is formatted with 2-space indentation for readability. Only works within allowed directories."
+      },
+      {
+        "server": "filesystem",
+        "name": "edit_file",
+        "description": "Make line-based edits to a text file. Each edit replaces exact line sequences with new content. Returns a git-style diff showing the changes made. Only works within allowed directories."
+      },
+      {
+        "server": "filesystem",
+        "name": "get_file_info",
+        "description": "Retrieve detailed metadata about a file or directory. Returns comprehensive information including size, creation time, last modified time, permissions, and type. This tool is perfect for understanding file characteristics without reading the actual content. Only works within allowed directories."
+      },
+      {
+        "server": "filesystem",
+        "name": "list_allowed_directories",
+        "description": "Returns the list of directories that this server is allowed to access. Subdirectories within these allowed directories are also accessible. Use this to understand which directories and their nested paths are available before trying to access files."
+      },
+      {
+        "server": "filesystem",
+        "name": "list_directory",
+        "description": "Get a detailed listing of all files and directories in a specified path. Results clearly distinguish between files and directories with [FILE] and [DIR] prefixes. This tool is essential for understanding directory structure and finding specific files within a directory. Only works within allowed directories."
+      },
+      {
+        "server": "filesystem",
+        "name": "list_directory_with_sizes",
+        "description": "Get a detailed listing of all files and directories in a specified path, including sizes. Results clearly distinguish between files and directories with [FILE] and [DIR] prefixes. This tool is useful for understanding directory structure and finding specific files within a directory. Only works within allowed directories."
+      },
+      {
+        "server": "filesystem",
+        "name": "move_file",
+        "description": "Move or rename files and directories. Can move files between directories and rename them in a single operation. If the destination exists, the operation will fail. Works across different directories and can be used for simple renaming within the same directory. Both source and destination must be within allowed directories."
+      },
+      {
+        "server": "filesystem",
+        "name": "read_file",
+        "description": "Read the complete contents of a file as text. DEPRECATED: Use read_text_file instead."
+      },
+      {
+        "server": "filesystem",
+        "name": "read_media_file",
+        "description": "Read a file and return it as a base64-encoded content block with its MIME type. Image and audio files are returned as image/audio content; any other file type is returned as an embedded resource. Only works within allowed directories."
+      },
+      {
+        "server": "filesystem",
+        "name": "read_multiple_files",
+        "description": "Read the contents of multiple files simultaneously. This is more efficient than reading files one by one when you need to analyze or compare multiple files. Each file's content is returned with its path as a reference. Failed reads for individual files won't stop the entire operation. Only works within allowed directories."
+      },
+      {
+        "server": "filesystem",
+        "name": "read_text_file",
+        "description": "Read the complete contents of a file from the file system as text. Handles various text encodings and provides detailed error messages if the file cannot be read. Use this tool when you need to examine the contents of a single file. Use the 'head' parameter to read only the first N lines of a file, or the 'tail' parameter to read only the last N lines of a file. Operates on the file as text regardless of extension. Only works within allowed directories."
+      },
+      {
+        "server": "filesystem",
+        "name": "search_files",
+        "description": "Recursively search for files and directories matching a pattern. The patterns should be glob-style patterns that match paths relative to the working directory. Use pattern like '*.ext' to match files in current directory, and '**/*.ext' to match files in all subdirectories. Returns full paths to all matching items. Great for finding files when you don't know their exact location. Only searches within allowed directories."
+      },
+      {
+        "server": "filesystem",
+        "name": "write_file",
+        "description": "Create a new file or completely overwrite an existing file with new content. Use with caution as it will overwrite existing files without warning. Handles text content with proper encoding. Only works within allowed directories."
+      },
+      {
+        "server": "huggingface",
+        "name": "hf_fs",
+        "description": "When to use: Hugging Face Hub models, datasets, Spaces, collections, papers, daily papers, today's trending models, current paper leaderboard, docs, and repository files.\n\nExamples:\n  {\"operations\":[{\"cmd\":\"ls\",\"args\":[\"hf://models/trending\",\"--limit\",\"10\"]}]}\n  {\"operations\":[{\"cmd\":\"ls\",\"args\":[\"hf://papers/trending\"]}]}\n  {\"operations\":[{\"cmd\":\"ls\",\"args\":[\"hf://papers/daily/latest\"]}]}\n\nUse hf_fs for Hugging Face Hub filesystem operations. Call it with operations, an array of {cmd, args} items; multiple operations may be submitted together.\n\nUsage:\n  {\"operations\":[{\"cmd\":\"ls\",\"args\":[\"hf://models/org/repo\"]}]}\n\nGrammar; each string below is one args array item:\n  ls     URI [--recursive] [--glob GLOB] [--type TYPE] [--sort SORT] [--limit N]\n  cat    URI [--offset N] [--max-bytes N]\n  attach URI [--max-bytes N]\n  stat   URI\n  find   URI [--name GLOB] [--path GLOB] [--type TYPE] [--limit N]\n  search URI [QUERY] [--type TYPE] [--sort SORT] [--tag TAG] [--kind mcp] [--limit N]\n\nCOMMAND = ls|cat|attach|stat|find|search.\nTYPE = file|dir|repo|bucket|collection|paper|link.\nSORT = createdAt|downloads|likes|lastModified|likes30d|trendingScore|mainSize|id|trending|upvotes.\nURI is a canonical hf:// URI. QUERY and GLOB are each one string.\n\nUse search for discovery, ls for a known directory, find for recursive matching within a known scope, stat for filesystem metadata or an uncertain target type, cat for text contents, and attach for a complete JPEG, PNG, or WebP image. When the request gives an exact text-file URI, use cat directly; do not add ls or stat first. stat does not read the contents of JSON, Markdown, or other text files.\n\nSearch scopes: hf://models|datasets|spaces[/OWNER], hf://collections[/OWNER], hf://papers, and hf://docs[/...]. Paper and documentation search require QUERY. Repeat --tag only for search hf://spaces; --kind mcp selects MCP Spaces.\nUse ls hf://models/trending, hf://datasets/trending, hf://spaces/trending, or hf://papers/trending for trending listings.\nFor a named paper.md or metadata.json, use cat directly. Use ls on a paper only to discover an unnamed related resource.\nOmit --limit, --sort, and --type unless the request requires them. Limits and path-specific behavior are documented at hf://README.md. Issue one hf_fs call."
+      },
+      {
+        "server": "huggingface",
+        "name": "hf_whoami",
+        "description": "Inspect the current Hugging Face authentication context, including the account, visible organization memberships, and credential access details. Read-only and never returns credential values."
+      },
+      {
+        "server": "huggingface",
+        "name": "hub_repo_details",
+        "description": "Get details for one or more Hugging Face repos (model, dataset, or space). Auto-detects type unless specified. For datasets, use operations: overview, dataset_structure, dataset_preview. Use dataset_structure first to discover configs, splits, sizes, and schema. Use dataset_preview only when config and split are known, unless the dataset has a single config/split."
+      },
+      {
+        "server": "huggingface",
+        "name": "hub_repo_search",
+        "description": "Search Hugging Face repositories with a shared query interface. You can target models, datasets, spaces, or aggregate across multiple repo types in one call. Include links to repositories in your response."
+      },
+      {
+        "server": "memory",
+        "name": "add_observations",
+        "description": "Add new observations to existing entities in the knowledge graph"
+      },
+      {
+        "server": "memory",
+        "name": "create_entities",
+        "description": "Create multiple new entities in the knowledge graph"
+      },
+      {
+        "server": "memory",
+        "name": "create_relations",
+        "description": "Create multiple new relations between entities in the knowledge graph. Relations should be in active voice"
+      },
+      {
+        "server": "memory",
+        "name": "delete_entities",
+        "description": "Delete multiple entities and their associated relations from the knowledge graph"
+      },
+      {
+        "server": "memory",
+        "name": "delete_observations",
+        "description": "Delete specific observations from entities in the knowledge graph"
+      },
+      {
+        "server": "memory",
+        "name": "delete_relations",
+        "description": "Delete multiple relations from the knowledge graph"
+      },
+      {
+        "server": "memory",
+        "name": "open_nodes",
+        "description": "Open specific nodes in the knowledge graph by their names"
+      },
+      {
+        "server": "memory",
+        "name": "read_graph",
+        "description": "Read the entire knowledge graph"
+      },
+      {
+        "server": "memory",
+        "name": "search_nodes",
+        "description": "Search for nodes in the knowledge graph based on a query"
+      },
+      {
+        "server": "mslearn",
+        "name": "microsoft_code_sample_search",
+        "description": "Search for code snippets and examples in official Microsoft Learn documentation. This tool retrieves relevant code samples from Microsoft documentation pages providing developers with practical implementation examples and best practices for Microsoft/Azure products and services related coding tasks. This tool will help you use the **LATEST OFFICIAL** code snippets to empower coding capabilities.\n\n## When to Use This Tool\n- When you are going to provide sample Microsoft/Azure related code snippets in your answers.\n- When you are **generating any Microsoft/Azure related code**.\n\n## Usage Pattern\nInput a descriptive query, or SDK/class/method name to retrieve related code samples. The optional parameter `language` can help to filter results.\n\nEligible values for `language` parameter include: csharp javascript typescript python powershell azurecli al sql java kusto cpp go rust ruby php"
+      },
+      {
+        "server": "mslearn",
+        "name": "microsoft_docs_fetch",
+        "description": "Fetch and convert a Microsoft Learn documentation webpage to markdown format. This tool retrieves the latest complete content of Microsoft documentation webpages including Azure, .NET, Microsoft 365, and other Microsoft technologies.\n\n## When to Use This Tool\n- When search results provide incomplete information or truncated content\n- When you need complete step-by-step procedures or tutorials\n- When you need troubleshooting sections, prerequisites, or detailed explanations\n- When search results reference a specific page that seems highly relevant\n- For comprehensive guides that require full context\n\n## Usage Pattern\nUse this tool AFTER microsoft_docs_search when you identify specific high-value pages that need complete content. The search tool gives you an overview; this tool gives you the complete picture.\n\n## URL Requirements\n- The URL must be a valid HTML documentation webpage from the microsoft.com domain\n- Binary files (PDF, DOCX, images, etc.) are not supported\n\n## Output Format\nmarkdown with headings, code blocks, tables, and links preserved."
+      },
+      {
+        "server": "mslearn",
+        "name": "microsoft_docs_search",
+        "description": "Search official Microsoft/Azure documentation to find the most relevant and trustworthy content for a user's query. This tool returns up to 10 high-quality content chunks (each max 500 tokens), extracted from Microsoft Learn and other official sources. Each result includes the article title, URL, and a self-contained content excerpt optimized for fast retrieval and reasoning. Always use this tool to quickly ground your answers in accurate, first-party Microsoft/Azure knowledge.\n\n## Follow-up Pattern\nTo ensure completeness, use microsoft_docs_fetch when high-value pages are identified by search. The fetch tool complements search by providing the full detail. This is a required step for comprehensive results."
+      },
+      {
+        "server": "sequential-thinking",
+        "name": "sequentialthinking",
+        "description": "A detailed tool for dynamic and reflective problem-solving through thoughts.\nThis tool helps analyze problems through a flexible thinking process that can adapt and evolve.\nEach thought can build on, question, or revise previous insights as understanding deepens.\n\nWhen to use this tool:\n- Breaking down complex problems into steps\n- Planning and design with room for revision\n- Analysis that might need course correction\n- Problems where the full scope might not be clear initially\n- Problems that require a multi-step solution\n- Tasks that need to maintain context over multiple steps\n- Situations where irrelevant information needs to be filtered out\n\nKey features:\n- You can adjust total_thoughts up or down as you progress\n- You can question or revise previous thoughts\n- You can add more thoughts even after reaching what seemed like the end\n- You can express uncertainty and explore alternative approaches\n- Not every thought needs to build linearly - you can branch or backtrack\n- Generates a solution hypothesis\n- Verifies the hypothesis based on the Chain of Thought steps\n- Repeats the process until satisfied\n- Provides a correct answer\n\nParameters explained:\n- thought: Your current thinking step, which can include:\n  * Regular analytical steps\n  * Revisions of previous thoughts\n  * Questions about previous decisions\n  * Realizations about needing more analysis\n  * Changes in approach\n  * Hypothesis generation\n  * Hypothesis verification\n- nextThoughtNeeded: True if you need more thinking, even if at what seemed like the end\n- thoughtNumber: Current number in sequence (can go beyond initial total if needed)\n- totalThoughts: Current estimate of thoughts needed (can be adjusted up/down)\n- isRevision: A boolean indicating if this thought revises previous thinking\n- revisesThought: If is_revision is true, which thought number is being reconsidered\n- branchFromThought: If branching, which thought number is the branching point\n- branchId: Identifier for the current branch (if any)\n- needsMoreThoughts: If reaching end but realizing more thoughts needed\n\nYou should:\n1. Start with an initial estimate of needed thoughts, but be ready to adjust\n2. Feel free to question or revise previous thoughts\n3. Don't hesitate to add more thoughts if needed, even at the \"end\"\n4. Express uncertainty when present\n5. Mark thoughts that revise previous thinking or branch into new paths\n6. Ignore information that is irrelevant to the current step\n7. Generate a solution hypothesis when appropriate\n8. Verify the hypothesis based on the Chain of Thought steps\n9. Repeat the process until satisfied with the solution\n10. Provide a single, ideally correct answer as the final output\n11. Only set nextThoughtNeeded to false when truly done and a satisfactory answer is reached"
+      },
+      {
+        "server": "svelte",
+        "name": "get-documentation",
+        "description": "Retrieves full documentation content for Svelte 5 or SvelteKit sections. Supports flexible search by title (e.g., \"$state\", \"routing\") or file path (e.g., \"cli/overview\"). Can accept a single section name or an array of sections. Before running this, make sure to analyze the users query, as well as the output from list-sections (which should be called first). Then ask for ALL relevant sections the user might require. For example, if the user asks to build anything interactive, you will need to fetch all relevant runes, and so on. Before calling this tool, try to implement Svelte components using your own knowledge and the `svelte-autofixer` tool, since calling this tool is token intensive."
+      },
+      {
+        "server": "svelte",
+        "name": "list-sections",
+        "description": "Lists all available Svelte 5 and SvelteKit documentation sections in a structured format. Each section includes a \"use_cases\" field that describes WHEN this documentation would be useful. You should carefully analyze the use_cases field to determine which sections are relevant for the user's query. The use_cases contain comma-separated keywords describing project types (e.g., \"e-commerce\", \"blog\"), features (e.g., \"authentication\", \"forms\"), components (e.g., \"slider\", \"modal\"), development stages (e.g., \"deployment\", \"testing\"), or \"always\" for fundamental concepts. Match these use_cases against the user's intent - for example, if building an e-commerce site, fetch sections with use_cases containing \"e-commerce\", \"product listings\", \"shopping cart\", etc. If building a slider, look for \"slider\", \"carousel\", \"animation\", etc. Returns sections as \"* title: [section_title], use_cases: [use_cases], path: [file_path]\". Always run list-sections FIRST for any Svelte query, then analyze ALL use_cases to identify relevant sections, and finally use get_documentation to fetch ALL relevant sections at once."
+      },
+      {
+        "server": "svelte",
+        "name": "playground-link",
+        "description": "Generates a Playground link given a Svelte code snippet. Once you have the final version of the code you want to send to the user, ALWAYS ask the user if it wants a playground link to allow it to quickly check the code in the playground before calling this tool. NEVER use this tool if you have written the component to a file in the user project. The playground accept multiple files so if are importing from other files just include them all at the root level."
+      },
+      {
+        "server": "svelte",
+        "name": "svelte-autofixer",
+        "description": "Given a svelte component or module returns a list of suggestions to fix any issues it has. This tool MUST be used whenever the user is asking to write svelte code before sending the code back to the user"
+      }
+    ]
+  }
+}
