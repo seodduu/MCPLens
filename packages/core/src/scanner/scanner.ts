@@ -5,7 +5,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { countTokens } from '../tokenize.js';
 import type { ServerContextOverhead, ToolDefinition, ToolDefinitionBody } from '../types.js';
-import { calibrate, ESTIMATOR_VERSION } from './calibration.js';
+import { calibrate, estimateNameListTokens, ESTIMATOR_VERSION } from './calibration.js';
 import { specTransport, type McpServerSpec } from './configs.js';
 import { storedTokenProvider } from './oauth.js';
 import { canonicalJson, computeDefinitionSetHash, toolToRawBody } from './serverIdentity.js';
@@ -135,8 +135,7 @@ export async function scanServer(
         toolName: t.name,
         advertisedTokens,
         definitionTokens: calibrate(advertisedTokens),
-        // T1 fills this from the name-list estimator (plan 2026-09-03 section 5)
-        nameListTokens: null,
+        nameListTokens: estimateNameListTokens(spec.name, t.name, t.description ?? null),
         estimatorVersion: ESTIMATOR_VERSION,
         scannedAt: now,
         firstScannedAt: now, // COALESCE on save preserves the existing first value

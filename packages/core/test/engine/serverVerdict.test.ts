@@ -16,8 +16,8 @@ const sessions = (n: number, mode: AccountingMode = 'DEFERRED_MEASURABLE',
     sessionId: `s${i}`, client, filePath: `/f/${i}`, startedAt: iso(i), mode }));
 
 const def = (serverName: string, toolName: string, firstScannedAt = iso(0),
-  definitionTokens = 800): ToolDefinition => ({
-  serverName, toolName, definitionTokens, advertisedTokens: null, nameListTokens: null, estimatorVersion: 'v2',
+  definitionTokens = 800, nameListTokens: number | null = 40): ToolDefinition => ({
+  serverName, toolName, definitionTokens, advertisedTokens: null, nameListTokens, estimatorVersion: 'v2',
   scannedAt: iso(9), firstScannedAt });
 
 const jiraDefs = (firstScannedAt = iso(0)) =>
@@ -51,17 +51,41 @@ describe('buildServerVerdicts (design 2026-08-31 section 3.3)', () => {
     expect(v.evidence.datedConfiguredSessions).toBe(10);
     expect(v.evidence.observedDays).toBe(9);
     expect(v.confidence).toBe('high');
-    expect(v.unmeasuredNameListEntries).toBe(3);
-    expect(v.measuredPerSessionTokens).toBe(0);
+    expect(v.unmeasuredNameListEntries).toBe(0);
+    expect(v.measuredPerSessionTokens).toBe(120); // 3 name-list stubs x 40, no instructions
     expect(v.reason).toContain('never loaded or called in 10 sessions/9d');
   });
 
-  it('instructions overhead is the measured saving under deferred loading', () => {
+  it('name-list stubs plus instructions are the measured saving under deferred loading', () => {
     const [v] = buildServerVerdicts(input({ serverOverheads: [overhead('jira', 120)] }));
-    expect(v.measuredPerSessionTokens).toBe(120);
+    expect(v.measuredPerSessionTokens).toBe(240); // 3 x 40 name list + 120 instructions
+    expect(v.nameListTokens).toBe(120);
+    expect(v.unmeasuredNameListEntries).toBe(0);
+    expect(v.reason).toContain('Removing saves about 240 tokens per session'
+      + ' (name list 120 + instructions 120)');
+    expect(v.reason).not.toContain('name-list entries');
+  });
+
+  it('tools without a name-list estimate count as unmeasured entries', () => {
+    const definitions = [def('jira', 't1'), def('jira', 't2'),
+      def('jira', 't3', iso(0), 800, null)];
+    const [v] = buildServerVerdicts(input({ definitions,
+      serverOverheads: [overhead('jira', 120)] }));
+    expect(v.nameListTokens).toBe(80);
+    expect(v.unmeasuredNameListEntries).toBe(1);
+    expect(v.measuredPerSessionTokens).toBe(200);
+    expect(v.reason).toContain('plus 1 name-list entries (unmeasured)');
+  });
+
+  it('no name-list estimate at all yields null and counts every entry', () => {
+    const definitions = ['t1', 't2', 't3'].map((t) => def('jira', t, iso(0), 800, null));
+    const [v] = buildServerVerdicts(input({ definitions,
+      serverOverheads: [overhead('jira', 120)] }));
+    expect(v.nameListTokens).toBeNull();
     expect(v.unmeasuredNameListEntries).toBe(3);
-    expect(v.reason).toContain('Removing saves about 120 tokens per session'
-      + ' plus 3 name-list entries (unmeasured)');
+    expect(v.measuredPerSessionTokens).toBe(120); // instructions only
+    expect(v.reason).toContain('(name list 0 + instructions 120)');
+    expect(v.reason).toContain('plus 3 name-list entries (unmeasured)');
   });
 
   it('definitions plus instructions under upfront loading', () => {
@@ -69,6 +93,7 @@ describe('buildServerVerdicts (design 2026-08-31 section 3.3)', () => {
       sessions: sessions(10, 'UPFRONT'), serverOverheads: [overhead('jira', 120)] }));
     expect(v.action).toBe('remove-server');
     expect(v.measuredPerSessionTokens).toBe(2520); // 800 x 3 + 120
+    expect(v.nameListTokens).toBe(0);
     expect(v.unmeasuredNameListEntries).toBe(0);
     expect(v.reason).toContain('Removing saves about 2,520 tokens per session');
     expect(v.reason).not.toContain('name-list entries');

@@ -77,6 +77,10 @@ export function buildServerVerdicts(input: EngineInput): ServerVerdict[] {
   const firstActivity = new Map<string, string>();   // min startedAt across sessions with a call or load
   const definitionCount = new Map<string, number>();
   const definitionTokens = new Map<string, number>();
+  // Deferred loading charges the name-list stub, not the definition. Rows scanned before the
+  // estimator existed carry null and are counted as unmeasured entries instead of as 0 tokens.
+  const nameListKnownCount = new Map<string, number>();
+  const nameListTokensByServer = new Map<string, number>();
   const callSessions = new Map<string, Set<string>>();
   const loadSessions = new Map<string, Set<string>>();
 
@@ -84,6 +88,11 @@ export function buildServerVerdicts(input: EngineInput): ServerVerdict[] {
     definitionCount.set(d.serverName, (definitionCount.get(d.serverName) ?? 0) + 1);
     definitionTokens.set(d.serverName,
       (definitionTokens.get(d.serverName) ?? 0) + d.definitionTokens);
+    if (d.nameListTokens != null) {
+      nameListKnownCount.set(d.serverName, (nameListKnownCount.get(d.serverName) ?? 0) + 1);
+      nameListTokensByServer.set(d.serverName,
+        (nameListTokensByServer.get(d.serverName) ?? 0) + d.nameListTokens);
+    }
     const prev = scanEpoch.get(d.serverName) ?? null;
     const next = earlier(prev, d.firstScannedAt);
     if (next != null) scanEpoch.set(d.serverName, next);
@@ -127,16 +136,21 @@ export function buildServerVerdicts(input: EngineInput): ServerVerdict[] {
     const windowStartMs = ms(windowStart);
     const defCount = definitionCount.get(server) ?? 0;
     const instructions = instructionsByServer.get(server) ?? 0;
-    const measuredPerSessionTokens =
-      deferred ? instructions : (definitionTokens.get(server) ?? 0) + instructions;
-    const unmeasuredNameListEntries = deferred ? defCount : 0;
+    const knownNameLists = nameListKnownCount.get(server) ?? 0;
+    const nameListTokens = deferred
+      ? (knownNameLists === 0 ? null : nameListTokensByServer.get(server) ?? 0)
+      : 0;
+    const unmeasuredNameListEntries = deferred ? defCount - knownNameLists : 0;
+    const measuredPerSessionTokens = deferred
+      ? instructions + (nameListTokens ?? 0)
+      : (definitionTokens.get(server) ?? 0) + instructions;
 
     // No lower bound for the window means there is nothing to judge: claim no observation rather
     // than counting every session we happen to hold.
     if (windowStartMs == null) {
       return { serverName: server, action: 'keep', confidence: 'high',
         evidence: { ...EMPTY_SERVER_EVIDENCE }, measuredPerSessionTokens,
-        nameListTokens: null, unmeasuredNameListEntries, reason: 'no observation window' };
+        nameListTokens, unmeasuredNameListEntries, reason: 'no observation window' };
     }
 
     // A session with no startedAt cannot be placed in the window, so it is included (prevents
@@ -203,11 +217,15 @@ export function buildServerVerdicts(input: EngineInput): ServerVerdict[] {
       const days = observedDays == null ? '' : `/${observedDays}d`;
       const plus = unmeasuredNameListEntries > 0
         ? ` plus ${unmeasuredNameListEntries} name-list entries (unmeasured)` : '';
+      // Under deferred loading the saving is made of parts the reader can check, so it names them.
+      const parts = deferred
+        ? ` (name list ${formatTokens(nameListTokens ?? 0)} + instructions ${formatTokens(instructions)})`
+        : '';
       return { serverName: server, action: 'remove-server',
         confidence: serverRemoveConfidence(evidence), evidence, measuredPerSessionTokens,
-        nameListTokens: null, unmeasuredNameListEntries,
+        nameListTokens, unmeasuredNameListEntries,
         reason: `never loaded or called in ${configuredSessions} sessions${days}. `
-          + `Removing saves about ${formatTokens(measuredPerSessionTokens)} tokens per session${plus}` };
+          + `Removing saves about ${formatTokens(measuredPerSessionTokens)} tokens per session${parts}${plus}` };
     }
     // Any evidence of use is self-evident, so a keep is pinned high.
     // With nothing inside the window, the only thing keeping the server is older history, so the
@@ -218,6 +236,6 @@ export function buildServerVerdicts(input: EngineInput): ServerVerdict[] {
         ? `loaded in ${loadedSessions} sessions, never called`
         : `last active ${(lastActivityAt ?? '').slice(0, 10)}, before the window`;
     return { serverName: server, action: 'keep', confidence: 'high', evidence,
-      measuredPerSessionTokens, nameListTokens: null, unmeasuredNameListEntries, reason };
+      measuredPerSessionTokens, nameListTokens, unmeasuredNameListEntries, reason };
   });
 }

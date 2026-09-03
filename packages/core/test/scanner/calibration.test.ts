@@ -7,7 +7,8 @@ import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { scanServer } from '../../src/scanner/scanner.js';
-import { calibrate, HARNESS_FACTOR } from '../../src/scanner/calibration.js';
+import { calibrate, HARNESS_FACTOR, NAME_LIST_FACTOR,
+  NAME_LIST_SOURCE } from '../../src/scanner/calibration.js';
 
 const fixturePath = fileURLToPath(
   new URL('../fixtures/calibration/day-01.json', import.meta.url),
@@ -151,6 +152,11 @@ describe('scanner v2 calibration', () => {
     const mean = errorRates.reduce((a, b) => a + b, 0) / errorRates.length;
     expect(mean).toBeLessThan(0.1);
     expect(mean).toBeCloseTo(fixture.meanV2ErrorRate, 3);
+  });
+
+  it('names the source of the name-list calibration and carries a positive factor', () => {
+    expect(NAME_LIST_SOURCE).toBe('claude-code-deferred-pilot-day-05-07');
+    expect(NAME_LIST_FACTOR).toBeGreaterThan(0);
   });
 
   it('the uncalibrated estimator would have failed the same bar', () => {
