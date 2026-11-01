@@ -1,4 +1,0 @@
-interface:
-  display_name: "MCP Lens 계획 규약"
-  short_description: "구현 계획과 Wave 실행 프롬프트를 설계합니다"
-  default_prompt: "Use $plan-conventions to create a concrete MCP Lens implementation plan; include $execution-conventions when worktrees or subagents are needed."

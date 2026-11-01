@@ -1,7 +1,0 @@
-{
-  "name": "upfront-all",
-  "purpose": "Row 1/4/5 baseline. All 17 tools loaded eagerly.",
-  "servers": ["huggingface", "awsknowledge", "mslearn", "context7", "deepwiki"],
-  "allowToolSearch": false,
-  "expectedToolCount": 17
-}

@@ -44,12 +44,6 @@ zero files and succeeds. That is a false green: always name the package with `-p
 ## Documentation
 
 - [Documentation site](https://seodduu.github.io/MCPLens-V2/): installation, per-client hook setup, CLI reference, FAQ
-- [`MCP-Lens-설계문서-v2.md`](MCP-Lens-설계문서-v2.md): the single source of truth for the domain, collection contract and scope
-- [`docs/plans/`](docs/plans/): implementation plans
-- [`docs/pitfalls/`](docs/pitfalls/): traps this stack keeps stepping on
-- [`docs/BACKLOG.md`](docs/BACKLOG.md): backlog
-- [`docs/SMOKE.md`](docs/SMOKE.md): real-environment smoke procedure
-- [`CLAUDE.md`](CLAUDE.md): the agent execution conventions
 
 ## License
 

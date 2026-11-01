@@ -14,14 +14,17 @@ Thumbs.db
 # Logs
 *.log
 
-# Operational working documents such as session handoffs (not needed in the repository)
-docs/handoffs/
-
-.claude/worktrees/
-
-website/node_modules/
-website/.vitepress/cache/
-website/.vitepress/dist/
-
-# Pilot run outputs (transcripts, isolated Lens home)
-pilot/.work/
+# Local working materials, not part of the runnable repository
+/docs/
+/website/
+/pilot/
+/demo/
+/.agents/
+/.claude/
+/AGENTS.md
+/CLAUDE.md
+/MCP-Lens-*.md
+/REPORT-*.md
+/scripts/sandbox.sh
+/fixtures/README.md
+/.github/

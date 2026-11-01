@@ -1,4 +1,0 @@
-interface:
-  display_name: "MCP Lens 실행 규약"
-  short_description: "Wave와 worktree 실행·통합 게이트를 관리합니다"
-  default_prompt: "Use $execution-conventions to execute the next approved MCP Lens Wave with worktree bootstrap, native subagents, and integration gates."
