@@ -12,6 +12,23 @@ is the definition sizes really scanned and the call records really observed, not
 For installation, per-client hook setup, the CLI reference and the FAQ, see the documentation site:
 **https://seodduu.github.io/MCPLens/**
 
+## Screenshots
+
+The VS Code extension (**MCP Token Lens**) shows the cost × usage matrix in the activity bar and
+walks you through setup on first launch.
+
+![Sidebar and onboarding walkthrough](packages/extension/media/screenshots/overview.png)
+
+Each client ▸ server ▸ tool row puts calls, failed calls and tokens side by side, most expensive
+first.
+
+![Cost × Usage Matrix tree](packages/extension/media/screenshots/matrix.png)
+
+**MCP Lens: Show Report** turns the same data into a Markdown report: servers never used, tools that
+only fail, and what removing them would save per session.
+
+![MCP Lens report](packages/extension/media/screenshots/report.png)
+
 ## Supported clients
 
 | Client | Usage collection | Definition scan | Global actions (turning tools off in the config) |
