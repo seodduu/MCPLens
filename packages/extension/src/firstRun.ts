@@ -1,7 +1,7 @@
 // Never imports vscode: pure logic only, so it can be verified with unit tests.
 
 export const WALKTHROUGH_OPENED_KEY = 'mcpLens.walkthroughOpened';
-export const WALKTHROUGH_CATEGORY_ID = 'seodduu.mcp-context-lens#mcpLens.setup';
+export const WALKTHROUGH_CATEGORY_ID = 'seodduu.mcplens#mcpLens.setup';
 
 export interface FirstRunState {
   get(key: string): boolean | undefined;

@@ -110,13 +110,13 @@ describe('stepsToUncheck', () => {
   });
 
   it('normalizes step ids with the extension identifier and walkthrough id', () => {
-    expect(SETUP_STEP_IDS.hooksReady).toBe('seodduu.mcp-context-lens#mcpLens.setup#hooks');
-    expect(SETUP_STEP_IDS.scanReady).toBe('seodduu.mcp-context-lens#mcpLens.setup#scan');
-    expect(SETUP_STEP_IDS.analysisReady).toBe('seodduu.mcp-context-lens#mcpLens.setup#analyze');
+    expect(SETUP_STEP_IDS.hooksReady).toBe('seodduu.mcplens#mcpLens.setup#hooks');
+    expect(SETUP_STEP_IDS.scanReady).toBe('seodduu.mcplens#mcpLens.setup#scan');
+    expect(SETUP_STEP_IDS.analysisReady).toBe('seodduu.mcplens#mcpLens.setup#analyze');
   });
 
-  it('uses seodduu.mcp-context-lens#mcpLens.setup#actions as the actions step id', () => {
-    expect(SETUP_STEP_IDS.globalActionsReady).toBe('seodduu.mcp-context-lens#mcpLens.setup#actions');
+  it('uses seodduu.mcplens#mcpLens.setup#actions as the actions step id', () => {
+    expect(SETUP_STEP_IDS.globalActionsReady).toBe('seodduu.mcplens#mcpLens.setup#actions');
   });
 
   it('returns the actions step id for clearing when globalActionsReady flips true to false', () => {

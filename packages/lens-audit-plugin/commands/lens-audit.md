@@ -19,7 +19,7 @@ installation guidance below to the user verbatim and stop.
   Running this command from the repository root (or any directory under it) then picks up
   `node_modules/.bin/mcp-lens`.
 - To use it outside the repository, link the bin globally with `npm link -w @mcp-lens/cli`.
-- For most users the VS Code extension (MCP Context Lens) is the easier path. It shows the same
+- For most users the VS Code extension (MCP Token Lens) is the easier path. It shows the same
   data in the sidebar and needs no CLI installation.
 
 Once you have the report, use it to:

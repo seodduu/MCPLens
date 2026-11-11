@@ -47,7 +47,7 @@ npm install && npm run build
 npm link -w @mcp-lens/cli
 ```
 
-If you would rather not keep a separate CLI, the VS Code extension (MCP Context Lens) shows the same
+If you would rather not keep a separate CLI, the VS Code extension (MCP Token Lens) shows the same
 data in the sidebar.
 
 From the report, Claude then:

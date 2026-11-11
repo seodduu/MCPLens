@@ -18,7 +18,7 @@ export interface SetupKeyInput {
   rollout: string | undefined;
 }
 
-const STEP_PREFIX = 'seodduu.mcp-context-lens#mcpLens.setup#';
+const STEP_PREFIX = 'seodduu.mcplens#mcpLens.setup#';
 
 export const SETUP_STEP_IDS: Record<keyof SetupKeys, string> = {
   scanReady: `${STEP_PREFIX}scan`,
