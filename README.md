@@ -9,6 +9,10 @@ the other 38 every time. MCP Lens puts the tokens the definitions cost (the cost
 call counts (the usage) and states in numbers "what do I turn off and how much is left". The basis
 is the definition sizes really scanned and the call records really observed, not guesswork.
 
+Install the VS Code extension from the Marketplace:
+**[MCP Token Lens](https://marketplace.visualstudio.com/items?itemName=seodduu.mcplens)**
+(or run `code --install-extension seodduu.mcplens`).
+
 For installation, per-client hook setup, the CLI reference and the FAQ, see the documentation site:
 **https://seodduu.github.io/MCPLens/**
 
@@ -60,6 +64,7 @@ zero files and succeeds. That is a false green: always name the package with `-p
 
 ## Documentation
 
+- [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=seodduu.mcplens): the MCP Token Lens extension
 - [Documentation site](https://seodduu.github.io/MCPLens/): installation, per-client hook setup, CLI reference, FAQ
 
 ## License
