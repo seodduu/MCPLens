@@ -2,10 +2,14 @@
   "name": "mcplens",
   "displayName": "MCP Token Lens",
   "description": "Automatically accounts for MCP context usage across Claude Code, Codex, and Gemini CLI.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "seodduu",
   "license": "MIT",
   "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#11161c",
+    "theme": "dark"
+  },
   "categories": [
     "Other",
     "Visualization"
@@ -20,6 +24,10 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/seodduu/MCPLens-V2.git"
+  },
+  "homepage": "https://github.com/seodduu/MCPLens-V2#readme",
+  "bugs": {
+    "url": "https://github.com/seodduu/MCPLens-V2/issues"
   },
   "engines": {
     "vscode": "^1.90.0"

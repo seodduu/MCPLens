@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.1
+
+### Changed
+
+- **Renamed for the Marketplace.** The extension is now published as **MCP Token Lens**
+  (`seodduu.mcplens`) because the previous name was already taken on the Marketplace.
+- **New Marketplace page.** The README was rewritten around the current features with screenshots,
+  and the listing now links to the repository and issue tracker.
+
 ## 0.3.0
 
 This release centres on two things. First, the dependency analysis that decides "is this tool safe
