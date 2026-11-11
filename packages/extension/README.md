@@ -5,7 +5,7 @@ tools or not. MCP Token Lens measures what each server and tool costs in tokens,
 you actually use it across **Claude Code**, **Codex**, and **Gemini CLI**, and puts the two side by
 side so you can decide what to turn off.
 
-![MCP Token Lens sidebar and onboarding walkthrough](https://raw.githubusercontent.com/seodduu/MCPLens-V2/main/packages/extension/media/screenshots/overview.png)
+![MCP Token Lens sidebar and onboarding walkthrough](https://raw.githubusercontent.com/seodduu/MCPLens/main/packages/extension/media/screenshots/overview.png)
 
 ## Features
 
@@ -14,7 +14,7 @@ side so you can decide what to turn off.
 An activity-bar view that lists client ▸ server ▸ tool, sorted with the most expensive first. Each
 row shows calls, failed calls and tokens, so tools that cost a lot and are rarely used stand out.
 
-![Cost × Usage Matrix tree](https://raw.githubusercontent.com/seodduu/MCPLens-V2/main/packages/extension/media/screenshots/matrix.png)
+![Cost × Usage Matrix tree](https://raw.githubusercontent.com/seodduu/MCPLens/main/packages/extension/media/screenshots/matrix.png)
 
 ### Report
 
@@ -23,7 +23,7 @@ servers that were never used, tools that only fail, and how many tokens per sess
 would save. Servers whose definitions could not be measured are called out, so a number is never
 presented as more certain than it is.
 
-![MCP Lens report](https://raw.githubusercontent.com/seodduu/MCPLens-V2/main/packages/extension/media/screenshots/report.png)
+![MCP Lens report](https://raw.githubusercontent.com/seodduu/MCPLens/main/packages/extension/media/screenshots/report.png)
 
 ### Setup Status
 
@@ -69,4 +69,4 @@ Original client logs are only ever read, never modified. Data is stored locally 
 
 ## Support
 
-Report issues at [github.com/seodduu/MCPLens-V2/issues](https://github.com/seodduu/MCPLens-V2/issues).
+Report issues at [github.com/seodduu/MCPLens/issues](https://github.com/seodduu/MCPLens/issues).

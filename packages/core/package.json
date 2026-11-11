@@ -5,7 +5,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/seodduu/MCPLens-V2.git"
+    "url": "https://github.com/seodduu/MCPLens.git"
   },
   "engines": { "node": ">=20" },
   "type": "module",

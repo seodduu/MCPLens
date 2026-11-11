@@ -10,7 +10,7 @@ call counts (the usage) and states in numbers "what do I turn off and how much i
 is the definition sizes really scanned and the call records really observed, not guesswork.
 
 For installation, per-client hook setup, the CLI reference and the FAQ, see the documentation site:
-**https://seodduu.github.io/MCPLens-V2/**
+**https://seodduu.github.io/MCPLens/**
 
 ## Supported clients
 
@@ -43,7 +43,7 @@ zero files and succeeds. That is a false green: always name the package with `-p
 
 ## Documentation
 
-- [Documentation site](https://seodduu.github.io/MCPLens-V2/): installation, per-client hook setup, CLI reference, FAQ
+- [Documentation site](https://seodduu.github.io/MCPLens/): installation, per-client hook setup, CLI reference, FAQ
 
 ## License
 

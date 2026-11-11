@@ -23,11 +23,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/seodduu/MCPLens-V2.git"
+    "url": "https://github.com/seodduu/MCPLens.git"
   },
-  "homepage": "https://github.com/seodduu/MCPLens-V2#readme",
+  "homepage": "https://github.com/seodduu/MCPLens#readme",
   "bugs": {
-    "url": "https://github.com/seodduu/MCPLens-V2/issues"
+    "url": "https://github.com/seodduu/MCPLens/issues"
   },
   "engines": {
     "vscode": "^1.90.0"

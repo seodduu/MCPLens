@@ -60,7 +60,7 @@ From the report, Claude then:
 ## Installation (local)
 
 ```bash
-claude plugin add /path/to/MCPLens-V2/packages/lens-audit-plugin
+claude plugin add /path/to/MCPLens/packages/lens-audit-plugin
 ```
 
 You can also load it with `--plugin-dir` for testing, without registering a marketplace.
